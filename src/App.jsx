@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Download, Eye, FileText, Table2, CheckCircle, AlertCircle, X, Upload, MapPin, RotateCw, RotateCcw, CheckSquare, ZoomIn, ZoomOut, BarChart3, TrendingUp, Camera, LogOut } from 'lucide-react';
-import ConvertedResults from './ConvertedResults';
-import DataAnalytics from './DataAnalytics';
-import FinancialAnalytics from './FinancialAnalytics';
+import ProfilePage from './ProfilePage';
+import DocumentHistory from './DocumentHistory';
+// import ConvertedResults from './ConvertedResults';
+// import DataAnalytics from './DataAnalytics';
+// import FinancialAnalytics from './FinancialAnalytics';
 import { API_BASE } from './utils/apiConfig';
 
 const STORAGE_KEY_RESULTS = 'ocr_results_v1';
@@ -393,8 +395,8 @@ export default function EnhancedTableOCRSystem() {
       } catch (e) {
         // Fallback: detect from current path
         const currentPath = window.location.pathname;
-        if (currentPath.startsWith('/OCR')) {
-          basePath = '/OCR';
+        if (currentPath.startsWith('/OCR-Frontend')) {
+          basePath = '/OCR-Frontend';
         } else {
           const pathParts = currentPath.split('/').filter(p => p);
           if (pathParts.length > 0) {
@@ -413,8 +415,8 @@ export default function EnhancedTableOCRSystem() {
         // Absolute root path
         "/districts-mandals.csv",
         // Fallback patterns
-        "/OCR/districts-mandals.csv",
-        "OCR/districts-mandals.csv"
+        "/OCR -Frontend/districts-mandals.csv",
+        "OCR-Frontend/districts-mandals.csv"
       ];
 
       // Remove duplicates while preserving order
@@ -658,7 +660,8 @@ export default function EnhancedTableOCRSystem() {
       setSelectedVillage("");
       return;
     }
-    const district = districts.find(d => d.id === selectedDistrict);
+    // Match by id OR name — some saved user objects store the district name, not the generated id
+    const district = districts.find(d => d.id === selectedDistrict || d.name === selectedDistrict);
     if (district) {
       setMandals(district.mandals || []);
       setSelectedMandal("");
@@ -673,7 +676,8 @@ export default function EnhancedTableOCRSystem() {
       setSelectedVillage("");
       return;
     }
-    const mandal = mandals.find(m => m.id === selectedMandal);
+    // Match mandal by id OR name to handle cases where selectedMandal stores the name
+    const mandal = mandals.find(m => m.id === selectedMandal || m.name === selectedMandal);
     if (mandal) {
       setVillages(mandal.villages || []);
       setSelectedVillage("");
@@ -1438,19 +1442,51 @@ export default function EnhancedTableOCRSystem() {
                   </h1>
                 </div>
               </div>
-
-              <button
-                onClick={() => {
-                  localStorage.removeItem('token');
-                  localStorage.removeItem('user');
-                  // Force a full reload to clear state or just navigate
-                  window.location.href = '/OCR/login';
-                }}
-                className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold transition-colors shadow-lg"
-              >
-                <LogOut size={20} />
-                <span className="hidden sm:inline">Logout</span>
-              </button>
+              <div className="flex items-center">
+                <button
+                  onClick={() => setActiveTab('profile')}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold transition-colors shadow-lg mr-2"
+                >
+                  <span className="hidden sm:inline">Profile</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('documents')}
+                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold transition-colors shadow-lg mr-2"
+                >
+                  <FileText size={20} />
+                  <span className="hidden sm:inline">Documents</span>
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      const token = localStorage.getItem('token');
+                      if (token) {
+                        // Call logout endpoint
+                        await fetch(`${API_BASE}/api/logout`, {
+                          method: 'POST',
+                          headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                          }
+                        });
+                      }
+                    } catch (err) {
+                      console.error('Logout error:', err);
+                    } finally {
+                      // Always clear local storage and redirect
+                      localStorage.removeItem('token');
+                      localStorage.removeItem('user');
+                      // Get base path from vite config
+                      const basePath = import.meta.env.BASE_URL || '/';
+                      window.location.href = basePath + '#/login';
+                    }
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold transition-colors shadow-lg"
+                >
+                  <LogOut size={20} />
+                  <span className="hidden sm:inline">Logout</span>
+                </button>
+              </div>
             </div>
 
             {/* Tab Navigation */}
@@ -1465,6 +1501,12 @@ export default function EnhancedTableOCRSystem() {
 
           {/* Upload Tab */}
           {/* Upload Tab Content - Always Visible */}
+          {activeTab === 'profile' && (
+            <ProfilePage onClose={() => setActiveTab('upload')} />
+          )}
+          {activeTab === 'documents' && (
+            <DocumentHistory onClose={() => setActiveTab('upload')} />
+          )}
           {(
             <>
               {/* Location Selection */}
@@ -1609,7 +1651,7 @@ export default function EnhancedTableOCRSystem() {
                     />
                   </div>
 
-                  <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  {/* <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <p className="text-xs text-gray-500">
                       On mobile, you can also use the camera to scan the table. Make sure the full table is visible and sharp. PDF files are also supported for batch processing.
                     </p>
@@ -1621,7 +1663,7 @@ export default function EnhancedTableOCRSystem() {
                       <Camera size={18} />
                       Scan Document
                     </button>
-                  </div>
+                  </div> */}
 
                   {files.length > 0 && (
                     <div className="mt-6 mb-4 flex justify-end">

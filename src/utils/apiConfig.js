@@ -4,46 +4,37 @@
  * - In production: uses relative path or production API
  */
 export const getApiBase = () => {
-  // Check if we're in a browser environment
-  if (typeof window === 'undefined') {
-    return '/OCR';
-  }
+  // Browser check
+  if (typeof window === "undefined") return "/OCR";
 
-  // Check environment variable first
+  // 1️⃣ Environment variable takes highest priority
   if (import.meta.env.VITE_OCR_API_URL) {
     return import.meta.env.VITE_OCR_API_URL;
   }
 
-  // In development (localhost), use local backend
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    return 'https://api.stemverse.app/OCR';
+  // 2️⃣ Local development (React dev server)
+  if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
+    // Use HTTP for local backend (Flask dev server) to avoid SSL protocol errors
+    return "http://localhost:5002/OCR";
   }
 
-  // In production, use relative path
-  // This will work with the vite proxy or direct backend connection
-  return window.location.origin + '/OCR';
+  // 3️⃣ Production (deployed site)
+  return "https://api.stemverse.app/OCR";
 };
 
 export const getAuthApiBase = () => {
-  // Check environment variable first
   if (import.meta.env.VITE_API_URL) {
     return import.meta.env.VITE_API_URL;
   }
 
-  // In development (localhost), use local backend
-  if (typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-    return 'https://api.stemverse.app/OCR';
+  if (typeof window !== "undefined" &&
+    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
+    return "http://localhost:5002/OCR";
   }
 
-  // In production, use origin
-  if (typeof window !== 'undefined') {
-    return window.location.origin;
-  }
-
-  return '';
+  return "https://api.stemverse.app/OCR";
 };
 
-// Export the API base URL as a constant
 export const API_BASE = getApiBase();
 export const AUTH_API_BASE = getAuthApiBase();
 

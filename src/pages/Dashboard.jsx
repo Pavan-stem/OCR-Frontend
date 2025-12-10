@@ -57,10 +57,26 @@ const Dashboard = () => {
         fetchDashboard();
     }, [navigate]);
 
-    const handleLogout = () => {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        navigate('/login');
+    const handleLogout = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            if (token) {
+                // Call logout endpoint
+                await axios.post(`${AUTH_API_BASE}/api/logout`, {}, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+            }
+        } catch (err) {
+            console.error('Logout error:', err);
+        } finally {
+            // Always clear local storage and redirect
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            navigate('/login');
+        }
     };
 
     if (loading && !userData) {

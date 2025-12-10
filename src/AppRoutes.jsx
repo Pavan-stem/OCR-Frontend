@@ -1,7 +1,6 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import AuthPage from './pages/AuthPage';
-import ForgotPassword from './pages/ForgotPassword';
 import Dashboard from './pages/Dashboard';
 import OCRApp from './App';
 
@@ -15,11 +14,10 @@ const ProtectedRoute = ({ children }) => {
 
 const AppRoutes = () => {
     return (
-        <Router basename="/OCR">
+        <Router>
             <Routes>
                 <Route path="/login" element={<AuthPage />} />
                 <Route path="/register" element={<AuthPage />} />
-                <Route path="/forgot-password" element={<ForgotPassword />} />
                 <Route
                     path="/dashboard"
                     element={
@@ -36,7 +34,7 @@ const AppRoutes = () => {
                         </ProtectedRoute>
                     }
                 />
-                <Route path="/" element={<Navigate to="/register" replace />} />
+                <Route path="/" element={<Navigate to="/login" replace />} />
             </Routes>
         </Router>
     );
