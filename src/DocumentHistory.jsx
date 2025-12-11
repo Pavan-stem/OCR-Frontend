@@ -91,11 +91,11 @@ export default function DocumentHistory({ onClose }) {
     <div className="fixed inset-0 z-40 flex items-start justify-center p-4 bg-slate-900/80 backdrop-blur-sm overflow-auto min-h-screen">
       <div className="w-full max-w-4xl bg-white rounded-lg shadow-2xl my-8">
         {/* Header */}
-        <div className="bg-gradient-to-r from-blue-800 to-blue-900 text-white px-6 py-4 rounded-t-lg">
+        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-4 rounded-t-lg">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-2xl font-bold">Document Upload History</h2>
-              <p className="text-blue-100 text-sm mt-1">View and manage your uploaded documents</p>
+              <p className="text-blue-100 text-sm mt-1">View your uploaded documents</p>
             </div>
             <button 
               onClick={onClose} 
@@ -118,9 +118,6 @@ export default function DocumentHistory({ onClose }) {
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider border-b border-slate-200">
                       Date
-                    </th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider border-b border-slate-200">
-                      Status
                     </th>
                     <th className="px-4 py-3 text-center text-xs font-semibold text-slate-700 uppercase tracking-wider border-b border-slate-200">
                       Action
@@ -146,12 +143,6 @@ export default function DocumentHistory({ onClose }) {
                       </td>
                       <td className="px-4 py-3 text-slate-600">
                         {u.date ? new Date(u.date).toLocaleDateString('en-IN') : 'N/A'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium border ${getStatusBadge(u.status || 'pending')}`}>
-                          {getStatusIcon(u.status || 'pending')}
-                          {u.status || 'Pending'}
-                        </span>
                       </td>
                       <td className="px-4 py-3 text-center">
                         <button 

@@ -2,7 +2,7 @@ import { API_BASE } from './utils/apiConfig';
 import React, { useEffect, useState } from 'react';
 import { X, CheckCircle, XCircle} from 'lucide-react';
 
-export default function ProfilePage({ onClose }) {
+export default function ProfilePage({ onClose, onUserUpdate }) {
   const [user, setUser] = useState(null);
   const [districts, setDistricts] = useState([]);
   const [mandals, setMandals] = useState([]);
@@ -32,7 +32,28 @@ export default function ProfilePage({ onClose }) {
         console.error('Error parsing user:', e);
       }
     }
-    loadLocations();
+    // Load available locations and then restore user's saved selection
+    loadLocations().then(() => {
+      try {
+        const stored = localStorage.getItem('user');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed.district) {
+            // populate mandals for this district, then restore mandal and villages
+            loadMandals(parsed.district).then(() => {
+              if (parsed.mandal) {
+                setMandal(parsed.mandal);
+                loadVillages(parsed.district, parsed.mandal).then(() => {
+                  if (parsed.village) setVillage(parsed.village);
+                }).catch(() => {});
+              }
+            }).catch(() => {});
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    }).catch(() => {});
   }, []);
 
   async function loadLocations() {
@@ -40,8 +61,17 @@ export default function ProfilePage({ onClose }) {
       const resp = await fetch(`${API_BASE}/api/districts`);
       if (!resp.ok) return;
       const data = await resp.json();
-      const districtList = data.districts || data || [];
-      setDistricts(Array.isArray(districtList) ? districtList : []);
+      // Normalize response to [{id, name}]
+      let districtList = [];
+      if (Array.isArray(data)) {
+        districtList = data.map((d, i) => ({ id: String(d.id ?? i + 1), name: String(d.name ?? d).trim() }));
+      } else if (Array.isArray(data.districts)) {
+        districtList = data.districts.map((d, i) => ({ id: String(d.id ?? i + 1), name: String(d.name ?? d).trim() }));
+      } else if (data && typeof data === 'object' && data.districts) {
+        districtList = (data.districts || []).map((d, i) => ({ id: String(d.id ?? i + 1), name: String(d.name ?? d).trim() }));
+      }
+      setDistricts(districtList);
+      return districtList;
     } catch (e) {
       console.error('Error loading districts:', e);
     }
@@ -66,11 +96,18 @@ export default function ProfilePage({ onClose }) {
         return;
       }
       const data = await resp.json();
-      const mandalList = data.mandals || [];
-      setMandals(Array.isArray(mandalList) ? mandalList : []);
+      // Normalize to [{id, name}]
+      let mandalList = [];
+      if (Array.isArray(data)) {
+        mandalList = data.map((m, i) => ({ id: String(m.id ?? i + 1), name: String(m.name ?? m).trim() }));
+      } else if (Array.isArray(data.mandals)) {
+        mandalList = data.mandals.map((m, i) => ({ id: String(m.id ?? i + 1), name: String(m.name ?? m).trim() }));
+      }
+      setMandals(mandalList);
       setMandal('');
       setVillages([]);
       setVillage('');
+      return mandalList;
     } catch (e) {
       console.error('Error loading mandals:', e);
       setMandals([]);
@@ -95,9 +132,16 @@ export default function ProfilePage({ onClose }) {
         return;
       }
       const data = await resp.json();
-      const villageList = data.villages || [];
-      setVillages(Array.isArray(villageList) ? villageList : []);
+      // Normalize to [{id, name}]
+      let villageList = [];
+      if (Array.isArray(data)) {
+        villageList = data.map((v, i) => ({ id: String(v.id ?? i + 1), name: String(v.name ?? v).trim() }));
+      } else if (Array.isArray(data.villages)) {
+        villageList = data.villages.map((v, i) => ({ id: String(v.id ?? i + 1), name: String(v.name ?? v).trim() }));
+      }
+      setVillages(villageList);
       setVillage('');
+      return villageList;
     } catch (e) {
       console.error('Error loading villages:', e);
       setVillages([]);
@@ -138,6 +182,10 @@ export default function ProfilePage({ onClose }) {
       const newUser = { ...(user || {}), district, mandal, village, ...updated };
       setUser(newUser);
       localStorage.setItem('user', JSON.stringify(newUser));
+      // Inform parent to refresh its user / location state
+      if (typeof onUserUpdate === 'function') {
+        try { onUserUpdate(); } catch (e) { /* ignore */ }
+      }
       setMessage('Location updated successfully');
       setTimeout(() => setMessage(''), 3000);
     } catch (e) {
@@ -209,7 +257,7 @@ export default function ProfilePage({ onClose }) {
     <div className="fixed inset-0 z-40 flex items-start justify-center p-4 bg-slate-900/80 backdrop-blur-sm overflow-auto min-h-screen">
     <div className="w-full max-w-6xl bg-white rounded-lg shadow-2xl my-8">
         {/* Header */}
-        <div className="bg-gradient-to-r from-blue-800 to-blue-900 text-white px-6 py-4 rounded-t-lg">
+        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-4 rounded-t-lg">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-2xl font-bold">User Profile</h2>
@@ -256,7 +304,7 @@ export default function ProfilePage({ onClose }) {
                   </div>
                 </div>
 
-                <h4 className="text-base font-bold text-slate-800 mb-3 pb-2 border-b border-slate-300">
+                {/* <h4 className="text-base font-bold text-slate-800 mb-3 pb-2 border-b border-slate-300">
                   Change Password
                 </h4>
                 <div className="space-y-3">
@@ -310,7 +358,7 @@ export default function ProfilePage({ onClose }) {
                       Clear
                     </button>
                   </div>
-                </div>
+                </div> */}
               </div>
             </div>
 
@@ -353,7 +401,7 @@ export default function ProfilePage({ onClose }) {
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-slate-700 mb-1">
-                        Mandal
+                        Mandal <span className="text-red-600">*</span>
                       </label>
                       <select
                         value={mandal}
@@ -375,7 +423,7 @@ export default function ProfilePage({ onClose }) {
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-slate-700 mb-1">
-                        Village
+                        Village <span className="text-red-600">*</span>
                       </label>
                       <select
                         value={village}
@@ -412,13 +460,13 @@ export default function ProfilePage({ onClose }) {
           </div>
 
           {/* Footer Actions */}
-          <div className="mt-6 pt-6 border-t border-slate-200 flex justify-between items-center">
-            <button 
+          <div className="mt-6 pt-6 border-t border-slate-200 flex justify-end">
+            {/* <button 
               onClick={deleteUser} 
               className="px-5 py-2 bg-red-700 hover:bg-red-800 text-white text-sm font-medium rounded transition-colors"
             >
               Delete Account
-            </button>
+            </button> */}
             <button 
               onClick={onClose} 
               className="px-6 py-2 bg-slate-700 hover:bg-slate-800 text-white text-sm font-medium rounded transition-colors"

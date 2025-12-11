@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
-import { Lock, Phone, MapPin, Users, ArrowRight, UserPlus, Home, Building } from 'lucide-react';
+import { Lock, MapPin, Users, ArrowRight, UserPlus, Home, Building, EyeClosed, Eye } from 'lucide-react';
 import { AUTH_API_BASE } from '../utils/apiConfig';
 
 const Register = () => {
@@ -9,6 +9,8 @@ const Register = () => {
     const [groupId, setGroupId] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
     // Location Fields
     const [districts, setDistricts] = useState([]);
@@ -288,7 +290,7 @@ const Register = () => {
     return (
         <div className="p-8">
             <div className="text-center mb-8">
-                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-indigo-100 text-indigo-600 mb-4">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-indigo-100 text-indigo-600 mb-4 animate-bounce">
                     <UserPlus size={32} />
                 </div>
                 <h2 className="text-3xl font-bold text-gray-900">Create Account</h2>
@@ -351,13 +353,20 @@ const Register = () => {
                                 <Lock size={18} className="text-gray-400" />
                             </div>
                             <input
-                                type="password"
+                                type={showPassword ? "text" : "password"}
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
                                 className="pl-10 block w-full border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm py-2.5 border"
                                 placeholder="New Password"
                                 required
                             />
+                            <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="absolute inset-y-0 right-0 px-3 text-gray-500"
+                            >
+                                {showPassword ? <Eye size={20} /> : <EyeClosed size={20} />}
+                            </button>
                         </div>
                     </div>
 
@@ -368,13 +377,20 @@ const Register = () => {
                                 <Lock size={18} className="text-gray-400" />
                             </div>
                             <input
-                                type="password"
+                                type={showConfirmPassword ? "text" : "password"}
                                 value={confirmPassword}
                                 onChange={(e) => setConfirmPassword(e.target.value)}
                                 className="pl-10 block w-full border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm py-2.5 border"
                                 placeholder="Confirm Password"
                                 required
                             />
+                            <button
+                                type="button"
+                                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                className="absolute inset-y-0 right-0 px-3 text-gray-500"
+                            >
+                                {showConfirmPassword ? <Eye size={20} /> : <EyeClosed size={20} />}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -479,6 +495,16 @@ const Register = () => {
                     </button>
                 </div>
             </form>
+
+            <div className="mt-6 text-center text-sm text-gray-600">
+                Already have an account?{' '}
+                <Link
+                    to="/login"
+                    className="font-semibold text-indigo-600 hover:text-indigo-700 transition-colors duration-200"
+                >
+                    Sign in
+                </Link>
+            </div>
         </div>
     );
 };

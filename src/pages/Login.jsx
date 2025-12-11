@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
-import { Lock, Phone, ArrowRight, Activity } from 'lucide-react';
+import { Lock, Phone, ArrowRight, Activity, EyeClosed, Eye } from 'lucide-react';
 import { AUTH_API_BASE } from '../utils/apiConfig';
 
 const Login = () => {
@@ -9,6 +9,7 @@ const Login = () => {
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+        const [showPassword, setShowPassword] = useState(false);
     const navigate = useNavigate();
 
     const handleLogin = async (e) => {
@@ -49,8 +50,8 @@ const Login = () => {
     };
 
     return (
-        <div className="max-w-md mx-auto p-8">
-            <div className="text-center mb-10">
+        <div className="max-w-lg mx-auto p-8">
+            <div className="text-center mb-10 w-full">
                 <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-indigo-100 text-indigo-600 mb-4 animate-bounce">
                     <Activity size={32} />
                 </div>
@@ -64,7 +65,7 @@ const Login = () => {
                 </div>
             )}
 
-            <form onSubmit={handleLogin} className="space-y-6">
+            <form onSubmit={handleLogin} className="space-y-6 w-full">
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Mobile Number</label>
                     <div className="relative">
@@ -93,13 +94,20 @@ const Login = () => {
                             <Lock size={18} className="text-gray-400" />
                         </div>
                         <input
-                            type="password"
+                            type={showPassword ? "text" : "password"}
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             className="pl-10 block w-full border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm py-3 border"
                             placeholder="Password"
                             required
                         />
+                        <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute inset-y-0 right-0 px-3 text-gray-500"
+                        >
+                            {showPassword ? <Eye size={20} /> : <EyeClosed size={20} />}
+                        </button>
                     </div>
                 </div>
 
@@ -112,6 +120,16 @@ const Login = () => {
                     {!loading && <ArrowRight size={16} className="ml-2" />}
                 </button>
             </form>
+
+            <div className="mt-6 text-center text-sm text-gray-600 w-full">
+                Don't have an account?{' '}
+                <Link
+                    to="/register"
+                    className="font-semibold text-indigo-600 hover:text-indigo-700 transition-colors duration-200"
+                >
+                    Create an account
+                </Link>
+            </div>
         </div>
     );
 };

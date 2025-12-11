@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Download, Eye, FileText, Table2, CheckCircle, AlertCircle, X, Upload, MapPin, RotateCw, RotateCcw, CheckSquare, ZoomIn, ZoomOut, BarChart3, TrendingUp, Camera, LogOut } from 'lucide-react';
+import { Eye, FileText, Table2, CheckCircle, AlertCircle, X, Upload, MapPin, RotateCw, RotateCcw, ZoomIn, ZoomOut, Camera, LogOut, CircleUserRound } from 'lucide-react';
 import ProfilePage from './ProfilePage';
 import DocumentHistory from './DocumentHistory';
 // import ConvertedResults from './ConvertedResults';
@@ -316,25 +316,33 @@ export default function EnhancedTableOCRSystem() {
   const [showCameraModal, setShowCameraModal] = useState(false);
   const [cameraError, setCameraError] = useState('');
   const [user, setUser] = useState(null);
-
-  useEffect(() => {
+  const [systemOnline, setSystemOnline] = useState(false);
+  // Helper: refresh user state from localStorage and sync location selectors
+  const refreshUserFromStorage = () => {
     const now = new Date();
     setSelectedMonth(String(now.getMonth() + 1).padStart(2, '0'));
-    setSelectedYear(now.getFullYear());
+    setSelectedYear(String(now.getFullYear()));
 
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
       try {
         const parsedUser = JSON.parse(storedUser);
         setUser(parsedUser);
-        // Set basic values if needed, though we use user object for display
+        // Sync selected location fields with stored user values
         if (parsedUser.district) setSelectedDistrict(parsedUser.district);
         if (parsedUser.mandal) setSelectedMandal(parsedUser.mandal);
         if (parsedUser.village) setSelectedVillage(parsedUser.village);
       } catch (e) {
-        console.error("Failed to parse user data", e);
+        console.error('Failed to parse user data', e);
+        setUser(null);
       }
+    } else {
+      setUser(null);
     }
+  };
+
+  useEffect(() => {
+    refreshUserFromStorage();
   }, []);
 
   const fileInputRef = useRef(null);
@@ -366,6 +374,15 @@ export default function EnhancedTableOCRSystem() {
   useEffect(() => {
     localStorage.removeItem(STORAGE_KEY_RESULTS);
     localStorage.removeItem(STORAGE_KEY_FAILED);
+  }, []);
+
+  useEffect(() => {
+    const fetchStatus = async () => {
+      const isOnline = await checkBackendConnection();
+      setSystemOnline(isOnline);
+    };
+
+    fetchStatus();
   }, []);
 
   // Processing timer - track how long current request has been running
@@ -1371,6 +1388,30 @@ export default function EnhancedTableOCRSystem() {
     }
   };
 
+  const handleLogOut = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (token) {
+        await fetch(`${API_BASE}/api/logout`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+      }
+    } catch (err) {
+      console.error('Logout error:', err);
+    } finally {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      setTimeout(() => {
+        const basePath = import.meta.env.BASE_URL || '/';
+        window.location.href = basePath + '#/login';
+      }, 100); // small delay ensures fetch completes
+    }
+  };
+
   const exportAsCSV = (result) => {
     const csvContent = result.csvData || '';
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -1416,7 +1457,7 @@ export default function EnhancedTableOCRSystem() {
   };
 
   return (
-    <div className="fixed inset-0 bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 overflow-hidden">
+    <div className="fixed inset-0 bg-gradient-to-br from-indigo-900 via-blue-900 to-blue-700 overflow-hidden">
       <div className="h-full overflow-y-auto">
         <div className="max-w-7xl mx-auto p-4 lg:p-6">
           {/* Header */}
@@ -1430,111 +1471,102 @@ export default function EnhancedTableOCRSystem() {
           </div>
 
           {/* Main Header */}
-          <div className="bg-white/10 backdrop-blur-lg rounded-3xl p-6 lg:p-8 mb-6 shadow-2xl border border-white/20">
-            <div className="flex items-center justify-between gap-4 mb-6">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 lg:w-14 lg:h-14 bg-gradient-to-br from-yellow-400 to-orange-600 rounded-xl flex items-center justify-center shadow-lg">
-                  <Table2 size={28} className="text-white" />
+          <div className="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/30 mb-8 overflow-hidden">
+            <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-t-2xl p-6">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center shadow-lg border border-white/30">
+                    <Table2 size={32} className="text-white" />
+                  </div>
+                  <div>
+                    <h1 className="text-2xl lg:text-3xl font-bold text-white tracking-tight">
+                      SHG Data Digitalization Portal
+                    </h1>
+                    <p className="text-blue-100 text-sm mt-1">Secure Document Processing System</p>
+                  </div>
                 </div>
-                <div>
-                  <h1 className="text-xl lg:text-2xl font-extrabold text-white mb-2">
-                    Digitalizing SHG Data
-                  </h1>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setActiveTab('profile')}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white rounded-xl font-semibold transition-all shadow-lg border border-white/30"
+                  >
+                    <CircleUserRound size={20}/>
+                    <span className="hidden sm:inline">Profile</span>
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('documents')}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white rounded-xl font-semibold transition-all shadow-lg border border-white/30"
+                  >
+                    <FileText size={20} />
+                    <span className="hidden sm:inline">Document History</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleLogOut();
+                    }}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-red-500/90 hover:bg-red-600 text-white rounded-xl font-semibold transition-all shadow-lg"
+                  >
+                    <LogOut size={20} />
+                    <span className="hidden sm:inline">Logout</span>
+                  </button>
                 </div>
-              </div>
-              <div className="flex items-center">
-                <button
-                  onClick={() => setActiveTab('profile')}
-                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold transition-colors shadow-lg mr-2"
-                >
-                  <span className="hidden sm:inline">Profile</span>
-                </button>
-                <button
-                  onClick={() => setActiveTab('documents')}
-                  className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold transition-colors shadow-lg mr-2"
-                >
-                  <FileText size={20} />
-                  <span className="hidden sm:inline">Documents</span>
-                </button>
-                <button
-                  onClick={async () => {
-                    try {
-                      const token = localStorage.getItem('token');
-                      if (token) {
-                        // Call logout endpoint
-                        await fetch(`${API_BASE}/api/logout`, {
-                          method: 'POST',
-                          headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Content-Type': 'application/json'
-                          }
-                        });
-                      }
-                    } catch (err) {
-                      console.error('Logout error:', err);
-                    } finally {
-                      // Always clear local storage and redirect
-                      localStorage.removeItem('token');
-                      localStorage.removeItem('user');
-                      // Get base path from vite config
-                      const basePath = import.meta.env.BASE_URL || '/';
-                      window.location.href = basePath + '#/login';
-                    }
-                  }}
-                  className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold transition-colors shadow-lg"
-                >
-                  <LogOut size={20} />
-                  <span className="hidden sm:inline">Logout</span>
-                </button>
               </div>
             </div>
-
-            {/* Tab Navigation */}
-            {/* Tab Navigation Removed - Only Import Process Available */}
-            <div className="flex gap-2 flex-wrap mb-2">
-              <span className="text-white/80 text-sm font-semibold tracking-wide">
-                Import Process Active
-              </span>
+            
+            {/* Status Bar */}
+            <div className="px-6 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-t border-gray-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sm">
+                  <div
+                    className={`w-2 h-2 rounded-full animate-pulse ${
+                      systemOnline ? "bg-green-500" : "bg-red-500"
+                    }`}
+                  ></div>
+                  <span className="text-gray-700 font-medium">
+                    {systemOnline ? "System Online" : "System Offline"}
+                  </span>
+                </div>
+                <span className="text-xs text-gray-500 font-medium">Import Process Active</span>
+              </div>
             </div>
           </div>
-
 
           {/* Upload Tab */}
           {/* Upload Tab Content - Always Visible */}
           {activeTab === 'profile' && (
-            <ProfilePage onClose={() => setActiveTab('upload')} />
+            <ProfilePage onClose={() => setActiveTab('upload')} onUserUpdate={refreshUserFromStorage} user={user} />
           )}
           {activeTab === 'documents' && (
             <DocumentHistory onClose={() => setActiveTab('upload')} />
           )}
           {(
             <>
-              {/* Location Selection */}
-              <div className="bg-gradient-to-br from-red-50 to-orange-50 rounded-2xl p-6 border-2 border-red-300 mb-6 shadow-lg">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-12 h-12 bg-gradient-to-br from-red-500 to-orange-500 rounded-xl flex items-center justify-center shadow-md">
-                    <MapPin size={28} className="text-white" />
-                  </div>
-                  <div>
-                    <h3 className="text-xl lg:text-2xl font-bold text-red-900">Location Information</h3>
-                    <p className="text-sm text-red-700">Your assigned District, Mandal, and Village.</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="bg-white p-4 rounded-xl border border-red-200 shadow-sm">
-                    <p className="text-xs text-red-600 font-semibold">District</p>
-                    <p className="text-lg font-bold text-gray-900">{user?.district}</p>
-                  </div>
-
-                  <div className="bg-white p-4 rounded-xl border border-red-200 shadow-sm">
-                    <p className="text-xs text-red-600 font-semibold">Mandal</p>
-                    <p className="text-lg font-bold text-gray-900">{user?.mandal}</p>
-                  </div>
-
-                  <div className="bg-white p-4 rounded-xl border border-red-200 shadow-sm">
-                    <p className="text-xs text-red-600 font-semibold">Village</p>
-                    <p className="text-lg font-bold text-gray-900">{user?.village}</p>
+              {/* Location Information Card */}
+              <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl shadow-xl border border-white-400 mb-8 p-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="w-14 h-14 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center shadow-lg border border-white/30">
+                      <MapPin size={30} className="text-white" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-blue-100 uppercase tracking-wider">Operational Area</h3>
+                      <div className="flex items-center gap-3 mt-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-white/80 text-sm font-medium">District:</span>
+                          <span className="text-white text-lg font-bold">{user?.district}</span>
+                        </div>
+                        <div className="w-1 h-6 bg-white/30"></div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-white/80 text-sm font-medium">Mandal:</span>
+                          <span className="text-white text-lg font-bold">{user?.mandal}</span>
+                        </div>
+                        <div className="w-1 h-6 bg-white/30"></div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-white/80 text-sm font-medium">Village:</span>
+                          <span className="text-white text-lg font-bold">{user?.village}</span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1600,7 +1632,7 @@ export default function EnhancedTableOCRSystem() {
                 </div>
 
                 {/* File Upload Section */}
-                <div className="lg:col-span-2 bg-white rounded-3xl shadow-2xl p-6 lg:p-8">
+                <div className="lg:col-span-2 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-3xl border-2 border-blue-300 shadow-lg p-6 lg:p-8">
                   <h2 className="text-2xl lg:text-3xl font-bold text-gray-800 flex items-center gap-2 mb-2">
                     <Upload size={32} className="text-indigo-600" />
                     Import Files
