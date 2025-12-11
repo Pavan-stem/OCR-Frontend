@@ -28,6 +28,10 @@ export default function ProfilePage({ onClose, onUserUpdate }) {
         setDistrict(parsed.district || '');
         setMandal(parsed.mandal || '');
         setVillage(parsed.village || '');
+        // If username is not present but name exists, set username for display
+        if (!parsed.username && parsed.name) {
+          parsed.username = parsed.name;
+        }
       } catch (e) {
         console.error('Error parsing user:', e);
       }
@@ -296,6 +300,12 @@ export default function ProfilePage({ onClose, onUserUpdate }) {
                   Account Information
                 </h3>
                 <div className="space-y-3 mb-6">
+                  <div className="bg-white p-3 rounded border border-slate-200">
+                    <p className="text-xs text-slate-600 uppercase tracking-wide mb-1">Username</p>
+                    <p className="text-base font-semibold text-slate-900">
+                      {user?.username || user?.name || 'Not set'}
+                    </p>
+                  </div>
                   <div className="bg-white p-3 rounded border border-slate-200">
                     <p className="text-xs text-slate-600 uppercase tracking-wide mb-1">Mobile Number</p>
                     <p className="text-base font-semibold text-slate-900">

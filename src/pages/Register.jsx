@@ -6,6 +6,7 @@ import { AUTH_API_BASE } from '../utils/apiConfig';
 
 const Register = () => {
     const [phone, setPhone] = useState('');
+    const [username, setUsername] = useState('');
     const [groupId, setGroupId] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
@@ -205,7 +206,6 @@ const Register = () => {
         setLoading(true);
 
         // Validation
-        // Validation
         // Phone number validation: Must be 10 digits (we'll assume +91 is appended)
         const cleanPhone = phone.replace(/\D/g, '');
         if (cleanPhone.length !== 10) {
@@ -252,8 +252,8 @@ const Register = () => {
             return;
         }
 
-        if (!password || password.length < 6) {
-            setError('Password must be at least 6 characters.');
+        if (!password || password.length < 4) {
+            setError('Password must be at least 4 characters.');
             setLoading(false);
             return;
         }
@@ -267,6 +267,7 @@ const Register = () => {
         try {
             const response = await axios.post(`${AUTH_API_BASE}/api/register`, {
                 phone: formattedPhone, // Send formatted phone with +91
+                username: username || '',
                 groupId,
                 password,
                 district: selectedDistrict,
@@ -308,6 +309,22 @@ const Register = () => {
                 {/* Left Column: Personal & Group Info */}
                 <div className="space-y-6">
                     <h3 className="text-lg font-semibold text-gray-700 border-b pb-2">Account Details</h3>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                        <div className="relative">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <UserPlus size={18} className="text-gray-400" />
+                            </div>
+                            <input
+                                type="text"
+                                value={username}
+                                onChange={(e) => setUsername(e.target.value)}
+                                className="pl-10 block w-full border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm py-2.5 border"
+                                placeholder="Full name (optional)"
+                            />
+                        </div>
+                    </div>
 
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Mobile Number</label>
