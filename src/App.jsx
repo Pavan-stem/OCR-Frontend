@@ -1565,6 +1565,11 @@ export default function EnhancedTableOCRSystem() {
                           <span className="text-white/80 text-sm font-medium">Village:</span>
                           <span className="text-white text-lg font-bold">{user?.village}</span>
                         </div>
+                        <div className="w-1 h-6 bg-white/30"></div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-white/80 text-sm font-medium">Panchayat:</span>
+                          <span className="text-white text-lg font-bold">{user?.panchayat}</span>
+                        </div>
                       </div>
                     </div>
                   </div>

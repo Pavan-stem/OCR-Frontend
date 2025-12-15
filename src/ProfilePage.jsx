@@ -11,10 +11,11 @@ export default function ProfilePage({ onClose, onUserUpdate }) {
   const [district, setDistrict] = useState('');
   const [mandal, setMandal] = useState('');
   const [village, setVillage] = useState('');
+  const [panchayat, setPanchayat] = useState('');
 
-  const [oldPassword, setOldPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  // const [oldPassword, setOldPassword] = useState('');
+  // const [newPassword, setNewPassword] = useState('');
+  // const [confirmPassword, setConfirmPassword] = useState('');
 
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -28,6 +29,7 @@ export default function ProfilePage({ onClose, onUserUpdate }) {
         setDistrict(parsed.district || '');
         setMandal(parsed.mandal || '');
         setVillage(parsed.village || '');
+        setPanchayat(parsed.panchayat || '');
         // If username is not present but name exists, set username for display
         if (!parsed.username && parsed.name) {
           parsed.username = parsed.name;
@@ -179,11 +181,11 @@ export default function ProfilePage({ onClose, onUserUpdate }) {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
-        body: JSON.stringify({ district, mandal, village })
+        body: JSON.stringify({ district, mandal, village, panchayat })
       });
       if (!resp.ok) throw new Error('Failed to update location');
       const updated = await resp.json();
-      const newUser = { ...(user || {}), district, mandal, village, ...updated };
+      const newUser = { ...(user || {}), district, mandal, village, panchayat, ...updated };
       setUser(newUser);
       localStorage.setItem('user', JSON.stringify(newUser));
       // Inform parent to refresh its user / location state
@@ -197,65 +199,65 @@ export default function ProfilePage({ onClose, onUserUpdate }) {
     }
   }
 
-  async function changePassword() {
-    setMessage('');
-    setError('');
-    if (!oldPassword || !newPassword) {
-      setError('Please fill all password fields');
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setError('New passwords do not match');
-      return;
-    }
-    if (newPassword.length < 6) {
-      setError('Password must be at least 6 characters');
-      return;
-    }
+  // async function changePassword() {
+  //   setMessage('');
+  //   setError('');
+  //   if (!oldPassword || !newPassword) {
+  //     setError('Please fill all password fields');
+  //     return;
+  //   }
+  //   if (newPassword !== confirmPassword) {
+  //     setError('New passwords do not match');
+  //     return;
+  //   }
+  //   if (newPassword.length < 6) {
+  //     setError('Password must be at least 6 characters');
+  //     return;
+  //   }
     
-    try {
-      const token = localStorage.getItem('token');
-      const resp = await fetch(`${API_BASE}/api/user/change-password`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        body: JSON.stringify({ old_password: oldPassword, new_password: newPassword })
-      });
-      if (!resp.ok) {
-        const txt = await resp.text();
-        throw new Error(txt || 'Password change failed');
-      }
-      setOldPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-      setMessage('Password changed successfully');
-      setTimeout(() => setMessage(''), 3000);
-    } catch (e) {
-      setError(e.message || 'Change failed');
-    }
-  }
+  //   try {
+  //     const token = localStorage.getItem('token');
+  //     const resp = await fetch(`${API_BASE}/api/user/change-password`, {
+  //       method: 'POST',
+  //       headers: {
+  //         'Content-Type': 'application/json',
+  //         ...(token ? { Authorization: `Bearer ${token}` } : {})
+  //       },
+  //       body: JSON.stringify({ old_password: oldPassword, new_password: newPassword })
+  //     });
+  //     if (!resp.ok) {
+  //       const txt = await resp.text();
+  //       throw new Error(txt || 'Password change failed');
+  //     }
+  //     setOldPassword('');
+  //     setNewPassword('');
+  //     setConfirmPassword('');
+  //     setMessage('Password changed successfully');
+  //     setTimeout(() => setMessage(''), 3000);
+  //   } catch (e) {
+  //     setError(e.message || 'Change failed');
+  //   }
+  // }
 
-  async function deleteUser() {
-    const ok = window.confirm('Are you sure you want to delete your account? This action cannot be undone.');
-    if (!ok) return;
-    try {
-      const token = localStorage.getItem('token');
-      const resp = await fetch(`${API_BASE}/api/user/delete`, {
-        method: 'DELETE',
-        headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        }
-      });
-      if (!resp.ok) throw new Error('Delete failed');
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
-    } catch (e) {
-      setError(e.message || 'Delete failed');
-    }
-  }
+  // async function deleteUser() {
+  //   const ok = window.confirm('Are you sure you want to delete your account? This action cannot be undone.');
+  //   if (!ok) return;
+  //   try {
+  //     const token = localStorage.getItem('token');
+  //     const resp = await fetch(`${API_BASE}/api/user/delete`, {
+  //       method: 'DELETE',
+  //       headers: {
+  //         ...(token ? { Authorization: `Bearer ${token}` } : {})
+  //       }
+  //     });
+  //     if (!resp.ok) throw new Error('Delete failed');
+  //     localStorage.removeItem('token');
+  //     localStorage.removeItem('user');
+  //     window.location.href = '/login';
+  //   } catch (e) {
+  //     setError(e.message || 'Delete failed');
+  //   }
+  // }
 
   return (
     <div className="fixed inset-0 z-40 flex items-start justify-center p-4 bg-slate-900/80 backdrop-blur-sm overflow-auto min-h-screen">
@@ -384,6 +386,7 @@ export default function ProfilePage({ onClose, onUserUpdate }) {
                     {user?.district || 'Not set'} 
                     {user?.mandal && ` - ${user.mandal}`}
                     {user?.village && ` - ${user.village}`}
+                    {user?.panchayat && ` - ${user.panchayat}`}
                   </p>
                 </div>
                 <div>
@@ -448,6 +451,12 @@ export default function ProfilePage({ onClose, onUserUpdate }) {
                           </option>
                         ))}
                       </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-700 mb-1">
+                        panchayat
+                      </label>
+                      <input type="text" value={panchayat} onChange={(e) => setPanchayat(e.target.value)} className='w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white' />
                     </div>
                   </div>
                   <div className="flex gap-2 mb-6">
