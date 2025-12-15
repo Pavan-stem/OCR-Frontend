@@ -25,8 +25,8 @@ export const translations = {
 
         // Header & Navigation
         header: {
-            dashboard: 'SHG OCR Dashboard',
-            subtitle: 'Government of India | Digital SHG Initiative',
+            dashboard: 'MMD OCR Dashboard',
+            subtitle: 'Andhra Pradesh Government | Digital SHG Initiative',
             profile: 'Profile',
             documentHistory: 'Document History',
             logout: 'Logout',
@@ -90,7 +90,7 @@ export const translations = {
         // Profile Page
         profile: {
             title: 'User Profile',
-            subtitle: 'Government of India | SHG Profile',
+            subtitle: 'Andhra Pradesh Government | MMD Profile',
             accountInformation: 'Account Information',
             username: 'Username',
             mobileNumber: 'Mobile Number',
@@ -190,8 +190,8 @@ export const translations = {
 
         // Header & Navigation - Telugu
         header: {
-            dashboard: 'SHG OCR డాష్‌బోర్డ్',
-            subtitle: 'భారత ప్రభుత్వం | డిజిటల్ SHG చొరవ',
+            dashboard: 'MMD OCR డాష్‌బోర్డ్',
+            subtitle: 'ఆంధ్రప్రదేశ్ ప్రభుత్వం | డిజిటల్ SHG చొరవ',
             profile: 'ప్రొఫైల్',
             documentHistory: 'డాక్యుమెంట్ చరిత్ర',
             logout: 'లాగ్అవుట్',
@@ -255,7 +255,7 @@ export const translations = {
         // Profile Page - Telugu
         profile: {
             title: 'వినియోగదారు ప్రొఫైల్',
-            subtitle: 'భారత ప్రభుత్వం | SHG ప్రొఫైల్',
+            subtitle: 'ఆంధ్రప్రదేశ్ ప్రభుత్వం | MMD ప్రొఫైల్',
             accountInformation: 'ఖాతా సమాచారం',
             username: 'వినియోగదారు పేరు',
             mobileNumber: 'మొబైల్ నంబర్',

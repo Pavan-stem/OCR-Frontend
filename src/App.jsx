@@ -1489,7 +1489,7 @@ export default function EnhancedTableOCRSystem() {
                       {t('header.subtitle')}
                     </p></div>
                 </div>
-                <div className="flex items-center gap-2 lg:gap-3">
+                <div className="flex items-center gap-2 lg:gap-3 flex-wrap justify-end">
                   <LanguageToggle />
                   <button
                     onClick={() => setActiveTab('profile')}
@@ -1554,22 +1554,22 @@ export default function EnhancedTableOCRSystem() {
                     </div>
                     <div>
                       <h3 className="text-sm font-semibold text-blue-100 uppercase tracking-wider">{t('location.operationalArea')}</h3>
-                      <div className="flex items-center gap-3 mt-2">
+                      <div className="flex items-center gap-3 mt-2 flex-wrap">
                         <div className="flex items-center gap-2">
                           <span className="text-white/80 text-sm font-medium">{t('location.district')}:</span>
                           <span className="text-white text-lg font-bold">{user?.district}</span>
                         </div>
-                        <div className="w-1 h-6 bg-white/30"></div>
+                        <div className="w-1 h-6 bg-white/30 hidden sm:block"></div>
                         <div className="flex items-center gap-2">
                           <span className="text-white/80 text-sm font-medium">{t('location.mandal')}:</span>
                           <span className="text-white text-lg font-bold">{user?.mandal}</span>
                         </div>
-                        <div className="w-1 h-6 bg-white/30"></div>
+                        <div className="w-1 h-6 bg-white/30 hidden sm:block"></div>
                         <div className="flex items-center gap-2">
                           <span className="text-white/80 text-sm font-medium">{t('location.village')}:</span>
                           <span className="text-white text-lg font-bold">{user?.village}</span>
                         </div>
-                        <div className="w-1 h-6 bg-white/30"></div>
+                        <div className="w-1 h-6 bg-white/30 hidden sm:block"></div>
                         <div className="flex items-center gap-2">
                           <span className="text-white/80 text-sm font-medium">{t('location.panchayat')}:</span>
                           <span className="text-white text-lg font-bold">{user?.panchayat}</span>

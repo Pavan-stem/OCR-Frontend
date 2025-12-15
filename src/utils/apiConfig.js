@@ -15,7 +15,7 @@ export const getApiBase = () => {
   // 2️⃣ Local development (React dev server)
   if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
     // Use HTTP for local backend (Flask dev server) to avoid SSL protocol errors
-    return "http://localhost:5002/OCR";
+    return "https://api.stemverse.app/OCR";
   }
 
   // 3️⃣ Production (deployed site)
@@ -29,7 +29,7 @@ export const getAuthApiBase = () => {
 
   if (typeof window !== "undefined" &&
     (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
-    return "http://localhost:5002/OCR";
+    return "https://api.stemverse.app/OCR";
   }
 
   return "https://api.stemverse.app/OCR";

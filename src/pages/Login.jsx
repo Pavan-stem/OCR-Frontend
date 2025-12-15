@@ -55,8 +55,8 @@ const Login = () => {
                 <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-indigo-100 text-indigo-600 mb-4 animate-bounce">
                     <Activity size={32} />
                 </div>
-                <h2 className="text-3xl font-extrabold text-gray-900">Welcome Back</h2>
-                <p className="text-gray-500 mt-2">Sign in to your SHG account</p>
+                <h2 className="text-3xl font-extrabold text-gray-900">Welcome</h2>
+                <p className="text-gray-500 mt-2">Sign in to your MMD account</p>
             </div>
 
             {error && (
