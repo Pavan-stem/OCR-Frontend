@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Eye, FileText, Table2, CheckCircle, AlertCircle, X, Upload, MapPin, RotateCw, RotateCcw, ZoomIn, ZoomOut, Camera, LogOut, CircleUserRound } from 'lucide-react';
 import ProfilePage from './ProfilePage';
 import DocumentHistory from './DocumentHistory';
+import LanguageToggle from './components/LanguageToggle';
+import { useLanguage } from './contexts/LanguageContext';
 // import ConvertedResults from './ConvertedResults';
 // import DataAnalytics from './DataAnalytics';
 // import FinancialAnalytics from './FinancialAnalytics';
@@ -281,6 +283,7 @@ const normalizeExtractionResponse = (responseData) => {
 };
 
 export default function EnhancedTableOCRSystem() {
+  const { t } = useLanguage();
   const [files, setFiles] = useState([]);
   const [processing, setProcessing] = useState(false);
   const [message, setMessage] = useState('');
@@ -1479,26 +1482,28 @@ export default function EnhancedTableOCRSystem() {
                     <Table2 size={32} className="text-white" />
                   </div>
                   <div>
-                    <h1 className="text-2xl lg:text-3xl font-bold text-white tracking-tight">
-                      SHG Data Digitalization Portal
+                    <h1 className="text-2xl lg:text-4xl font-extrabold text-white tracking-tight">
+                      {t('header.dashboard')}
                     </h1>
-                    <p className="text-blue-100 text-sm mt-1">Secure Document Processing System</p>
-                  </div>
+                    <p className="text-xs lg:text-sm text-blue-100 mt-1">
+                      {t('header.subtitle')}
+                    </p></div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 lg:gap-3">
+                  <LanguageToggle />
                   <button
                     onClick={() => setActiveTab('profile')}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white rounded-xl font-semibold transition-all shadow-lg border border-white/30"
+                    className="flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl font-semibold transition-all shadow-lg"
                   >
-                    <CircleUserRound size={20}/>
-                    <span className="hidden sm:inline">Profile</span>
+                    <CircleUserRound size={20} />
+                    <span className="hidden sm:inline">{t('header.profile')}</span>
                   </button>
                   <button
                     onClick={() => setActiveTab('documents')}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white rounded-xl font-semibold transition-all shadow-lg border border-white/30"
+                    className="flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl font-semibold transition-all shadow-lg"
                   >
                     <FileText size={20} />
-                    <span className="hidden sm:inline">Document History</span>
+                    <span className="hidden sm:inline">{t('header.documentHistory')}</span>
                   </button>
                   <button
                     onClick={() => {
@@ -1507,26 +1512,25 @@ export default function EnhancedTableOCRSystem() {
                     className="flex items-center gap-2 px-4 py-2.5 bg-red-500/90 hover:bg-red-600 text-white rounded-xl font-semibold transition-all shadow-lg"
                   >
                     <LogOut size={20} />
-                    <span className="hidden sm:inline">Logout</span>
+                    <span className="hidden sm:inline">{t('header.logout')}</span>
                   </button>
                 </div>
               </div>
             </div>
-            
+
             {/* Status Bar */}
             <div className="px-6 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-t border-gray-200">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-sm">
                   <div
-                    className={`w-2 h-2 rounded-full animate-pulse ${
-                      systemOnline ? "bg-green-500" : "bg-red-500"
-                    }`}
+                    className={`w-2 h-2 rounded-full animate-pulse ${systemOnline ? "bg-green-500" : "bg-red-500"
+                      }`}
                   ></div>
                   <span className="text-gray-700 font-medium">
-                    {systemOnline ? "System Online" : "System Offline"}
+                    {systemOnline ? t('header.systemOnline') : t('header.systemOffline')}
                   </span>
                 </div>
-                <span className="text-xs text-gray-500 font-medium">Import Process Active</span>
+                <span className="text-xs text-gray-500 font-medium">{t('header.importProcessActive')}</span>
               </div>
             </div>
           </div>
@@ -1549,25 +1553,25 @@ export default function EnhancedTableOCRSystem() {
                       <MapPin size={30} className="text-white" />
                     </div>
                     <div>
-                      <h3 className="text-sm font-semibold text-blue-100 uppercase tracking-wider">Operational Area</h3>
+                      <h3 className="text-sm font-semibold text-blue-100 uppercase tracking-wider">{t('location.operationalArea')}</h3>
                       <div className="flex items-center gap-3 mt-2">
                         <div className="flex items-center gap-2">
-                          <span className="text-white/80 text-sm font-medium">District:</span>
+                          <span className="text-white/80 text-sm font-medium">{t('location.district')}:</span>
                           <span className="text-white text-lg font-bold">{user?.district}</span>
                         </div>
                         <div className="w-1 h-6 bg-white/30"></div>
                         <div className="flex items-center gap-2">
-                          <span className="text-white/80 text-sm font-medium">Mandal:</span>
+                          <span className="text-white/80 text-sm font-medium">{t('location.mandal')}:</span>
                           <span className="text-white text-lg font-bold">{user?.mandal}</span>
                         </div>
                         <div className="w-1 h-6 bg-white/30"></div>
                         <div className="flex items-center gap-2">
-                          <span className="text-white/80 text-sm font-medium">Village:</span>
+                          <span className="text-white/80 text-sm font-medium">{t('location.village')}:</span>
                           <span className="text-white text-lg font-bold">{user?.village}</span>
                         </div>
                         <div className="w-1 h-6 bg-white/30"></div>
                         <div className="flex items-center gap-2">
-                          <span className="text-white/80 text-sm font-medium">Panchayat:</span>
+                          <span className="text-white/80 text-sm font-medium">{t('location.panchayat')}:</span>
                           <span className="text-white text-lg font-bold">{user?.panchayat}</span>
                         </div>
                       </div>
@@ -1586,46 +1590,46 @@ export default function EnhancedTableOCRSystem() {
                     </div>
                     <div>
                       <h3 className="text-lg lg:text-xl font-bold text-blue-900">
-                        Month & Year <span className="text-blue-600">*</span>
+                        {t('upload.monthAndYear')} <span className="text-blue-600">*</span>
                       </h3>
                     </div>
                   </div>
                   <div className="space-y-4">
                     <div>
                       <label className="block text-sm font-bold text-blue-900 mb-2">
-                        Month <span className="text-blue-600">*</span>
+                        {t('upload.month')} <span className="text-blue-600">*</span>
                       </label>
                       <select
                         value={selectedMonth}
                         onChange={(e) => setSelectedMonth(e.target.value)}
                         className="w-full px-4 py-3 border-2 border-blue-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white appearance-none cursor-pointer"
                       >
-                        <option value="">-- Select Month --</option>
-                        <option value="01">January</option>
-                        <option value="02">February</option>
-                        <option value="03">March</option>
-                        <option value="04">April</option>
-                        <option value="05">May</option>
-                        <option value="06">June</option>
-                        <option value="07">July</option>
-                        <option value="08">August</option>
-                        <option value="09">September</option>
-                        <option value="10">October</option>
-                        <option value="11">November</option>
-                        <option value="12">December</option>
+                        <option value="">{t('upload.selectMonth')}</option>
+                        <option value="01">{t('months.january')}</option>
+                        <option value="02">{t('months.february')}</option>
+                        <option value="03">{t('months.march')}</option>
+                        <option value="04">{t('months.april')}</option>
+                        <option value="05">{t('months.may')}</option>
+                        <option value="06">{t('months.june')}</option>
+                        <option value="07">{t('months.july')}</option>
+                        <option value="08">{t('months.august')}</option>
+                        <option value="09">{t('months.september')}</option>
+                        <option value="10">{t('months.october')}</option>
+                        <option value="11">{t('months.november')}</option>
+                        <option value="12">{t('months.december')}</option>
                       </select>
                     </div>
 
                     <div>
                       <label className="block text-sm font-bold text-blue-900 mb-2">
-                        Year <span className="text-blue-600">*</span>
+                        {t('upload.year')} <span className="text-blue-600">*</span>
                       </label>
                       <select
                         value={selectedYear}
                         onChange={(e) => setSelectedYear(e.target.value)}
                         className="w-full px-4 py-3 border-2 border-blue-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white appearance-none cursor-pointer"
                       >
-                        <option value="">-- Select Year --</option>
+                        <option value="">{t('upload.selectYear')}</option>
                         {Array.from({ length: 10 }, (_, i) => {
                           const year = new Date().getFullYear() - i;
                           return <option key={year} value={year}>{year}</option>;
@@ -1640,25 +1644,25 @@ export default function EnhancedTableOCRSystem() {
                 <div className="lg:col-span-2 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-3xl border-2 border-blue-300 shadow-lg p-6 lg:p-8">
                   <h2 className="text-2xl lg:text-3xl font-bold text-gray-800 flex items-center gap-2 mb-2">
                     <Upload size={32} className="text-indigo-600" />
-                    Import Files
+                    {t('upload.importFiles')}
                   </h2>
                   <p className="text-xs text-gray-500 mb-4">
-                    Upload clear photos or PDFs of the SHG tables. For best results, avoid blur, shadows, and cut-off edges.
+                    {t('upload.uploadInstructions')}
                   </p>
 
                   {files.length > 0 && (
                     <div className="grid grid-cols-3 gap-4 mb-6">
                       <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-3 text-center">
                         <div className="text-2xl font-bold text-blue-800">{uploadStats.total}</div>
-                        <div className="text-xs text-blue-600 font-semibold">Total Files</div>
+                        <div className="text-xs text-blue-600 font-semibold">{t('upload.totalFiles')}</div>
                       </div>
                       <div className="bg-green-50 border-2 border-green-300 rounded-lg p-3 text-center">
                         <div className="text-2xl font-bold text-green-800">{uploadStats.validated}</div>
-                        <div className="text-xs text-green-600 font-semibold">Validated</div>
+                        <div className="text-xs text-green-600 font-semibold">{t('upload.validated')}</div>
                       </div>
                       <div className="bg-orange-50 border-2 border-orange-300 rounded-lg p-3 text-center">
                         <div className="text-2xl font-bold text-orange-800">{uploadStats.pending}</div>
-                        <div className="text-xs text-orange-600 font-semibold">Pending</div>
+                        <div className="text-xs text-orange-600 font-semibold">{t('upload.pending')}</div>
                       </div>
                     </div>
                   )}
@@ -1672,10 +1676,10 @@ export default function EnhancedTableOCRSystem() {
                     <div className="text-center">
                       <Upload size={64} className="mx-auto text-indigo-600 mb-4" />
                       <p className="text-xl font-bold text-gray-800 mb-2">
-                        Drop files here or click to upload
+                        {t('upload.dropFilesHere')}
                       </p>
                       <p className="text-sm text-gray-600">
-                        Supports: Images (PNG, JPG, JPEG, TIFF, BMP, WEBP) and PDF files
+                        {t('upload.supportedFormats')}
                       </p>
                     </div>
                     <input
@@ -1709,14 +1713,14 @@ export default function EnhancedTableOCRSystem() {
                         className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-all font-semibold flex items-center gap-2 shadow-md"
                       >
                         <CheckCircle size={20} />
-                        Validate All Documents
+                        {t('upload.validateAllDocuments')}
                       </button>
                     </div>
                   )}
 
                   {files.length > 0 && (
                     <div className="mt-6 space-y-3">
-                      <h3 className="text-lg font-bold text-gray-800">Selected Files ({files.length})</h3>
+                      <h3 className="text-lg font-bold text-gray-800">{t('upload.selectedFiles')} ({files.length})</h3>
                       {files.map(fileObj => (
                         <div key={fileObj.id} className="bg-gray-50 border-2 border-gray-300 rounded-lg p-4 flex items-center gap-4">
                           <FileText size={32} className="text-indigo-600 flex-shrink-0" />
@@ -1728,14 +1732,14 @@ export default function EnhancedTableOCRSystem() {
                             {fileObj.validated ? (
                               <span className="px-3 py-1 bg-green-500 text-white text-xs rounded-full font-bold flex items-center gap-1">
                                 <CheckCircle size={14} />
-                                Validated
+                                {t('upload.validated')}
                               </span>
                             ) : (
                               <button
                                 onClick={() => validateFile(fileObj.id)}
                                 className="px-3 py-1 bg-yellow-500 hover:bg-yellow-600 text-white text-xs rounded-full font-bold"
                               >
-                                Validate
+                                {t('upload.validate')}
                               </button>
                             )}
                             <button
@@ -1767,7 +1771,7 @@ export default function EnhancedTableOCRSystem() {
 
                   {processing && (
                     <div className="mt-4 text-center text-sm text-gray-500 font-semibold">
-                      Time Elapsed:{' '}
+                      {t('upload.timeElapsed')}:{' '}
                       {String(Math.floor(elapsedSeconds / 60)).padStart(2, '0')}
                       :
                       {String(elapsedSeconds % 60).padStart(2, '0')}
@@ -1789,7 +1793,7 @@ export default function EnhancedTableOCRSystem() {
                         <>
                           <Table2 size={24} />
                           <Upload size={24} />
-                          Upload Files
+                          {t('upload.uploadFiles')}
                         </>
                       )}
                     </button>

@@ -1,8 +1,10 @@
 import { API_BASE } from './utils/apiConfig';
 import React, { useEffect, useState } from 'react';
 import { X, FileText, CheckCircle, XCircle, Clock, Eye } from 'lucide-react';
+import { useLanguage } from './contexts/LanguageContext';
 
 export default function DocumentHistory({ onClose }) {
+  const { t } = useLanguage();
   const [uploads, setUploads] = useState([]);
   const [selectedDocument, setSelectedDocument] = useState(null);
   const [imageError, setImageError] = useState(false);
@@ -32,15 +34,15 @@ export default function DocumentHistory({ onClose }) {
       const parsed = raw ? JSON.parse(raw) : [];
       const parsedFailed = failed ? JSON.parse(failed) : [];
       const merged = [];
-      parsed.forEach((r) => merged.push({ 
-        filename: r.filename || r.file || 'unknown', 
+      parsed.forEach((r) => merged.push({
+        filename: r.filename || r.file || 'unknown',
         date: r.date || r.uploaded_at || r.created_at || new Date().toISOString(),
         status: 'success'
       }));
-      parsedFailed.forEach((r) => merged.push({ 
-        filename: r.filename || r.file || 'unknown', 
-        date: r.date || r.uploaded_at || r.created_at || new Date().toISOString(), 
-        status: 'failed' 
+      parsedFailed.forEach((r) => merged.push({
+        filename: r.filename || r.file || 'unknown',
+        date: r.date || r.uploaded_at || r.created_at || new Date().toISOString(),
+        status: 'failed'
       }));
       setUploads(merged);
     } catch (e) {
@@ -52,7 +54,7 @@ export default function DocumentHistory({ onClose }) {
     setImageError(false);
     // Normalize URL into a single field for convenience
     const url = upload.url || upload.s3Url || upload.metadata?.s3Url || upload.metadata?.url || upload.url;
-    
+
     // If no direct URL (private S3 object), attempt to fetch a presigned URL from backend
     if (!url && upload._id) {
       try {
@@ -94,11 +96,11 @@ export default function DocumentHistory({ onClose }) {
         <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-4 rounded-t-lg">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-2xl font-bold">Document Upload History</h2>
-              <p className="text-blue-100 text-sm mt-1">View your uploaded documents</p>
+              <h2 className="text-2xl font-bold">{t('documentHistory.title')}</h2>
+              <p className="text-blue-100 text-sm mt-1">{t('documentHistory.subtitle')}</p>
             </div>
-            <button 
-              onClick={onClose} 
+            <button
+              onClick={onClose}
               className="p-2 rounded-lg hover:bg-white/10 transition-colors"
               aria-label="Close"
             >
@@ -114,13 +116,13 @@ export default function DocumentHistory({ onClose }) {
                 <thead className="bg-slate-100 sticky top-0">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider border-b border-slate-200">
-                      Document
+                      {t('documentHistory.document')}
                     </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase tracking-wider border-b border-slate-200">
-                      Date
+                      {t('documentHistory.date')}
                     </th>
                     <th className="px-4 py-3 text-center text-xs font-semibold text-slate-700 uppercase tracking-wider border-b border-slate-200">
-                      Action
+                      {t('documentHistory.action')}
                     </th>
                   </tr>
                 </thead>
@@ -129,7 +131,7 @@ export default function DocumentHistory({ onClose }) {
                     <tr>
                       <td className="px-4 py-8 text-center text-slate-500" colSpan={4}>
                         <FileText className="w-12 h-12 mx-auto mb-2 text-slate-300" />
-                        <p>No documents uploaded yet</p>
+                        <p>{t('documentHistory.noDocuments')}</p>
                       </td>
                     </tr>
                   )}
@@ -145,12 +147,12 @@ export default function DocumentHistory({ onClose }) {
                         {u.date ? new Date(u.date).toLocaleDateString('en-IN') : 'N/A'}
                       </td>
                       <td className="px-4 py-3 text-center">
-                        <button 
+                        <button
                           onClick={() => viewDocument(u)}
                           className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium text-blue-700 hover:text-blue-900 hover:bg-blue-50 rounded transition-colors"
                         >
                           <Eye className="w-3 h-3" />
-                          View
+                          {t('documentHistory.action')}
                         </button>
                       </td>
                     </tr>
@@ -171,8 +173,8 @@ export default function DocumentHistory({ onClose }) {
                       {selectedDocument.date ? new Date(selectedDocument.date).toLocaleDateString('en-IN') : 'N/A'}
                     </p>
                   </div>
-                  <button 
-                    onClick={() => setSelectedDocument(null)} 
+                  <button
+                    onClick={() => setSelectedDocument(null)}
                     className="p-2 rounded-lg hover:bg-white/10 transition-colors"
                   >
                     <X className="w-5 h-5" />
@@ -183,12 +185,12 @@ export default function DocumentHistory({ onClose }) {
                     <>
                       {imageError ? (
                         <div className="text-center text-slate-500 py-8">
-                          <p>Unable to load image</p>
+                          <p>{t('documentHistory.unableToLoadImage')}</p>
                         </div>
                       ) : (
                         <div className="flex items-start justify-center min-h-full">
-                          <img 
-                            src={selectedDocument.url} 
+                          <img
+                            src={selectedDocument.url}
                             alt={selectedDocument.filename}
                             onError={() => setImageError(true)}
                             className="max-w-full h-auto border border-slate-300 rounded shadow-lg"
@@ -198,16 +200,16 @@ export default function DocumentHistory({ onClose }) {
                     </>
                   ) : (
                     <div className="text-center text-slate-500 py-8">
-                      <p>No image URL available</p>
+                      <p>{t('documentHistory.noImageAvailable')}</p>
                     </div>
                   )}
                 </div>
                 <div className="bg-slate-100 px-6 py-3 flex justify-end flex-shrink-0">
-                  <button 
+                  <button
                     onClick={() => setSelectedDocument(null)}
                     className="px-5 py-2 bg-slate-700 hover:bg-slate-800 text-white text-sm font-medium rounded transition-colors"
                   >
-                    Close
+                    {t('common.close')}
                   </button>
                 </div>
               </div>
@@ -216,11 +218,11 @@ export default function DocumentHistory({ onClose }) {
 
           {/* Footer */}
           <div className="mt-6 pt-6 border-t border-slate-200 flex justify-end">
-            <button 
-              onClick={onClose} 
+            <button
+              onClick={onClose}
               className="px-6 py-2 bg-slate-700 hover:bg-slate-800 text-white text-sm font-medium rounded transition-colors"
             >
-              Close
+              {t('common.close')}
             </button>
           </div>
         </div>

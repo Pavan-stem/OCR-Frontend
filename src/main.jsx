@@ -1,7 +1,8 @@
-import React from "react";
+import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import AppRoutes from "./AppRoutes";
-import "./styles.css";
+import "./index.css";
+import { LanguageProvider } from './contexts/LanguageContext';
 
 // Unregister any service workers that might interfere with API calls
 if ('serviceWorker' in navigator) {
@@ -22,4 +23,10 @@ if ('serviceWorker' in navigator) {
 }
 
 const root = createRoot(document.getElementById("root"));
-root.render(<AppRoutes />);
+root.render(
+  <StrictMode>
+    <LanguageProvider>
+      <AppRoutes />
+    </LanguageProvider>
+  </StrictMode>
+);

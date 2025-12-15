@@ -1,8 +1,10 @@
 import { API_BASE } from './utils/apiConfig';
 import React, { useEffect, useState } from 'react';
-import { X, CheckCircle, XCircle} from 'lucide-react';
+import { X, CheckCircle, XCircle } from 'lucide-react';
+import { useLanguage } from './contexts/LanguageContext';
 
 export default function ProfilePage({ onClose, onUserUpdate }) {
+  const { t } = useLanguage();
   const [user, setUser] = useState(null);
   const [districts, setDistricts] = useState([]);
   const [mandals, setMandals] = useState([]);
@@ -51,15 +53,15 @@ export default function ProfilePage({ onClose, onUserUpdate }) {
                 setMandal(parsed.mandal);
                 loadVillages(parsed.district, parsed.mandal).then(() => {
                   if (parsed.village) setVillage(parsed.village);
-                }).catch(() => {});
+                }).catch(() => { });
               }
-            }).catch(() => {});
+            }).catch(() => { });
           }
         }
       } catch (e) {
         // ignore
       }
-    }).catch(() => {});
+    }).catch(() => { });
   }, []);
 
   async function loadLocations() {
@@ -167,12 +169,12 @@ export default function ProfilePage({ onClose, onUserUpdate }) {
   async function updateLocation() {
     setMessage('');
     setError('');
-    
+
     if (!district) {
       setError('Please select a district');
       return;
     }
-    
+
     try {
       const token = localStorage.getItem('token');
       const resp = await fetch(`${API_BASE}/api/user/location`, {
@@ -214,7 +216,7 @@ export default function ProfilePage({ onClose, onUserUpdate }) {
   //     setError('Password must be at least 6 characters');
   //     return;
   //   }
-    
+
   //   try {
   //     const token = localStorage.getItem('token');
   //     const resp = await fetch(`${API_BASE}/api/user/change-password`, {
@@ -261,16 +263,16 @@ export default function ProfilePage({ onClose, onUserUpdate }) {
 
   return (
     <div className="fixed inset-0 z-40 flex items-start justify-center p-4 bg-slate-900/80 backdrop-blur-sm overflow-auto min-h-screen">
-    <div className="w-full max-w-6xl bg-white rounded-lg shadow-2xl my-8">
+      <div className="w-full max-w-6xl bg-white rounded-lg shadow-2xl my-8">
         {/* Header */}
         <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-4 rounded-t-lg">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-2xl font-bold">User Profile</h2>
-              <p className="text-blue-100 text-sm mt-1">Government of India | SHG Profile</p>
+              <h2 className="text-2xl font-bold">{t('profile.title')}</h2>
+              <p className="text-blue-100 text-sm mt-1">{t('profile.subtitle')}</p>
             </div>
-            <button 
-              onClick={onClose} 
+            <button
+              onClick={onClose}
               className="p-2 rounded-lg hover:bg-white/10 transition-colors"
               aria-label="Close"
             >
@@ -299,17 +301,17 @@ export default function ProfilePage({ onClose, onUserUpdate }) {
             <div className="lg:col-span-1">
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-5">
                 <h3 className="text-lg font-bold text-slate-800 mb-4 pb-2 border-b-2 border-blue-600">
-                  Account Information
+                  {t('profile.accountInformation')}
                 </h3>
                 <div className="space-y-3 mb-6">
                   <div className="bg-white p-3 rounded border border-slate-200">
-                    <p className="text-xs text-slate-600 uppercase tracking-wide mb-1">Username</p>
+                    <p className="text-xs text-slate-600 uppercase tracking-wide mb-1">{t('profile.username')}</p>
                     <p className="text-base font-semibold text-slate-900">
                       {user?.username || user?.name || 'Not set'}
                     </p>
                   </div>
                   <div className="bg-white p-3 rounded border border-slate-200">
-                    <p className="text-xs text-slate-600 uppercase tracking-wide mb-1">Mobile Number</p>
+                    <p className="text-xs text-slate-600 uppercase tracking-wide mb-1">{t('profile.mobileNumber')}</p>
                     <p className="text-base font-semibold text-slate-900">
                       {user?.mobile || user?.phone || 'Not set'}
                     </p>
@@ -378,12 +380,12 @@ export default function ProfilePage({ onClose, onUserUpdate }) {
             <div className="lg:col-span-2">
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-5">
                 <h3 className="text-lg font-bold text-slate-800 mb-4 pb-2 border-b-2 border-blue-600">
-                  Location Details
+                  {t('profile.locationDetails')}
                 </h3>
                 <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                   <p className="text-sm text-slate-700">
-                    <span className="font-semibold text-slate-800">Current Location: </span>
-                    {user?.district || 'Not set'} 
+                    <span className="font-semibold text-slate-800">{t('location.currentLocation')}: </span>
+                    {user?.district || 'Not set'}
                     {user?.mandal && ` - ${user.mandal}`}
                     {user?.village && ` - ${user.village}`}
                     {user?.panchayat && ` - ${user.panchayat}`}
@@ -393,7 +395,7 @@ export default function ProfilePage({ onClose, onUserUpdate }) {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                     <div>
                       <label className="block text-xs font-medium text-slate-700 mb-1">
-                        District <span className="text-red-600">*</span>
+                        {t('location.district')} <span className="text-red-600">*</span>
                       </label>
                       <select
                         value={district}
@@ -404,7 +406,7 @@ export default function ProfilePage({ onClose, onUserUpdate }) {
                         }}
                         className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white cursor-pointer"
                       >
-                        <option value="">-- Select District --</option>
+                        <option value="">{t('location.selectDistrict')}</option>
                         {districts.map((d, i) => (
                           <option key={i} value={optionLabel(d)}>
                             {optionLabel(d)}
@@ -414,7 +416,7 @@ export default function ProfilePage({ onClose, onUserUpdate }) {
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-slate-700 mb-1">
-                        Mandal <span className="text-red-600">*</span>
+                        {t('location.mandal')} <span className="text-red-600">*</span>
                       </label>
                       <select
                         value={mandal}
@@ -426,7 +428,7 @@ export default function ProfilePage({ onClose, onUserUpdate }) {
                         className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white cursor-pointer"
                         disabled={!district}
                       >
-                        <option value="">-- Select Mandal --</option>
+                        <option value="">{t('location.selectMandal')}</option>
                         {mandals.map((m, i) => (
                           <option key={i} value={optionLabel(m)}>
                             {optionLabel(m)}
@@ -436,7 +438,7 @@ export default function ProfilePage({ onClose, onUserUpdate }) {
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-slate-700 mb-1">
-                        Village <span className="text-red-600">*</span>
+                        {t('location.village')} <span className="text-red-600">*</span>
                       </label>
                       <select
                         value={village}
@@ -444,7 +446,7 @@ export default function ProfilePage({ onClose, onUserUpdate }) {
                         className="w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white cursor-pointer"
                         disabled={!mandal}
                       >
-                        <option value="">-- Select Village --</option>
+                        <option value="">{t('location.selectVillage')}</option>
                         {villages.map((v, i) => (
                           <option key={i} value={optionLabel(v)}>
                             {optionLabel(v)}
@@ -454,23 +456,23 @@ export default function ProfilePage({ onClose, onUserUpdate }) {
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-slate-700 mb-1">
-                        panchayat
+                        {t('location.panchayat')}
                       </label>
                       <input type="text" value={panchayat} onChange={(e) => setPanchayat(e.target.value)} className='w-full border border-slate-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white' />
                     </div>
                   </div>
                   <div className="flex gap-2 mb-6">
-                    <button 
+                    <button
                       onClick={updateLocation}
                       className="px-5 py-2 bg-green-700 hover:bg-green-800 text-white text-sm font-medium rounded transition-colors"
                     >
-                      Update Location
+                      {t('profile.updateLocation')}
                     </button>
-                    <button 
-                      onClick={()=>{setDistrict(user?.district||''); setMandal(user?.mandal||''); setVillage(user?.village||'');}} 
+                    <button
+                      onClick={() => { setDistrict(user?.district || ''); setMandal(user?.mandal || ''); setVillage(user?.village || ''); }}
                       className="px-5 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded transition-colors"
                     >
-                      Reset
+                      {t('profile.reset')}
                     </button>
                   </div>
                 </div>
@@ -486,11 +488,11 @@ export default function ProfilePage({ onClose, onUserUpdate }) {
             >
               Delete Account
             </button> */}
-            <button 
-              onClick={onClose} 
+            <button
+              onClick={onClose}
               className="px-6 py-2 bg-slate-700 hover:bg-slate-800 text-white text-sm font-medium rounded transition-colors"
             >
-              Close
+              {t('common.close')}
             </button>
           </div>
         </div>
