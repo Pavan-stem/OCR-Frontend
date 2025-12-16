@@ -40,7 +40,7 @@ const Login = () => {
             if (response.data.token) {
                 localStorage.setItem('token', response.data.token);
                 localStorage.setItem('user', JSON.stringify(response.data));
-                navigate('/ocr');
+                navigate('/scanner');
             }
         } catch (err) {
             setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
@@ -56,7 +56,7 @@ const Login = () => {
                     <Activity size={32} />
                 </div>
                 <h2 className="text-3xl font-extrabold text-gray-900">Welcome</h2>
-                <p className="text-gray-500 mt-2">Sign in to your MMD account</p>
+                <p className="text-gray-500 mt-2">Sign in to your Self Help Group - SERP SMD account</p>
             </div>
 
             {error && (

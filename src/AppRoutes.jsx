@@ -27,7 +27,7 @@ const AppRoutes = () => {
                     }
                 />
                 <Route
-                    path="/ocr"
+                    path="/scanner"
                     element={
                         <ProtectedRoute>
                             <OCRApp />

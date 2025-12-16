@@ -279,7 +279,7 @@ const Register = () => {
             if (response.data.token) {
                 localStorage.setItem('token', response.data.token);
                 localStorage.setItem('user', JSON.stringify(response.data));
-                navigate('/ocr');
+                navigate('/scanner');
             }
         } catch (err) {
             setError(err.response?.data?.message || 'Registration failed. Please try again.');

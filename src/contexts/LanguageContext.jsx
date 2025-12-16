@@ -7,7 +7,7 @@ export const LanguageProvider = ({ children }) => {
     const [language, setLanguage] = useState(() => {
         // Load language preference from localStorage, default to English
         const savedLanguage = localStorage.getItem('language');
-        return savedLanguage || 'en';
+        return savedLanguage || 'te';
     });
 
     useEffect(() => {

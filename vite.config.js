@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
-  base: '/OCR-Frontend/',  // ***IMPORTANT for GitHub Pages***
+  base: '/SMD/',  // ***IMPORTANT for GitHub Pages***
   plugins: [react()],
   server: {
     open: true,

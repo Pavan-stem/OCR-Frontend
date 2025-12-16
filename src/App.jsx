@@ -415,8 +415,8 @@ export default function EnhancedTableOCRSystem() {
       } catch (e) {
         // Fallback: detect from current path
         const currentPath = window.location.pathname;
-        if (currentPath.startsWith('/OCR-Frontend')) {
-          basePath = '/OCR-Frontend';
+        if (currentPath.startsWith('/SMD')) {
+          basePath = '/SMD';
         } else {
           const pathParts = currentPath.split('/').filter(p => p);
           if (pathParts.length > 0) {
@@ -1569,11 +1569,11 @@ export default function EnhancedTableOCRSystem() {
                           <span className="text-white/80 text-sm font-medium">{t('location.village')}:</span>
                           <span className="text-white text-lg font-bold">{user?.village}</span>
                         </div>
-                        <div className="w-1 h-6 bg-white/30 hidden sm:block"></div>
+                        {/* <div className="w-1 h-6 bg-white/30 hidden sm:block"></div>
                         <div className="flex items-center gap-2">
                           <span className="text-white/80 text-sm font-medium">{t('location.panchayat')}:</span>
                           <span className="text-white text-lg font-bold">{user?.panchayat}</span>
-                        </div>
+                        </div> */}
                       </div>
                     </div>
                   </div>
