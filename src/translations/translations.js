@@ -92,7 +92,9 @@ export const translations = {
             title: 'User Profile',
             subtitle: 'Andhra Pradesh Government | SMD Profile',
             accountInformation: 'Account Information',
-            username: 'Username',
+            voName: 'VO Name',
+            voaName: 'VOA Name',
+            email: 'Email ID',
             mobileNumber: 'Mobile Number',
             locationDetails: 'Location Details',
             updateLocation: 'Update Location',
@@ -110,7 +112,7 @@ export const translations = {
             passwordMismatch: 'New passwords do not match',
             passwordTooShort: 'Password must be at least 6 characters',
             fillAllFields: 'Please fill all password fields',
-        },
+            },
 
         // Document History
         documentHistory: {
@@ -257,7 +259,9 @@ export const translations = {
             title: 'వినియోగదారు ప్రొఫైల్',
             subtitle: 'ఆంధ్రప్రదేశ్ ప్రభుత్వం | SMD ప్రొఫైల్',
             accountInformation: 'ఖాతా సమాచారం',
-            username: 'వినియోగదారు పేరు',
+            voName: 'VO పేరు',
+            voaName: 'VOA పేరు',
+            email: 'ఈమెయిల్ ఐడి',
             mobileNumber: 'మొబైల్ నంబర్',
             locationDetails: 'స్థాన వివరాలు',
             updateLocation: 'స్థానాన్ని నవీకరించండి',
@@ -275,7 +279,7 @@ export const translations = {
             passwordMismatch: 'కొత్త పాస్‌వర్డ్‌లు సరిపోలలేదు',
             passwordTooShort: 'పాస్‌వర్డ్ కనీసం 6 అక్షరాలు ఉండాలి',
             fillAllFields: 'దయచేసి అన్ని పాస్‌వర్డ్ ఫీల్డ్‌లను పూరించండి',
-        },
+            },
 
         // Document History - Telugu
         documentHistory: {

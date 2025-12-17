@@ -306,198 +306,159 @@ const Register = () => {
 
             <form onSubmit={handleRegister} className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-                {/* Left Column: Personal & Group Info */}
+                {/* Left Column */}
                 <div className="space-y-6">
-                    <h3 className="text-lg font-semibold text-gray-700 border-b pb-2">Account Details</h3>
 
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-                        <div className="relative">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <UserPlus size={18} className="text-gray-400" />
-                            </div>
-                            <input
-                                type="text"
-                                value={username}
-                                onChange={(e) => setUsername(e.target.value)}
-                                className="pl-10 block w-full border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm py-2.5 border"
-                                placeholder="Full name (optional)"
-                            />
-                        </div>
+                {/* District */}
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">District</label>
+                    <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <MapPin size={18} className="text-gray-400" />
                     </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Mobile Number</label>
-                        <div className="relative">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <span className="text-gray-500 font-bold border-r border-gray-300 pr-2">+91</span>
-                            </div>
-                            <input
-                                type="text"
-                                value={phone}
-                                onChange={(e) => {
-                                    const val = e.target.value.replace(/\D/g, '');
-                                    if (val.length <= 10) setPhone(val);
-                                }}
-                                className="pl-14 block w-full border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm py-2.5 border"
-                                placeholder="10-digit mobile number"
-                                required
-                            />
-                        </div>
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Group ID</label>
-                        <div className="relative">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <Users size={18} className="text-gray-400" />
-                            </div>
-                            <input
-                                type="text"
-                                value={groupId}
-                                onChange={(e) => setGroupId(e.target.value.replace(/\D/g, ''))}
-                                className="pl-10 block w-full border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm py-2.5 border"
-                                placeholder="Enter Group ID"
-                                required
-                            />
-                        </div>
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Create Password</label>
-                        <div className="relative">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <Lock size={18} className="text-gray-400" />
-                            </div>
-                            <input
-                                type={showPassword ? "text" : "password"}
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                className="pl-10 block w-full border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm py-2.5 border"
-                                placeholder="New Password"
-                                required
-                            />
-                            <button
-                                type="button"
-                                onClick={() => setShowPassword(!showPassword)}
-                                className="absolute inset-y-0 right-0 px-3 text-gray-500"
-                            >
-                                {showPassword ? <Eye size={20} /> : <EyeClosed size={20} />}
-                            </button>
-                        </div>
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
-                        <div className="relative">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <Lock size={18} className="text-gray-400" />
-                            </div>
-                            <input
-                                type={showConfirmPassword ? "text" : "password"}
-                                value={confirmPassword}
-                                onChange={(e) => setConfirmPassword(e.target.value)}
-                                className="pl-10 block w-full border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm py-2.5 border"
-                                placeholder="Confirm Password"
-                                required
-                            />
-                            <button
-                                type="button"
-                                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                                className="absolute inset-y-0 right-0 px-3 text-gray-500"
-                            >
-                                {showConfirmPassword ? <Eye size={20} /> : <EyeClosed size={20} />}
-                            </button>
-                        </div>
+                    <select
+                        value={selectedDistrict}
+                        onChange={(e) => setSelectedDistrict(e.target.value)}
+                        className="pl-10 block w-full border rounded-lg py-2.5"
+                        required
+                    >
+                        <option value="">Select District</option>
+                        {districts.map(d => (
+                        <option key={d.id} value={d.name}>{d.name}</option>
+                        ))}
+                    </select>
                     </div>
                 </div>
 
-                {/* Right Column: Location Info */}
+                {/* Village */}
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Village / Panchayat</label>
+                    <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Home size={18} className="text-gray-400" />
+                    </div>
+                    <select
+                        value={selectedVillage}
+                        onChange={(e) => setSelectedVillage(e.target.value)}
+                        className="pl-10 block w-full border rounded-lg py-2.5"
+                        disabled={!selectedMandal}
+                    >
+                        <option value="">Select Village</option>
+                        {villages.map(v => (
+                        <option key={v.id} value={v.name}>{v.name}</option>
+                        ))}
+                    </select>
+                    </div>
+                </div>
+
+                {/* VO ID */}
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">VO ID</label>
+                    <input
+                    type="text"
+                    value={groupId}
+                    onChange={(e) => setGroupId(e.target.value.replace(/\D/g, ""))}
+                    className="block w-full border rounded-lg py-2.5 px-3"
+                    required
+                    />
+                </div>
+
+                {/* Mobile */}
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Mobile Number</label>
+                    <div className="relative">
+                    <span className="absolute left-3 top-2.5 text-gray-500">+91</span>
+                    <input
+                        type="text"
+                        value={phone}
+                        onChange={(e) => {
+                        const val = e.target.value.replace(/\D/g, "");
+                        if (val.length <= 10) setPhone(val);
+                        }}
+                        className="pl-12 block w-full border rounded-lg py-2.5"
+                        required
+                    />
+                    </div>
+                </div>
+
+                {/* Create Password */}
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Create Password</label>
+                    <input
+                    type={showPassword ? "text" : "password"}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="block w-full border rounded-lg py-2.5 px-3"
+                    required
+                    />
+                </div>
+                </div>
+
+                {/* Right Column */}
                 <div className="space-y-6">
-                    <h3 className="text-lg font-semibold text-gray-700 border-b pb-2">Location Details</h3>
 
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">District</label>
-                        <div className="relative">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <MapPin size={18} className="text-gray-400" />
-                            </div>
-                            <select
-                                value={selectedDistrict}
-                                onChange={(e) => setSelectedDistrict(e.target.value)}
-                                className="pl-10 block w-full border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm py-2.5 border bg-white"
-                                required
-                            >
-                                <option value="">Select District</option>
-                                {districts.map((district) => (
-                                    <option key={district.id} value={district.name}>
-                                        {district.name}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                    </div>
+                {/* Mandal */}
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Mandal</label>
+                    <select
+                    value={selectedMandal}
+                    onChange={(e) => setSelectedMandal(e.target.value)}
+                    className="block w-full border rounded-lg py-2.5 px-3"
+                    required
+                    disabled={!selectedDistrict}
+                    >
+                    <option value="">Select Mandal</option>
+                    {mandals.map(m => (
+                        <option key={m.id} value={m.name}>{m.name}</option>
+                    ))}
+                    </select>
+                </div>
 
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Mandal</label>
-                        <div className="relative">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <Building size={18} className="text-gray-400" />
-                            </div>
-                            <select
-                                value={selectedMandal}
-                                onChange={(e) => setSelectedMandal(e.target.value)}
-                                className="pl-10 block w-full border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm py-2.5 border bg-white"
-                                required
-                                disabled={!selectedDistrict}
-                            >
-                                <option value="">Select Mandal</option>
-                                {mandals.map((mandal) => (
-                                    <option key={mandal.id} value={mandal.name}>
-                                        {mandal.name}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                    </div>
+                {/* VO */}
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">VO</label>
+                    <input
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    className="block w-full border rounded-lg py-2.5 px-3"
+                    />
+                </div>
 
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Village</label>
-                        <div className="relative">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <Home size={18} className="text-gray-400" />
-                            </div>
-                            <select
-                                value={selectedVillage}
-                                onChange={(e) => setSelectedVillage(e.target.value)}
-                                className="pl-10 block w-full border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm py-2.5 border bg-white"
-                                disabled={!selectedMandal || villages.length === 0}
-                            >
-                                <option value="">{villages.length === 0 ? 'No villages found' : 'Select Village'}</option>
-                                {villages.map((village) => (
-                                    <option key={village.id} value={village.name}>
-                                        {village.name}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                    </div>
+                {/* VOA Name */}
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">VOA Name</label>
+                    <input
+                    type="text"
+                    value={panchayat}
+                    onChange={(e) => setPanchayat(e.target.value)}
+                    className="block w-full border rounded-lg py-2.5 px-3"
+                    />
+                </div>
 
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Panchayat</label>
-                        <div className="relative">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                <Home size={18} className="text-gray-400" />
-                            </div>
-                            <input
-                                type="text"
-                                value={panchayat}
-                                onChange={(e) => setPanchayat(e.target.value)}
-                                className="pl-10 block w-full border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm py-2.5 border"
-                                placeholder="Enter Panchayat Name"
-                            />
-                        </div>
-                    </div>
+                {/* Email (Optional – Frontend Only) */}
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Email ID <span className="text-gray-400">(optional)</span>
+                    </label>
+                    <input
+                    type="email"
+                    className="block w-full border rounded-lg py-2.5 px-3"
+                    placeholder="example@email.com"
+                    />
+                </div>
+
+                {/* Confirm Password */}
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
+                    <input
+                    type={showConfirmPassword ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="block w-full border rounded-lg py-2.5 px-3"
+                    required
+                    />
+                </div>
                 </div>
 
                 {/* Submit Button (Full Width) */}

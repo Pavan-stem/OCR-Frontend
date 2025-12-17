@@ -303,19 +303,49 @@ export default function ProfilePage({ onClose, onUserUpdate }) {
                 <h3 className="text-lg font-bold text-slate-800 mb-4 pb-2 border-b-2 border-blue-600">
                   {t('profile.accountInformation')}
                 </h3>
+
                 <div className="space-y-3 mb-6">
-                  <div className="bg-white p-3 rounded border border-slate-200">
-                    <p className="text-xs text-slate-600 uppercase tracking-wide mb-1">{t('profile.username')}</p>
+
+                  {/* VO Name */}
+                  <div className="bg-white p-3 rounded border border-slate-200 min-h-[56px]">
+                    <p className="text-xs text-slate-600 uppercase tracking-wide mb-1">
+                      {t('profile.voName')}
+                    </p>
                     <p className="text-base font-semibold text-slate-900">
-                      {user?.username || user?.name || 'Not set'}
+                      {user?.voName || user?.username || ''}
                     </p>
                   </div>
-                  <div className="bg-white p-3 rounded border border-slate-200">
-                    <p className="text-xs text-slate-600 uppercase tracking-wide mb-1">{t('profile.mobileNumber')}</p>
+
+                  {/* Mobile Number */}
+                  <div className="bg-white p-3 rounded border border-slate-200 min-h-[56px]">
+                    <p className="text-xs text-slate-600 uppercase tracking-wide mb-1">
+                      {t('profile.mobileNumber')}
+                    </p>
                     <p className="text-base font-semibold text-slate-900">
-                      {user?.mobile || user?.phone || 'Not set'}
+                      {user?.mobile || user?.phone || ''}
                     </p>
                   </div>
+
+                  {/* VOA Name (frontend only – empty) */}
+                  <div className="bg-white p-3 rounded border border-slate-200 min-h-[56px]">
+                    <p className="text-xs text-slate-600 uppercase tracking-wide mb-1">
+                      {t('profile.voaName')}
+                    </p>
+                    <p className="text-base font-semibold text-slate-900">
+                      {/* intentionally empty */}
+                    </p>
+                  </div>
+
+                  {/* Email ID (frontend only – empty) */}
+                  <div className="bg-white p-3 rounded border border-slate-200 min-h-[56px]">
+                    <p className="text-xs text-slate-600 uppercase tracking-wide mb-1">
+                      {t('profile.email')}
+                    </p>
+                    <p className="text-base font-semibold text-slate-900">
+                      {/* intentionally empty */}
+                    </p>
+                  </div>
+
                 </div>
 
                 {/* <h4 className="text-base font-bold text-slate-800 mb-3 pb-2 border-b border-slate-300">
