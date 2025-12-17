@@ -1569,6 +1569,16 @@ export default function EnhancedTableOCRSystem() {
                           <span className="text-white/80 text-sm font-medium">{t('location.village')}:</span>
                           <span className="text-white text-lg font-bold">{user?.village}</span>
                         </div>
+                        <div className="w-1 h-6 bg-white/30 hidden sm:block"></div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-white/80 text-sm font-medium">{t('location.voName')}:</span>
+                          <span className="text-white text-lg font-bold">{user?.username}</span>
+                        </div>
+                        <div className="w-1 h-6 bg-white/30 hidden sm:block"></div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-white/80 text-sm font-medium">VO ID:</span>
+                          <span className="text-white text-lg font-bold">{user?.groupId}</span>
+                        </div>
                         {/* <div className="w-1 h-6 bg-white/30 hidden sm:block"></div>
                         <div className="flex items-center gap-2">
                           <span className="text-white/80 text-sm font-medium">{t('location.panchayat')}:</span>
@@ -1868,7 +1878,7 @@ export default function EnhancedTableOCRSystem() {
           <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
               <div className="flex items-center justify-between p-4 border-b-2 border-gray-300">
-                <h3 className="text-xl font-bold text-gray-800">{previewFile.name}</h3>
+                <h3 className="text-lg font-bold text-gray-800 truncate max-w-[65%]">{previewFile.name}</h3>
                 <div className="flex items-center gap-2">
                   {(() => {
                     const isPDF = previewFile.name?.toLowerCase().endsWith('.pdf') ||
