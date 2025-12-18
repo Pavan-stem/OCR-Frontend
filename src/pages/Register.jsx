@@ -6,8 +6,8 @@ import { AUTH_API_BASE } from '../utils/apiConfig';
 
 const Register = () => {
     const [phone, setPhone] = useState('');
-    const [username, setUsername] = useState('');
-    const [groupId, setGroupId] = useState('');
+    const [voName, setVOName] = useState('');
+    const [voID, setVOID] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
@@ -21,7 +21,7 @@ const Register = () => {
     const [selectedDistrict, setSelectedDistrict] = useState('');
     const [selectedMandal, setSelectedMandal] = useState('');
     const [selectedVillage, setSelectedVillage] = useState('');
-    const [panchayat, setPanchayat] = useState('');
+    const [voaName, setVOAName] = useState('');
 
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
@@ -233,20 +233,20 @@ const Register = () => {
 
         const finalVillage = selectedVillage || (villages.length === 0 ? 'N/A' : '');
 
-        // Panchayat is optional now
-        // if (!panchayat.trim()) {
-        //     setError('Please enter Panchayat.');
+        // voaName is optional now
+        // if (!voaName.trim()) {
+        //     setError('Please enter voaName.');
         //     setLoading(false);
         //     return;
         // }
 
-        if (!groupId.trim()) {
+        if (!voID.trim()) {
             setError('Please enter Group ID.');
             setLoading(false);
             return;
         }
 
-        if (!/^\d+$/.test(groupId)) {
+        if (!/^\d+$/.test(voID)) {
             setError('Group ID must contain only numbers.');
             setLoading(false);
             return;
@@ -267,13 +267,13 @@ const Register = () => {
         try {
             const response = await axios.post(`${AUTH_API_BASE}/api/register`, {
                 phone: formattedPhone, // Send formatted phone with +91
-                username: username || '',
-                groupId,
+                voName: voName || '',
+                voID,
                 password,
                 district: selectedDistrict,
                 mandal: selectedMandal,
                 village: finalVillage,
-                panchayat: panchayat || '' // Send empty string if undefined
+                voaName: voaName || '' // Send empty string if undefined
             });
 
             if (response.data.token) {
@@ -332,7 +332,7 @@ const Register = () => {
 
                 {/* Village */}
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Village / Panchayat</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Village / voaName</label>
                     <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <Home size={18} className="text-gray-400" />
@@ -356,8 +356,8 @@ const Register = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-1">VO ID</label>
                     <input
                     type="text"
-                    value={groupId}
-                    onChange={(e) => setGroupId(e.target.value.replace(/\D/g, ""))}
+                    value={voID}
+                    onChange={(e) => setVOID(e.target.value.replace(/\D/g, ""))}
                     className="block w-full border rounded-lg py-2.5 px-3"
                     required
                     />
@@ -416,11 +416,11 @@ const Register = () => {
 
                 {/* VO */}
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">VO</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">VO Name</label>
                     <input
                     type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
+                    value={voName}
+                    onChange={(e) => setVOName(e.target.value)}
                     className="block w-full border rounded-lg py-2.5 px-3"
                     />
                 </div>
@@ -430,8 +430,8 @@ const Register = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-1">VOA Name</label>
                     <input
                     type="text"
-                    value={panchayat}
-                    onChange={(e) => setPanchayat(e.target.value)}
+                    value={voaName}
+                    onChange={(e) => setVOAName(e.target.value)}
                     className="block w-full border rounded-lg py-2.5 px-3"
                     />
                 </div>

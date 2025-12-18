@@ -144,7 +144,12 @@ export default function DocumentHistory({ onClose }) {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-slate-600">
-                        {u.date ? new Date(u.date).toLocaleDateString('en-IN') : 'N/A'}
+                        {u.date
+                          ? new Date(u.date).toLocaleString('en-IN', {
+                              dateStyle: 'medium',
+                              timeStyle: 'short'
+                            })
+                          : 'N/A'}
                       </td>
                       <td className="px-4 py-3 text-center">
                         <button

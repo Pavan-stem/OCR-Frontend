@@ -107,7 +107,7 @@ export default function ProfilePage({ onClose }) {
                       {t('profile.voName')}
                     </p>
                     <p className="text-base font-semibold text-slate-900">
-                      {user?.voName || user?.username || ''}
+                      {user?.voName || ''}
                     </p>
                   </div>
 
@@ -117,7 +117,7 @@ export default function ProfilePage({ onClose }) {
                       VO ID
                     </p>
                     <p className="text-base font-semibold text-slate-900">
-                      {user?.groupId || user?.voId || ''}
+                      {user?.voID || ''}
                     </p>
                   </div>
 
@@ -150,17 +150,6 @@ export default function ProfilePage({ onClose }) {
                       {user?.village || ''}
                     </p>
                   </div>
-
-                  {/* Panchayat */}
-                  <div className="bg-white p-3 rounded border border-slate-200 min-h-[56px]">
-                    <p className="text-xs text-slate-600 uppercase tracking-wide mb-1">
-                      {t('location.panchayat')}
-                    </p>
-                    <p className="text-base font-semibold text-slate-900">
-                      {user?.panchayat || ''}
-                    </p>
-                  </div>
-
                 </div>
               </div>
             </div>
