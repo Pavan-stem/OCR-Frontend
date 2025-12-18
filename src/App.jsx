@@ -1572,12 +1572,12 @@ export default function EnhancedTableOCRSystem() {
                         <div className="w-1 h-6 bg-white/30 hidden sm:block"></div>
                         <div className="flex items-center gap-2">
                           <span className="text-white/80 text-sm font-medium">{t('location.voName')}:</span>
-                          <span className="text-white text-lg font-bold">{user?.username}</span>
+                          <span className="text-white text-lg font-bold">{user?.voName}</span>
                         </div>
                         <div className="w-1 h-6 bg-white/30 hidden sm:block"></div>
                         <div className="flex items-center gap-2">
                           <span className="text-white/80 text-sm font-medium">VO ID:</span>
-                          <span className="text-white text-lg font-bold">{user?.groupId}</span>
+                          <span className="text-white text-lg font-bold">{user?.voID}</span>
                         </div>
                         {/* <div className="w-1 h-6 bg-white/30 hidden sm:block"></div>
                         <div className="flex items-center gap-2">
