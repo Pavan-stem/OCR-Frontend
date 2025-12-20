@@ -22,6 +22,7 @@ const Register = () => {
     const [selectedMandal, setSelectedMandal] = useState('');
     const [selectedVillage, setSelectedVillage] = useState('');
     const [voaName, setVOAName] = useState('');
+    const [email, setEmail] = useState('');
 
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
@@ -233,21 +234,32 @@ const Register = () => {
 
         const finalVillage = selectedVillage || (villages.length === 0 ? 'N/A' : '');
 
-        // voaName is optional now
-        // if (!voaName.trim()) {
-        //     setError('Please enter voaName.');
-        //     setLoading(false);
-        //     return;
-        // }
+        if (!voaName.trim()) {
+            setError('Please enter voaName.');
+            setLoading(false);
+            return;
+        }
+
+        if (!voName.trim()) {
+            setError('Please enter VO Name.');
+            setLoading(false);
+            return;
+        }
 
         if (!voID.trim()) {
-            setError('Please enter Group ID.');
+            setError('Please enter VO ID.');
             setLoading(false);
             return;
         }
 
         if (!/^\d+$/.test(voID)) {
-            setError('Group ID must contain only numbers.');
+            setError('VO ID must contain only numbers.');
+            setLoading(false);
+            return;
+        }
+
+        if (voID.trim().length >= 13) {
+            setError('Please enter correct VO ID.');
             setLoading(false);
             return;
         }
@@ -267,13 +279,14 @@ const Register = () => {
         try {
             const response = await axios.post(`${AUTH_API_BASE}/api/register`, {
                 phone: formattedPhone, // Send formatted phone with +91
-                voName: voName || '',
+                voName: voName,
                 voID,
                 password,
                 district: selectedDistrict,
                 mandal: selectedMandal,
                 village: finalVillage,
-                voaName: voaName || '' // Send empty string if undefined
+                voaName: voaName,
+                email: email || ''
             });
 
             if (response.data.token) {
@@ -309,156 +322,158 @@ const Register = () => {
                 {/* Left Column */}
                 <div className="space-y-6">
 
-                {/* District */}
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">District</label>
-                    <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <MapPin size={18} className="text-gray-400" />
+                    {/* District */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">District</label>
+                        <div className="relative">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <MapPin size={18} className="text-gray-400" />
+                            </div>
+                            <select
+                                value={selectedDistrict}
+                                onChange={(e) => setSelectedDistrict(e.target.value)}
+                                className="pl-10 block w-full border rounded-lg py-2.5"
+                                required
+                            >
+                                <option value="">Select District</option>
+                                {districts.map(d => (
+                                    <option key={d.id} value={d.name}>{d.name}</option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
-                    <select
-                        value={selectedDistrict}
-                        onChange={(e) => setSelectedDistrict(e.target.value)}
-                        className="pl-10 block w-full border rounded-lg py-2.5"
-                        required
-                    >
-                        <option value="">Select District</option>
-                        {districts.map(d => (
-                        <option key={d.id} value={d.name}>{d.name}</option>
-                        ))}
-                    </select>
-                    </div>
-                </div>
 
-                {/* Village */}
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Village / voaName</label>
-                    <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <Home size={18} className="text-gray-400" />
+                    {/* Village */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Village / panchayat</label>
+                        <div className="relative">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <Home size={18} className="text-gray-400" />
+                            </div>
+                            <select
+                                value={selectedVillage}
+                                onChange={(e) => setSelectedVillage(e.target.value)}
+                                className="pl-10 block w-full border rounded-lg py-2.5"
+                                disabled={!selectedMandal}
+                            >
+                                <option value="">Select Village</option>
+                                {villages.map(v => (
+                                    <option key={v.id} value={v.name}>{v.name}</option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
-                    <select
-                        value={selectedVillage}
-                        onChange={(e) => setSelectedVillage(e.target.value)}
-                        className="pl-10 block w-full border rounded-lg py-2.5"
-                        disabled={!selectedMandal}
-                    >
-                        <option value="">Select Village</option>
-                        {villages.map(v => (
-                        <option key={v.id} value={v.name}>{v.name}</option>
-                        ))}
-                    </select>
+
+                    {/* VO ID */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">VO ID</label>
+                        <input
+                            type="text"
+                            value={voID}
+                            onChange={(e) => setVOID(e.target.value.replace(/\D/g, ""))}
+                            className="block w-full border rounded-lg py-2.5 px-3"
+                            required
+                        />
                     </div>
-                </div>
 
-                {/* VO ID */}
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">VO ID</label>
-                    <input
-                    type="text"
-                    value={voID}
-                    onChange={(e) => setVOID(e.target.value.replace(/\D/g, ""))}
-                    className="block w-full border rounded-lg py-2.5 px-3"
-                    required
-                    />
-                </div>
-
-                {/* Mobile */}
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Mobile Number</label>
-                    <div className="relative">
-                    <span className="absolute left-3 top-2.5 text-gray-500">+91</span>
-                    <input
-                        type="text"
-                        value={phone}
-                        onChange={(e) => {
-                        const val = e.target.value.replace(/\D/g, "");
-                        if (val.length <= 10) setPhone(val);
-                        }}
-                        className="pl-12 block w-full border rounded-lg py-2.5"
-                        required
-                    />
+                    {/* Mobile */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Mobile Number</label>
+                        <div className="relative">
+                            <span className="absolute left-3 top-2.5 text-gray-500">+91</span>
+                            <input
+                                type="text"
+                                value={phone}
+                                onChange={(e) => {
+                                    const val = e.target.value.replace(/\D/g, "");
+                                    if (val.length <= 10) setPhone(val);
+                                }}
+                                className="pl-12 block w-full border rounded-lg py-2.5"
+                                required
+                            />
+                        </div>
                     </div>
-                </div>
 
-                {/* Create Password */}
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Create Password</label>
-                    <input
-                    type={showPassword ? "text" : "password"}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="block w-full border rounded-lg py-2.5 px-3"
-                    required
-                    />
-                </div>
+                    {/* Create Password */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Create Password</label>
+                        <input
+                            type={showPassword ? "text" : "password"}
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="block w-full border rounded-lg py-2.5 px-3"
+                            required
+                        />
+                    </div>
                 </div>
 
                 {/* Right Column */}
                 <div className="space-y-6">
 
-                {/* Mandal */}
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Mandal</label>
-                    <select
-                    value={selectedMandal}
-                    onChange={(e) => setSelectedMandal(e.target.value)}
-                    className="block w-full border rounded-lg py-2.5 px-3"
-                    required
-                    disabled={!selectedDistrict}
-                    >
-                    <option value="">Select Mandal</option>
-                    {mandals.map(m => (
-                        <option key={m.id} value={m.name}>{m.name}</option>
-                    ))}
-                    </select>
-                </div>
+                    {/* Mandal */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Mandal</label>
+                        <select
+                            value={selectedMandal}
+                            onChange={(e) => setSelectedMandal(e.target.value)}
+                            className="block w-full border rounded-lg py-2.5 px-3"
+                            required
+                            disabled={!selectedDistrict}
+                        >
+                            <option value="">Select Mandal</option>
+                            {mandals.map(m => (
+                                <option key={m.id} value={m.name}>{m.name}</option>
+                            ))}
+                        </select>
+                    </div>
 
-                {/* VO */}
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">VO Name</label>
-                    <input
-                    type="text"
-                    value={voName}
-                    onChange={(e) => setVOName(e.target.value)}
-                    className="block w-full border rounded-lg py-2.5 px-3"
-                    />
-                </div>
+                    {/* VO */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">VO Name</label>
+                        <input
+                            type="text"
+                            value={voName}
+                            onChange={(e) => setVOName(e.target.value)}
+                            className="block w-full border rounded-lg py-2.5 px-3"
+                        />
+                    </div>
 
-                {/* VOA Name */}
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">VOA Name</label>
-                    <input
-                    type="text"
-                    value={voaName}
-                    onChange={(e) => setVOAName(e.target.value)}
-                    className="block w-full border rounded-lg py-2.5 px-3"
-                    />
-                </div>
+                    {/* VOA Name */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">VOA Name</label>
+                        <input
+                            type="text"
+                            value={voaName}
+                            onChange={(e) => setVOAName(e.target.value)}
+                            className="block w-full border rounded-lg py-2.5 px-3"
+                        />
+                    </div>
 
-                {/* Email (Optional – Frontend Only) */}
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Email ID <span className="text-gray-400">(optional)</span>
-                    </label>
-                    <input
-                    type="email"
-                    className="block w-full border rounded-lg py-2.5 px-3"
-                    placeholder="example@email.com"
-                    />
-                </div>
+                    {/* Email (Optional – Frontend Only) */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Email ID <span className="text-gray-400">(optional)</span>
+                        </label>
+                        <input
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            className="block w-full border rounded-lg py-2.5 px-3"
+                            placeholder="example@email.com"
+                        />
+                    </div>
 
-                {/* Confirm Password */}
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
-                    <input
-                    type={showConfirmPassword ? "text" : "password"}
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="block w-full border rounded-lg py-2.5 px-3"
-                    required
-                    />
-                </div>
+                    {/* Confirm Password */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
+                        <input
+                            type={showConfirmPassword ? "text" : "password"}
+                            value={confirmPassword}
+                            onChange={(e) => setConfirmPassword(e.target.value)}
+                            className="block w-full border rounded-lg py-2.5 px-3"
+                            required
+                        />
+                    </div>
                 </div>
 
                 {/* Submit Button (Full Width) */}

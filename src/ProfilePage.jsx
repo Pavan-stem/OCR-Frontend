@@ -101,26 +101,6 @@ export default function ProfilePage({ onClose }) {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-                  {/* VO Name */}
-                  <div className="bg-white p-3 rounded border border-slate-200 min-h-[56px]">
-                    <p className="text-xs text-slate-600 uppercase tracking-wide mb-1">
-                      {t('profile.voName')}
-                    </p>
-                    <p className="text-base font-semibold text-slate-900">
-                      {user?.voName || ''}
-                    </p>
-                  </div>
-
-                  {/* VO ID */}
-                  <div className="bg-white p-3 rounded border border-slate-200 min-h-[56px]">
-                    <p className="text-xs text-slate-600 uppercase tracking-wide mb-1">
-                      VO ID
-                    </p>
-                    <p className="text-base font-semibold text-slate-900">
-                      {user?.voID || ''}
-                    </p>
-                  </div>
-
                   {/* District */}
                   <div className="bg-white p-3 rounded border border-slate-200 min-h-[56px]">
                     <p className="text-xs text-slate-600 uppercase tracking-wide mb-1">
@@ -150,6 +130,27 @@ export default function ProfilePage({ onClose }) {
                       {user?.village || ''}
                     </p>
                   </div>
+
+                  {/* VO Name */}
+                  <div className="bg-white p-3 rounded border border-slate-200 min-h-[56px]">
+                    <p className="text-xs text-slate-600 uppercase tracking-wide mb-1">
+                      {t('profile.voName')}
+                    </p>
+                    <p className="text-base font-semibold text-slate-900">
+                      {user?.voName || ''}
+                    </p>
+                  </div>
+
+                  {/* VO ID */}
+                  <div className="bg-white p-3 rounded border border-slate-200 min-h-[56px]">
+                    <p className="text-xs text-slate-600 uppercase tracking-wide mb-1">
+                      VO ID
+                    </p>
+                    <p className="text-base font-semibold text-slate-900">
+                      {user?.voID || ''}
+                    </p>
+                  </div>
+
                 </div>
               </div>
             </div>

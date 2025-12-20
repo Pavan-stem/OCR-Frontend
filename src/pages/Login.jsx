@@ -9,7 +9,7 @@ const Login = () => {
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
-        const [showPassword, setShowPassword] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
     const navigate = useNavigate();
 
     const handleLogin = async (e) => {
@@ -121,7 +121,7 @@ const Login = () => {
                 </button>
             </form>
 
-            <div className="mt-6 text-center text-sm text-gray-600 w-full">
+            {/* <div className="mt-6 text-center text-sm text-gray-600 w-full">
                 Don't have an account?{' '}
                 <Link
                     to="/register"
@@ -129,7 +129,7 @@ const Login = () => {
                 >
                     Create an account
                 </Link>
-            </div>
+            </div> */}
         </div>
     );
 };

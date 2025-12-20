@@ -4,6 +4,8 @@ import ProfilePage from './ProfilePage';
 import DocumentHistory from './DocumentHistory';
 import LanguageToggle from './components/LanguageToggle';
 import { useLanguage } from './contexts/LanguageContext';
+// Add this import at the top of your App.jsx
+import SHGUploadSection from './SHGUploadSection';
 // import ConvertedResults from './ConvertedResults';
 // import DataAnalytics from './DataAnalytics';
 // import FinancialAnalytics from './FinancialAnalytics';
@@ -320,6 +322,46 @@ export default function EnhancedTableOCRSystem() {
   const [cameraError, setCameraError] = useState('');
   const [user, setUser] = useState(null);
   const [systemOnline, setSystemOnline] = useState(false);
+  const [timeAgo, setTimeAgo] = useState('');
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+
+  useEffect(() => {
+    if (!user?.previousLogin) {
+      setTimeAgo(t('header.loginTime.now'));
+      return;
+    }
+
+    const formatDateTime = () => {
+      // Ensure we parse the date correctly (handles both ISO strings and Date objects)
+      const previousDate = new Date(user.previousLogin);
+
+      // Check if date is valid
+      if (isNaN(previousDate.getTime())) {
+        console.error('Invalid previousLogin date:', user.previousLogin);
+        return t('header.loginTime.now');
+      }
+
+      // Format as DD/MM/YY HH:MM AM/PM
+      const day = String(previousDate.getDate()).padStart(2, '0');
+      const month = String(previousDate.getMonth() + 1).padStart(2, '0');
+      const year = String(previousDate.getFullYear());
+
+      let hours = previousDate.getHours();
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12;
+      hours = hours ? hours : 12; // Convert 0 to 12
+      const hoursStr = String(hours).padStart(2, '0');
+
+      const minutes = String(previousDate.getMinutes()).padStart(2, '0');
+
+      return `${day}/${month}/${year} ${hoursStr}:${minutes} ${ampm}`;
+    };
+
+    setTimeAgo(formatDateTime());
+
+    // No need for interval updates since we're showing exact time
+  }, [user?.previousLogin, t]);
+
   // Helper: refresh user state from localStorage and sync location selectors
   const refreshUserFromStorage = () => {
     const now = new Date();
@@ -1411,7 +1453,7 @@ export default function EnhancedTableOCRSystem() {
       setTimeout(() => {
         const basePath = import.meta.env.BASE_URL || '/';
         window.location.href = basePath + '#/login';
-      }, 100); // small delay ensures fetch completes
+      }, 100);
     }
   };
 
@@ -1506,9 +1548,7 @@ export default function EnhancedTableOCRSystem() {
                     <span className="hidden sm:inline">{t('header.documentHistory')}</span>
                   </button>
                   <button
-                    onClick={() => {
-                      handleLogOut();
-                    }}
+                    onClick={() => setShowLogoutModal(true)}
                     className="flex items-center gap-2 px-4 py-2.5 bg-red-500/90 hover:bg-red-600 text-white rounded-xl font-semibold transition-all shadow-lg"
                   >
                     <LogOut size={20} />
@@ -1530,7 +1570,15 @@ export default function EnhancedTableOCRSystem() {
                     {systemOnline ? t('header.systemOnline') : t('header.systemOffline')}
                   </span>
                 </div>
-                <span className="text-xs text-gray-500 font-medium">{t('header.importProcessActive')}</span>
+                <div>
+                  <span className="text-xs text-gray-500 font-medium mr-3">{t('header.importProcessActive')}</span>
+                  {user?.previousLogin && (
+                    <>
+                      <span className="text-xs text-gray-500 font-medium">{t('header.lastLogin')}: </span>
+                      <span className="text-xs text-gray-500 font-medium">{timeAgo}</span>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -1589,678 +1637,59 @@ export default function EnhancedTableOCRSystem() {
                   </div>
                 </div>
               </div>
-
-              {/* Month/Year and Upload Section */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-                {/* Month and Year */}
-                <div className="lg:col-span-1 bg-gradient-to-br from-blue-50 to-cyan-50 rounded-2xl p-6 border-2 border-blue-300 shadow-lg">
-                  <div className="flex items-center gap-3 mb-6">
-                    <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl flex items-center justify-center shadow-md">
-                      <FileText size={28} className="text-white" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg lg:text-xl font-bold text-blue-900">
-                        {t('upload.monthAndYear')} <span className="text-blue-600">*</span>
-                      </h3>
-                    </div>
-                  </div>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-bold text-blue-900 mb-2">
-                        {t('upload.month')} <span className="text-blue-600">*</span>
-                      </label>
-                      <select
-                        value={selectedMonth}
-                        onChange={(e) => setSelectedMonth(e.target.value)}
-                        className="w-full px-4 py-3 border-2 border-blue-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white appearance-none cursor-pointer"
-                      >
-                        <option value="">{t('upload.selectMonth')}</option>
-                        <option value="01">{t('months.january')}</option>
-                        <option value="02">{t('months.february')}</option>
-                        <option value="03">{t('months.march')}</option>
-                        <option value="04">{t('months.april')}</option>
-                        <option value="05">{t('months.may')}</option>
-                        <option value="06">{t('months.june')}</option>
-                        <option value="07">{t('months.july')}</option>
-                        <option value="08">{t('months.august')}</option>
-                        <option value="09">{t('months.september')}</option>
-                        <option value="10">{t('months.october')}</option>
-                        <option value="11">{t('months.november')}</option>
-                        <option value="12">{t('months.december')}</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-bold text-blue-900 mb-2">
-                        {t('upload.year')} <span className="text-blue-600">*</span>
-                      </label>
-                      <select
-                        value={selectedYear}
-                        onChange={(e) => setSelectedYear(e.target.value)}
-                        className="w-full px-4 py-3 border-2 border-blue-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white appearance-none cursor-pointer"
-                      >
-                        <option value="">{t('upload.selectYear')}</option>
-                        {Array.from({ length: 10 }, (_, i) => {
-                          const year = new Date().getFullYear() - i;
-                          return <option key={year} value={year}>{year}</option>;
-                        })}
-                      </select>
-                    </div>
-
-                  </div>
-                </div>
-
-                {/* File Upload Section */}
-                <div className="lg:col-span-2 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-3xl border-2 border-blue-300 shadow-lg p-6 lg:p-8">
-                  <h2 className="text-2xl lg:text-3xl font-bold text-gray-800 flex items-center gap-2 mb-2">
-                    <Upload size={32} className="text-indigo-600" />
-                    {t('upload.importFiles')}
-                  </h2>
-                  <p className="text-xs text-gray-500 mb-4">
-                    {t('upload.uploadInstructions')}
-                  </p>
-
-                  {files.length > 0 && (
-                    <div className="grid grid-cols-3 gap-4 mb-6">
-                      <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-3 text-center">
-                        <div className="text-2xl font-bold text-blue-800">{uploadStats.total}</div>
-                        <div className="text-xs text-blue-600 font-semibold">{t('upload.totalFiles')}</div>
-                      </div>
-                      <div className="bg-green-50 border-2 border-green-300 rounded-lg p-3 text-center">
-                        <div className="text-2xl font-bold text-green-800">{uploadStats.validated}</div>
-                        <div className="text-xs text-green-600 font-semibold">{t('upload.validated')}</div>
-                      </div>
-                      <div className="bg-orange-50 border-2 border-orange-300 rounded-lg p-3 text-center">
-                        <div className="text-2xl font-bold text-orange-800">{uploadStats.pending}</div>
-                        <div className="text-xs text-orange-600 font-semibold">{t('upload.pending')}</div>
-                      </div>
-                    </div>
-                  )}
-
-                  <div
-                    onDrop={handleDrop}
-                    onDragOver={handleDragOver}
-                    className="border-4 border-dashed border-indigo-300 rounded-2xl p-8 lg:p-12 bg-gradient-to-br from-indigo-50 to-purple-50 hover:from-indigo-100 hover:to-purple-100 transition-all cursor-pointer"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <div className="text-center">
-                      <Upload size={64} className="mx-auto text-indigo-600 mb-4" />
-                      <p className="text-xl font-bold text-gray-800 mb-2">
-                        {t('upload.dropFilesHere')}
-                      </p>
-                      <p className="text-sm text-gray-600">
-                        {t('upload.supportedFormats')}
-                      </p>
-                    </div>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      multiple
-                      accept=".png,.jpg,.jpeg,.pdf,.tiff,.tif,.bmp,.webp"
-                      onChange={handleFileChange}
-                      className="hidden"
-                    />
-                  </div>
-
-                  {/* <div className="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <p className="text-xs text-gray-500">
-                      On mobile, you can also use the camera to scan the table. Make sure the full table is visible and sharp. PDF files are also supported for batch processing.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={openCamera}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 border-indigo-500 text-indigo-700 bg-white hover:bg-indigo-50 font-semibold shadow-sm"
-                    >
-                      <Camera size={18} />
-                      Scan Document
-                    </button>
-                  </div> */}
-
-                  {files.length > 0 && (
-                    <div className="mt-6 mb-4 flex justify-end">
-                      <button
-                        onClick={validateAllFiles}
-                        className="px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-all font-semibold flex items-center gap-2 shadow-md"
-                      >
-                        <CheckCircle size={20} />
-                        {t('upload.validateAllDocuments')}
-                      </button>
-                    </div>
-                  )}
-
-                  {files.length > 0 && (
-                    <div className="mt-6 space-y-3">
-                      <h3 className="text-lg font-bold text-gray-800">{t('upload.selectedFiles')} ({files.length})</h3>
-                      {files.map(fileObj => (
-                        <div key={fileObj.id} className="bg-gray-50 border-2 border-gray-300 rounded-lg p-4 flex items-center gap-4">
-                          <FileText size={32} className="text-indigo-600 flex-shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="font-semibold text-gray-800 truncate">{fileObj.name}</p>
-                            <p className="text-sm text-gray-600">{formatBytes(fileObj.size)}</p>
-                          </div>
-                          <div className="flex items-center gap-2 flex-shrink-0">
-                            {fileObj.validated ? (
-                              <span className="px-3 py-1 bg-green-500 text-white text-xs rounded-full font-bold flex items-center gap-1">
-                                <CheckCircle size={14} />
-                                {t('upload.validated')}
-                              </span>
-                            ) : (
-                              <button
-                                onClick={() => validateFile(fileObj.id)}
-                                className="px-3 py-1 bg-yellow-500 hover:bg-yellow-600 text-white text-xs rounded-full font-bold"
-                              >
-                                {t('upload.validate')}
-                              </button>
-                            )}
-                            <button
-                              onClick={() => previewFileHandler(fileObj)}
-                              className="p-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg"
-                            >
-                              <Eye size={18} />
-                            </button>
-                            <button
-                              onClick={() => removeFile(fileObj.id)}
-                              className="p-2 bg-red-500 hover:bg-red-600 text-white rounded-lg"
-                            >
-                              <X size={18} />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {message && (
-                    <div className={`mt-6 p-4 rounded-lg border-2 ${messageType === 'success' ? 'bg-green-50 border-green-300 text-green-800' :
-                      messageType === 'error' ? 'bg-red-50 border-red-300 text-red-800' :
-                        'bg-blue-50 border-blue-300 text-blue-800'
-                      }`}>
-                      <p className="whitespace-pre-line font-semibold">{message}</p>
-                    </div>
-                  )}
-
-                  {processing && (
-                    <div className="mt-4 text-center text-sm text-gray-500 font-semibold">
-                      {t('upload.timeElapsed')}:{' '}
-                      {String(Math.floor(elapsedSeconds / 60)).padStart(2, '0')}
-                      :
-                      {String(elapsedSeconds % 60).padStart(2, '0')}
-                    </div>
-                  )}
-
-                  <div className="mt-6">
-                    <button
-                      onClick={handleProcess}
-                      disabled={processing || files.length === 0}
-                      className="w-full px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 disabled:from-gray-400 disabled:to-gray-500 text-white rounded-xl font-bold text-lg transition-all shadow-lg disabled:cursor-not-allowed flex items-center justify-center gap-3"
-                    >
-                      {processing ? (
-                        <>
-                          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
-                          Processing...
-                        </>
-                      ) : (
-                        <>
-                          <Table2 size={24} />
-                          <Upload size={24} />
-                          {t('upload.uploadFiles')}
-                        </>
-                      )}
-                    </button>
-                  </div>
-
-                </div>
-              </div>
+              {/* SHG Upload Section - Full Width */}
+              <SHGUploadSection
+                selectedMonth={selectedMonth}
+                selectedYear={selectedYear}
+                onMonthChange={setSelectedMonth}
+                onYearChange={setSelectedYear}
+                user={user}
+                onUploadComplete={(data) => {
+                  console.log('SHG Upload complete:', data);
+                }}
+                t={t}
+              />
             </>
           )}
-
-          {/* Results Tab */}
-
-
         </div>
       </div>
-
-      {
-        toasts.length > 0 && (
-          <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3">
-            {toasts.map(toast => {
-              const isSuccess = toast.type === 'success';
-              const isWarning = toast.type === 'warning';
-              const palette = isSuccess
-                ? 'bg-green-50 border-green-300 text-green-900'
-                : isWarning
-                  ? 'bg-yellow-50 border-yellow-300 text-yellow-900'
-                  : 'bg-blue-50 border-blue-300 text-blue-900';
-              return (
-                <div
-                  key={toast.id}
-                  className={`w-80 border-2 rounded-xl shadow-2xl p-4 backdrop-blur ${palette}`}
-                >
-                  <div className="flex gap-3">
-                    <div className="mt-1">
-                      {isSuccess ? (
-                        <CheckCircle size={22} className="text-green-600" />
-                      ) : (
-                        <AlertCircle
-                          size={22}
-                          className={isWarning ? 'text-yellow-600' : 'text-blue-600'}
-                        />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-semibold uppercase tracking-wide">{toast.title}</p>
-                      <ul className="mt-1 text-sm leading-relaxed space-y-1">
-                        {toast.details.map((line, idx) => (
-                          <li key={`${toast.id}-${idx}`} className="break-words">
-                            {line}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                    <button
-                      onClick={() => dismissToast(toast.id)}
-                      className="text-gray-500 hover:text-gray-700"
-                      aria-label="Dismiss notification"
-                    >
-                      <X size={16} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )
-      }
-
-      {/* Preview Modal */}
-      {
-        previewFile && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
-              <div className="flex items-center justify-between p-4 border-b-2 border-gray-300">
-                <h3 className="text-lg font-bold text-gray-800 truncate max-w-[65%]">{previewFile.name}</h3>
-                <div className="flex items-center gap-2">
-                  {(() => {
-                    const isPDF = previewFile.name?.toLowerCase().endsWith('.pdf') ||
-                      previewFile.type === 'application/pdf';
-                    // Only show rotation buttons for images, not PDFs
-                    if (!isPDF) {
-                      return (
-                        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-                          <button
-                            onClick={() => rotateImage('left')}
-                            className="p-2 bg-white hover:bg-gray-200 text-gray-700 rounded transition-all"
-                          >
-                            <RotateCcw size={20} />
-                          </button>
-                          <button
-                            onClick={() => rotateImage('right')}
-                            className="p-2 bg-white hover:bg-gray-200 text-gray-700 rounded transition-all"
-                          >
-                            <RotateCw size={20} />
-                          </button>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
-                  <button
-                    onClick={closePreview}
-                    className="p-2 bg-red-500 hover:bg-red-600 text-white rounded-lg"
-                  >
-                    <X size={24} />
-                  </button>
-                </div>
-              </div>
-              <div className="p-4 overflow-auto max-h-[calc(90vh-80px)] flex items-center justify-center">
-                {previewFile.previewUrl && (() => {
-                  const isPDF = previewFile.name?.toLowerCase().endsWith('.pdf') ||
-                    previewFile.type === 'application/pdf';
-
-                  if (isPDF) {
-                    // Display PDF using iframe
-                    return (
-                      <iframe
-                        src={previewFile.previewUrl}
-                        title={previewFile.name}
-                        className="w-full"
-                        style={{
-                          height: 'calc(90vh - 120px)',
-                          minHeight: '600px',
-                          border: 'none'
-                        }}
-                      />
-                    );
-                  } else {
-                    // Display image
-                    return (
-                      <img
-                        src={previewFile.previewUrl}
-                        alt={previewFile.name}
-                        className="max-w-full h-auto mx-auto"
-                        style={{
-                          transform: `rotate(${previewFile.rotation || 0}deg) scale(${previewZoom})`,
-                          maxHeight: 'calc(90vh - 120px)'
-                        }}
-                      />
-                    );
-                  }
-                })()}
-              </div>
+      {/* Logout Confirmation Modal */}
+      {showLogoutModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-center w-12 h-12 mx-auto bg-red-100 dark:bg-red-900/30 rounded-full mb-4">
+              <LogOut className="text-red-600 dark:text-red-400" size={24} />
             </div>
-          </div>
-        )
-      }
 
-      {/* Camera Scan Modal */}
-      {
-        showCameraModal && (
-          <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-              <div className="flex items-center justify-between p-4 border-b-2 border-gray-300">
-                <div>
-                  <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                    <Camera size={22} className="text-indigo-600" />
-                    Scan SHG Table
-                  </h3>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Hold your phone parallel to the page. Ensure the entire table is inside the frame, without blur or heavy shadows.
-                  </p>
-                </div>
-                <button
-                  onClick={closeCamera}
-                  className="p-2 bg-red-500 hover:bg-red-600 text-white rounded-lg"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-              <div className="p-4 flex-1 flex flex-col gap-4">
-                {cameraError && (
-                  <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">
-                    {cameraError}
-                  </div>
-                )}
-                <div className="flex-1 flex items-center justify-center">
-                  <div className="w-full max-w-2xl aspect-[3/2] bg-black rounded-xl overflow-hidden flex items-center justify-center">
-                    <video
-                      ref={videoRef}
-                      className="w-full h-full object-contain"
-                      autoPlay
-                      playsInline
-                    />
-                  </div>
-                </div>
-                <canvas ref={canvasRef} className="hidden" />
-                <div className="flex justify-end gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={closeCamera}
-                    className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 font-semibold"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={capturePhoto}
-                    className="px-5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold flex items-center gap-2"
-                  >
-                    <Camera size={18} />
-                    Capture
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )
-      }
+            <h3 className="text-xl font-bold text-center text-gray-900 dark:text-white mb-2">
+              {t('header.logoutTitle') || 'Log Out'}
+            </h3>
 
-      {/* Result Detail Modal */}
-      {
-        selectedResult && (
-          <div className="fixed inset-0 bg-black/80 z-50 flex flex-col">
-            <div className="bg-white shadow-2xl flex flex-col h-full w-full">
-              <div className="flex items-center justify-between p-6 border-b-2 border-gray-300">
-                <div>
-                  <h3 className="text-2xl font-bold text-gray-800 truncate">{getDisplayFileName(selectedResult.filename)}</h3>
-                  <p className="text-sm text-gray-600 mt-2 flex items-center gap-2">
-                    📍 {selectedResult.district} → {selectedResult.mandal} → {selectedResult.village}
-                    {selectedResult.month && selectedResult.year && (
-                      <span> | 📅 {selectedResult.month} {selectedResult.year}</span>
-                    )}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-                    <button
-                      onClick={() => setResultZoom(prev => Math.max(prev - 0.25, 0.5))}
-                      className="p-2 bg-white hover:bg-gray-200 text-gray-700 rounded"
-                      disabled={resultZoom <= 0.5}
-                    >
-                      <ZoomOut size={20} />
-                    </button>
-                    <button
-                      onClick={() => setResultZoom(1)}
-                      className="px-3 py-2 bg-white hover:bg-gray-200 text-gray-700 rounded text-sm font-semibold"
-                    >
-                      {Math.round(resultZoom * 100)}%
-                    </button>
-                    <button
-                      onClick={() => setResultZoom(prev => Math.min(prev + 0.25, 3))}
-                      className="p-2 bg-white hover:bg-gray-200 text-gray-700 rounded"
-                      disabled={resultZoom >= 3}
-                    >
-                      <ZoomIn size={20} />
-                    </button>
-                  </div>
-                  <button
-                    onClick={closeModal}
-                    className="p-2 bg-red-500 hover:bg-red-600 text-white rounded-lg"
-                  >
-                    <X size={24} />
-                  </button>
-                </div>
-              </div>
-              <div className="p-6 flex-1 overflow-auto result-modal-content" style={{ minHeight: 0, overflowX: 'auto', overflowY: 'auto' }}>
-                <style>{`
-                .result-modal-content .tables-wrapper {
-                  max-height: none !important;
-                  overflow-y: visible !important;
-                  overflow-x: visible !important;
-                  height: auto !important;
-                  width: 100% !important;
-                }
-                .result-modal-content .table-section {
-                  margin-bottom: 30px;
-                }
-                .result-modal-content .shg-table {
-                  width: 100% !important;
-                }
-                .result-modal-content .shg-mbk-id-container,
-                .result-modal-content div.shg-mbk-id-container {
-                  text-align: left !important;
-                  display: block !important;
-                  width: 100% !important;
-                  padding-left: 0 !important;
-                  margin-left: 0 !important;
-                  float: none !important;
-                  clear: both !important;
-                }
-                .result-modal-content .shg-mbk-id-container *,
-                .result-modal-content div.shg-mbk-id-container * {
-                  text-align: left !important;
-                }
-              `}</style>
-                {selectedResult.htmlData ? (
-                  <div
-                    className="w-full"
-                    style={{
-                      transformOrigin: 'top left',
-                      transform: `scale(${resultZoom})`,
-                      minWidth: `${100 / resultZoom}%`
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: '100%',
-                        textAlign: 'left'
-                      }}
-                      dangerouslySetInnerHTML={{ __html: selectedResult.htmlData }}
-                    />
-                  </div>
-                ) : (
-                  <div
-                    className="w-full"
-                    style={{
-                      transformOrigin: 'top left',
-                      transform: `scale(${resultZoom})`,
-                      minWidth: `${100 / resultZoom}%`
-                    }}
-                  >
-                    <table className="w-full border-collapse border-2 border-gray-300">
-                      {renderReactHeaderRows(selectedResult.headerRows, selectedResult.headers)}
-                      <tbody>
-                        {selectedResult.data.map((row, rowIdx) => (
-                          <tr key={rowIdx} className={rowIdx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
-                            {selectedResult.headers.map((header, cellIdx) => (
-                              <td key={cellIdx} className="border-2 border-gray-300 px-2 py-2 text-sm">
-                                {row[header] || ''}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )
-      }
+            <p className="text-center text-gray-600 dark:text-gray-300 mb-6">
+              {t('header.logoutConfirm') || 'Are you sure you want to log out?'}
+            </p>
 
-      {/* Duplicate Modal */}
-      {
-        showDuplicateModal && (
-          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
-                  <AlertCircle size={32} className="text-orange-600" />
-                </div>
-                <h3 className="text-2xl font-bold text-gray-800">Duplicate Files!</h3>
-              </div>
-              <p className="text-gray-700 mb-4">The following files are already uploaded:</p>
-              <div className="bg-orange-50 border-2 border-orange-300 rounded-lg p-4 mb-6 max-h-48 overflow-y-auto">
-                {duplicateFiles.map((name, idx) => (
-                  <p key={idx} className="text-sm text-orange-800 font-semibold py-1">• {name}</p>
-                ))}
-              </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowLogoutModal(false)}
+                className="flex-1 px-4 py-3 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-xl font-semibold transition-all"
+              >
+                {t('header.cancel') || 'Cancel'}
+              </button>
+
               <button
                 onClick={() => {
-                  setShowDuplicateModal(false);
-                  setDuplicateFiles([]);
+                  setShowLogoutModal(false);
+                  handleLogOut();
                 }}
-                className="w-full px-4 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-bold"
+                className="flex-1 px-4 py-3 bg-red-500 hover:bg-red-600 text-white rounded-xl font-semibold transition-all"
               >
-                OK, Got it
+                {t('header.logout') || 'Log Out'}
               </button>
             </div>
           </div>
-        )
-      }
-
-      {/* Success Modal */}
-      {
-        showSuccessModal && (
-          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center">
-                  <CheckCircle size={40} className="text-green-600" />
-                </div>
-                <div>
-                  <h3 className="text-2xl font-bold text-gray-800">Success!</h3>
-                  <p className="text-sm text-green-600 font-semibold">OCR conversion completed</p>
-                </div>
-              </div>
-              <div className="bg-green-50 border-2 border-green-300 rounded-lg p-4 mb-6">
-                <p className="text-gray-800 whitespace-pre-line font-semibold text-sm">{successMessage}</p>
-              </div>
-              <button
-                onClick={() => setShowSuccessModal(false)}
-                className="w-full px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold"
-              >
-                View Results
-              </button>
-            </div>
-          </div>
-        )
-      }
-
-      {
-        showDuplicateResultModal && duplicateResultFiles.length > 0 && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center">
-                  <AlertCircle size={32} className="text-yellow-600" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold text-gray-800">Duplicate Files Detected</h3>
-                  <p className="text-sm text-yellow-700">These files were already uploaded this month:</p>
-                </div>
-              </div>
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 max-h-48 overflow-y-auto mb-6">
-                <ul className="list-disc list-inside text-sm text-yellow-900 space-y-1">
-                  {duplicateResultFiles.map((name, idx) => (
-                    <li key={`${name}-${idx}`}>{name}</li>
-                  ))}
-                </ul>
-              </div>
-              <button
-                onClick={() => setShowDuplicateResultModal(false)}
-                className="w-full px-4 py-3 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg font-bold"
-              >
-                OK, Got it
-              </button>
-            </div>
-          </div>
-        )
-      }
-
-      {
-        showDuplicateUploadModal && duplicateUploadFiles.length > 0 && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center">
-                  <AlertCircle size={32} className="text-yellow-600" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-bold text-gray-800">Duplicate Upload</h3>
-                  <p className="text-sm text-yellow-700">These files already exist for the selected month:</p>
-                </div>
-              </div>
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 max-h-48 overflow-y-auto mb-6">
-                <ul className="list-disc list-inside text-sm text-yellow-900 space-y-1">
-                  {duplicateUploadFiles.map((name, idx) => (
-                    <li key={`${name}-${idx}`}>{name}</li>
-                  ))}
-                </ul>
-              </div>
-              <button
-                onClick={() => {
-                  setShowDuplicateUploadModal(false);
-                  setDuplicateUploadFiles([]);
-                }}
-                className="w-full px-4 py-3 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg font-bold"
-              >
-                OK, Got it
-              </button>
-            </div>
-          </div>
-        )
-      }
-    </div >
+        </div>
+      )}
+    </div>
   );
 }
