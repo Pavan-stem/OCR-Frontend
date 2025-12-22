@@ -312,7 +312,7 @@ export default function DocumentHistory({ onClose }) {
                       onChange={(e) => setSelectedMonth(e.target.value)}
                       className="w-full px-4 py-2 border-2 border-slate-300 rounded-lg bg-white"
                     >
-                      <option value="">{t('documentHistory.allTime')}</option>
+                      <option value="">{t('documentHistory.allTimeMonths')}</option>
                       {['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'].map((m, i) => (
                         <option key={m} value={m}>
                           {t(`months.${[
@@ -334,7 +334,7 @@ export default function DocumentHistory({ onClose }) {
                       onChange={(e) => setSelectedYear(e.target.value)}
                       className="w-full px-4 py-2 border-2 border-slate-300 rounded-lg bg-white"
                     >
-                      <option value="">{t('documentHistory.allTime')}</option>
+                      <option value="">{t('documentHistory.allTimeYears')}</option>
                       {Array.from({ length: 10 }, (_, i) => {
                         const year = new Date().getFullYear() - i;
                         return <option key={year} value={year}>{year}</option>;

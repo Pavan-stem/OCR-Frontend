@@ -12,20 +12,39 @@ const ProtectedRoute = ({ children }) => {
     return children;
 };
 
+const PublicRoute = ({ children }) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+        return <Navigate to="/scanner" replace />;
+    }
+    return children;
+};
+
+
 const AppRoutes = () => {
     return (
         <Router>
             <Routes>
-                <Route path="/login" element={<AuthPage />} />
-                <Route path="/register" element={<AuthPage />} />
+
+                {/* Login / Register */}
                 <Route
-                    path="/dashboard"
+                    path="/login"
                     element={
-                        <ProtectedRoute>
-                            <Dashboard />
-                        </ProtectedRoute>
+                        <PublicRoute>
+                            <AuthPage />
+                        </PublicRoute>
                     }
                 />
+                <Route
+                    path="/register"
+                    element={
+                        <PublicRoute>
+                            <AuthPage />
+                        </PublicRoute>
+                    }
+                />
+
+                {/* Main App */}
                 <Route
                     path="/scanner"
                     element={
@@ -34,7 +53,10 @@ const AppRoutes = () => {
                         </ProtectedRoute>
                     }
                 />
-                <Route path="/" element={<Navigate to="/login" replace />} />
+
+                {/* Default */}
+                <Route path="/" element={<Navigate to="/scanner" replace />} />
+
             </Routes>
         </Router>
     );

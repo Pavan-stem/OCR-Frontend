@@ -582,16 +582,16 @@ const SHGUploadSection = ({
     if (!fileData) return;
 
     // Check landscape orientation for images
-    if (fileData.width && fileData.height) {
-      const currentRotation = fileData.rotation % 360;
-      const effectiveWidth = (currentRotation === 90 || currentRotation === 270) ? fileData.height : fileData.width;
-      const effectiveHeight = (currentRotation === 90 || currentRotation === 270) ? fileData.width : fileData.height;
+    // if (fileData.width && fileData.height) {
+    //   const currentRotation = fileData.rotation % 360;
+    //   const effectiveWidth = (currentRotation === 90 || currentRotation === 270) ? fileData.height : fileData.width;
+    //   const effectiveHeight = (currentRotation === 90 || currentRotation === 270) ? fileData.width : fileData.height;
 
-      if (effectiveWidth < effectiveHeight) {
-        alert(t?.('upload.portraitError') || 'File must be in landscape orientation (width > height). Please rotate the image and try again.');
-        return;
-      }
-    }
+    //   if (effectiveWidth < effectiveHeight) {
+    //     alert(t?.('upload.portraitError') || 'File must be in landscape orientation (width > height). Please rotate the image and try again.');
+    //     return;
+    //   }
+    // }
 
     setUploadedFiles(prev => ({
       ...prev,
@@ -611,16 +611,16 @@ const SHGUploadSection = ({
       if (fileData.validated) return;
 
       // Check landscape orientation for images
-      if (fileData.width && fileData.height) {
-        const currentRotation = fileData.rotation % 360;
-        const effectiveWidth = (currentRotation === 90 || currentRotation === 270) ? fileData.height : fileData.width;
-        const effectiveHeight = (currentRotation === 90 || currentRotation === 270) ? fileData.width : fileData.height;
+      // if (fileData.width && fileData.height) {
+      //   const currentRotation = fileData.rotation % 360;
+      //   const effectiveWidth = (currentRotation === 90 || currentRotation === 270) ? fileData.height : fileData.width;
+      //   const effectiveHeight = (currentRotation === 90 || currentRotation === 270) ? fileData.width : fileData.height;
 
-        if (effectiveWidth < effectiveHeight) {
-          invalidCount++;
-          return;
-        }
-      }
+      //   if (effectiveWidth < effectiveHeight) {
+      //     invalidCount++;
+      //     return;
+      //   }
+      // }
 
       newUploadedFiles[shgId] = { ...fileData, validated: true };
     });
