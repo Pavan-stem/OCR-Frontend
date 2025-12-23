@@ -111,7 +111,7 @@ export const translations = {
             noSHGsAvailable: 'No SHGs available',
             autoSave: 'Image orientation will be automatically saved.',
             uploadSuccessSingle: "{{shg}} file has been uploaded successfully.",
-            uploadSuccessMultiple: "{{shg}} and {{count}} more files have been uploaded successfully."
+            uploadSuccessMultiple: "{{count}} files have been uploaded successfully."
         },
 
         // Months
@@ -326,7 +326,7 @@ export const translations = {
             noSHGsAvailable: 'SHGలు అందుబాటులో లేవు',
             autoSave: 'చిత్రం యొక్క దిశ దానంతట అదే సేవ్ చేయబడుతుంది.',
             uploadSuccessSingle: "{{shg}} పత్రం విజయవంతంగా అప్‌లోడ్ అయింది.",
-            uploadSuccessMultiple: "{{shg}} మరియు మరో {{count}} పత్రాలు విజయవంతంగా అప్‌లోడ్ అయ్యాయి."
+            uploadSuccessMultiple: "{{count}} పత్రాలు విజయవంతంగా అప్‌లోడ్ అయ్యాయి."
         },
 
         // Months - Telugu

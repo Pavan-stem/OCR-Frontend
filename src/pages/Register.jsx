@@ -12,6 +12,7 @@ const Register = () => {
     const [confirmPassword, setConfirmPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+    const [role, setRole] = useState('VO');
 
     // Location Fields
     const [districts, setDistricts] = useState([]);
@@ -286,6 +287,7 @@ const Register = () => {
                 mandal: selectedMandal,
                 village: finalVillage,
                 voaName: voaName,
+                role: role,
                 email: email || ''
             });
 
@@ -397,13 +399,22 @@ const Register = () => {
                     {/* Create Password */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Create Password</label>
-                        <input
-                            type={showPassword ? "text" : "password"}
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            className="block w-full border rounded-lg py-2.5 px-3"
-                            required
-                        />
+                        <div className="relative">
+                          <input
+                              type={showPassword ? "text" : "password"}
+                              value={password}
+                              onChange={(e) => setPassword(e.target.value)}
+                              className="block w-full border rounded-lg py-2.5 px-3"
+                              required
+                          />
+                          <button
+                              type="button"
+                              onClick={() => setShowPassword(!showPassword)}
+                              className="absolute inset-y-0 right-0 px-3 text-gray-500"
+                          >
+                              {showPassword ? <Eye size={20} /> : <EyeClosed size={20} />}
+                          </button>
+                        </div>
                     </div>
                 </div>
 
@@ -466,13 +477,22 @@ const Register = () => {
                     {/* Confirm Password */}
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
-                        <input
-                            type={showConfirmPassword ? "text" : "password"}
-                            value={confirmPassword}
-                            onChange={(e) => setConfirmPassword(e.target.value)}
-                            className="block w-full border rounded-lg py-2.5 px-3"
-                            required
-                        />
+                        <div className="relative">
+                          <input
+                              type={showConfirmPassword ? "text" : "password"}
+                              value={confirmPassword}
+                              onChange={(e) => setConfirmPassword(e.target.value)}
+                              className="block w-full border rounded-lg py-2.5 px-3"
+                              required
+                          />
+                          <button
+                              type="button"
+                              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                              className="absolute inset-y-0 right-0 px-3 text-gray-500"
+                          >
+                              {showConfirmPassword ? <Eye size={20} /> : <EyeClosed size={20} />}
+                          </button>
+                        </div>
                     </div>
                 </div>
 
@@ -488,16 +508,6 @@ const Register = () => {
                     </button>
                 </div>
             </form>
-
-            <div className="mt-6 text-center text-sm text-gray-600">
-                Already have an account?{' '}
-                <Link
-                    to="/login"
-                    className="font-semibold text-indigo-600 hover:text-indigo-700 transition-colors duration-200"
-                >
-                    Sign in
-                </Link>
-            </div>
         </div>
     );
 };

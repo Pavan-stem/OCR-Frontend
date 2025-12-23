@@ -228,6 +228,7 @@ export default function DocumentHistory({ onClose }) {
                     <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
                       {u.date || u.uploadTimestamp
                         ? new Date(u.date || u.uploadTimestamp).toLocaleString('en-IN', {
+                          timeZone: 'Asia/Kolkata',
                           dateStyle: 'medium',
                           timeStyle: 'short'
                         })
@@ -388,6 +389,7 @@ export default function DocumentHistory({ onClose }) {
                     <div className="text-xs text-slate-600">
                       {u.date || u.uploadTimestamp
                         ? new Date(u.date || u.uploadTimestamp).toLocaleString('en-IN', {
+                          timeZone: 'Asia/Kolkata',
                           dateStyle: 'short',
                           timeStyle: 'short'
                         })

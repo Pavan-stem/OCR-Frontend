@@ -1,7 +1,6 @@
 // SHGUploadSection.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { Upload, CheckCircle, X, FileText, Search, AlertCircle, Eye, Filter, RotateCw, RotateCcw } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import { API_BASE } from './utils/apiConfig';
 
 const SHGUploadSection = ({
@@ -39,26 +38,13 @@ const SHGUploadSection = ({
         return;
       }
 
-      // If no month/year selected, discover and set the latest available
-      if (!selectedMonth || !selectedYear) {
-        console.log('No month/year selected, discovering available data...');
-        setLoading(true);
-
-        const latest = await discoverAvailableData();
-
-        if (latest) {
-          console.log(`Setting latest: ${latest.month}/${latest.year}`);
-          onMonthChange?.(latest.month);
-          onYearChange?.(latest.year);
-        } else {
-          console.log('No data files found');
-          setError('No SHG data files found. Please contact your administrator.');
-          setLoading(false);
-        }
+      // Load data when month and year are selected
+      if (selectedMonth && selectedYear) {
+        console.log(`Month/year selected: ${selectedMonth}/${selectedYear}`);
+        loadSHGDataFromBackend();
       } else {
-        // Month and year are selected, load the data
-        console.log(`Month/year already selected: ${selectedMonth}/${selectedYear}`);
-        loadSHGDataFromExcel();
+        console.log('No month/year selected yet');
+        setLoading(false);
       }
     };
 
@@ -137,7 +123,7 @@ const SHGUploadSection = ({
     }
   };
 
-  const initializeProgress = async (totalShgs) => {
+  const initializeProgress = async () => {
     if (!selectedMonth || !selectedYear) return;
 
     setIsInitializing(true);
@@ -152,7 +138,6 @@ const SHGUploadSection = ({
         body: JSON.stringify({
           month: selectedMonth,
           year: selectedYear,
-          totalShgs: totalShgs
         })
       });
 
@@ -182,7 +167,6 @@ const SHGUploadSection = ({
           month: selectedMonth,
           year: selectedYear,
           shgId: shgId,
-          total: shgData.length  // Current total from CSV
         })
       });
 
@@ -195,7 +179,7 @@ const SHGUploadSection = ({
     }
   };
 
-  const loadSHGDataFromExcel = async () => {
+  const loadSHGDataFromBackend = async () => {
     setLoading(true);
     setError('');
 
@@ -206,166 +190,53 @@ const SHGUploadSection = ({
     }
 
     try {
-      // Construct path based on selected month/year
-      let basePath = '';
-      try {
-        if (typeof import.meta !== 'undefined' && import.meta.env?.BASE_URL) {
-          basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
-        }
-      } catch (e) {
-        const currentPath = window.location.pathname;
-        if (currentPath.startsWith('/SMD')) {
-          basePath = '/SMD';
-        } else {
-          const pathParts = currentPath.split('/').filter(p => p);
-          if (pathParts.length > 0) {
-            basePath = '/' + pathParts[0];
-          }
-        }
-      }
-
-      console.log(`\n=== Loading SHG Data ===`);
+      console.log(`\n=== Loading SHG Data from Backend ===`);
       console.log(`Selected: ${selectedMonth}/${selectedYear}`);
 
-      // Try both extensions
-      const extensions = ['xlsx', 'xlsm'];
-      let excelData = null;
-      let successfulPath = null;
-
-      for (const ext of extensions) {
-        const dataPath = `${basePath}/SHG_data/${selectedYear}/${selectedMonth}/shg-data.${ext}`;
-        console.log(`Trying: ${dataPath}`);
-
-        try {
-          const response = await fetch(`${dataPath}?t=${Date.now()}`);
-
-          if (!response.ok) {
-            console.log(`  ✗ Not found (${response.status})`);
-            continue;
-          }
-
-          console.log(`  ✓ File found, loading...`);
-          const arrayBuffer = await response.arrayBuffer();
-
-          if (arrayBuffer.byteLength === 0) {
-            console.log(`  ✗ Empty file`);
-            continue;
-          }
-
-          const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-
-          if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
-            console.log(`  ✗ No sheets in workbook`);
-            continue;
-          }
-
-          const firstSheetName = workbook.SheetNames[0];
-          console.log(`  Sheet name: ${firstSheetName}`);
-
-          const worksheet = workbook.Sheets[firstSheetName];
-          const jsonData = XLSX.utils.sheet_to_json(worksheet);
-
-          if (jsonData && jsonData.length > 0) {
-            excelData = jsonData;
-            successfulPath = dataPath;
-            console.log(`  ✓ Loaded ${jsonData.length} rows`);
-            break; // Success!
-          } else {
-            console.log(`  ✗ No data rows`);
-          }
-        } catch (err) {
-          console.log(`  ✗ Error: ${err.message}`);
-          continue;
-        }
-      }
-
-      if (!excelData) {
-        // Primary file not found, try fallback
-        console.log(`Primary file not found for ${selectedMonth}/${selectedYear}. Attempting fallback discovery...`);
-
-        const fallback = await discoverAvailableData(parseInt(selectedYear), parseInt(selectedMonth));
-
-        if (fallback) {
-          console.log(`Fallback found: ${fallback.month}/${fallback.year}`);
-          // Load fallback data
-          const response = await fetch(`${fallback.path}?t=${Date.now()}`);
-          if (response.ok) {
-            const arrayBuffer = await response.arrayBuffer();
-            const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-            const firstSheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[firstSheetName];
-            const jsonData = XLSX.utils.sheet_to_json(worksheet);
-
-            if (jsonData && jsonData.length > 0) {
-              excelData = jsonData;
-              successfulPath = fallback.path;
-              console.log(`  ✓ Loaded fallback data from: ${fallback.path}`);
-            }
+      const token = localStorage.getItem('token');
+      const response = await fetch(
+        `${API_BASE}/api/shg-list?month=${selectedMonth}&year=${selectedYear}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
           }
         }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to load SHG data');
       }
 
-      if (!excelData) {
-        // No data found even after fallback
+      const data = await response.json();
+
+      if (!data.success || !data.shgList) {
         setShgData([]);
         setFilteredShgData([]);
-        setServerProgress(null); // Clear progress stats
-        setError(`No SHG data found for ${selectedMonth}/${selectedYear} or any previous dates.`);
+        setServerProgress(null);
+        setError(data.message || 'No SHG data found for the selected period.');
         setLoading(false);
         return;
       }
 
-      console.log(`\nSuccessfully loaded from: ${successfulPath}`);
+      console.log(`✓ Loaded ${data.total} SHGs from backend`);
+      console.log(`  Source: ${data.source}`);
 
-      // Process Excel data - filter by VO ID
-      const voId = user.voID;
-      console.log(`Filtering for VO ID: ${voId}`);
+      setShgData(data.shgList);
+      setFilteredShgData(data.shgList);
 
-      // Log first row to see column names
-      if (excelData.length > 0) {
-        console.log('Excel columns:', Object.keys(excelData[0]));
-      }
+      // Initialize progress on backend (backend will calculate total)
+      await initializeProgress();
 
-      const filteredData = excelData.filter(row => {
-        const rowVoId = row['VO ID'] || row['VOID'] || row['voID'] || row['vo_id'];
-        return rowVoId && String(rowVoId).trim() === String(voId).trim();
-      });
-
-      console.log(`Found ${filteredData.length} SHGs for VO ID: ${voId}`);
-
-      if (filteredData.length === 0) {
-        console.warn(`⚠ No SHGs found for VO ID: ${voId}`);
-        console.log('Total rows in file:', excelData.length);
-        if (excelData.length > 0) {
-          console.log('Sample VO IDs in file:', excelData.slice(0, 5).map(r => r['VO ID'] || r['VOID'] || r['voID'] || r['vo_id']));
-        }
-      }
-
-      const shgList = filteredData.map((row, index) => {
-        const shgId = String(row['SHG ID'] || row['SHGID'] || row['shgID'] || row['shg_id'] || '').trim();
-        const shgName = String(row['SHG Name'] || row['SHGName'] || row['shgName'] || row['shg_name'] || '').trim();
-
-        return {
-          shgId: shgId || `SHG_${index + 1}`,
-          shgName: shgName || `SHG ${index + 1}`,
-          district: user.district,
-          mandal: user.mandal,
-          village: user.village,
-          voId: voId,
-          voName: user.voName
-        };
-      });
-
-      setShgData(shgList);
-      await initializeProgress(shgList.length);
+      // Fetch current progress
       await fetchUploadProgress();
-      loadUploadStatus(shgList);
-      setLoading(false);
-      console.log('=== Load Complete ===\n');
 
+      setLoading(false);
     } catch (err) {
-      console.error('Error loading Excel data:', err);
-      setError(err.message || 'Failed to load SHG data.');
+      console.error('Error loading SHG data:', err);
+      setError(`Failed to load SHG data: ${err.message}`);
+      setShgData([]);
+      setFilteredShgData([]);
       setLoading(false);
     }
   };
@@ -796,8 +667,7 @@ const SHGUploadSection = ({
             .replace('{{shg}}', uploadedShgs[0]);
         } else {
           message = t('upload.uploadSuccessMultiple')
-            .replace('{{shg}}', uploadedShgs[0])
-            .replace('{{count}}', uploadedShgs.length - 1);
+            .replace('{{count}}', uploadedShgs.length);
         }
 
         alert(message);
