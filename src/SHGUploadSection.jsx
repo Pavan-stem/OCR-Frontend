@@ -1,7 +1,8 @@
 // SHGUploadSection.jsx
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload, CheckCircle, X, FileText, Search, AlertCircle, Eye, Filter, RotateCw, RotateCcw } from 'lucide-react';
+import { Upload, CheckCircle, X, FileText, Search, AlertCircle, Eye, Filter, RotateCw, RotateCcw, Camera, AlertTriangle } from 'lucide-react';
 import { API_BASE } from './utils/apiConfig';
+import { analyzeImage } from './utils/imageQualityCheck';
 
 const SHGUploadSection = ({
   selectedMonth,
@@ -28,6 +29,7 @@ const SHGUploadSection = ({
   const [isUploading, setIsUploading] = useState(false);
   const [serverProgress, setServerProgress] = useState(null);
   const [isInitializing, setIsInitializing] = useState(false);
+  const [analyzingMap, setAnalyzingMap] = useState({}); // Track analysis state per SHG
 
 
   // Load SHG data from Excel on component mount or when user/month/year changes
@@ -352,6 +354,40 @@ const SHGUploadSection = ({
     const storageKey = `shg_uploads_${user.voID}_${selectedMonth}_${selectedYear}`;
     localStorage.setItem(storageKey, JSON.stringify(newStatus));
     setUploadStatus(newStatus);
+  };
+
+  const handleSmartCapture = async (shgId, shgName, event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setAnalyzingMap(prev => ({ ...prev, [shgId]: true }));
+
+    try {
+      const analysis = await analyzeImage(file);
+      setAnalyzingMap(prev => ({ ...prev, [shgId]: false }));
+
+      if (!analysis.isValid) {
+        // Show issues
+        const issuesText = analysis.issues.join('\n- ');
+        const proceed = window.confirm(
+          `⚠️ AI Analysis detected potential issues:\n- ${issuesText}\n\nDo you want to use this image anyway?`
+        );
+
+        if (!proceed) {
+          event.target.value = ''; // Clear input
+          return;
+        }
+      }
+
+      // If valid or user forced proceed, reuse existing handler
+      handleFileSelect(shgId, shgName, event);
+
+    } catch (err) {
+      console.error("Smart scan error:", err);
+      setAnalyzingMap(prev => ({ ...prev, [shgId]: false }));
+      // Fallback to normal handling
+      handleFileSelect(shgId, shgName, event);
+    }
   };
 
   const handleFileSelect = (shgId, shgName, event) => {
@@ -826,21 +862,22 @@ const SHGUploadSection = ({
       >
         {/* ✅ PERMANENT UPLOAD STATUS BADGE */}
         {isPermanentlyUploaded && (
-          <div className="absolute -top-2 -right-2 sm:-top-3 sm:-right-3 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-green-500 flex items-center justify-center shadow-lg border-2 sm:border-4 border-white z-10">
-            <CheckCircle size={24} className="text-white" />
+          <div className="absolute -top-1 -right-1 sm:-top-1 sm:-right-1 w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-green-500 flex items-center justify-center shadow-md border border-white z-10">
+            <CheckCircle size={14} className="text-white sm:hidden" />
+            <CheckCircle size={16} className="text-white hidden sm:block" />
           </div>
         )}
 
-        <div className="p-4 sm:p-5">
+        <div className={isPermanentlyUploaded ? "p-1.5 sm:p-2" : "p-3 sm:p-4"}>
           {/* SHG Header */}
-          <div className="mb-3 sm:mb-4">
+          <div className={isPermanentlyUploaded ? "mb-0.5" : "mb-2 sm:mb-3"}>
             <h3
-              className="font-bold text-base sm:text-lg text-gray-800 mb-1 line-clamp-2 break-words"
+              className="font-bold text-sm sm:text-base text-gray-800 mb-0.5 line-clamp-2 break-words"
               title={shg.shgName}
             >
               {shg.shgName}
             </h3>
-            <p className="text-xs text-gray-600 font-mono break-all">
+            <p className="text-[10px] sm:text-xs text-gray-600 font-mono break-all">
               {shg.shgId}
             </p>
           </div>
@@ -848,36 +885,73 @@ const SHGUploadSection = ({
           {/* ================= UPLOAD SECTION ================= */}
           {isPermanentlyUploaded ? (
             /* 🔒 FINAL LOCKED STATE */
-            <div className="flex flex-col items-center justify-center py-6 text-green-700">
-              <CheckCircle size={36} className="mb-2" />
-              <p className="font-bold text-sm sm:text-base text-center">
+            <div className="flex flex-col items-center justify-center py-0.5 text-green-700">
+              <CheckCircle size={24} className="mb-1" />
+              <p className="font-bold text-xs sm:text-sm text-center">
                 {t?.('upload.successfullyUploaded') || 'Successfully Uploaded'}
               </p>
-              <p className="text-xs text-gray-600 mt-1">
+              <p className="text-[10px] sm:text-xs text-gray-600 mt-0.5">
                 {selectedMonth} / {selectedYear}
               </p>
             </div>
           ) : !isTempUploaded ? (
             /* 🟦 INITIAL STATE */
             <div>
-              <input
-                ref={(el) => (fileInputRefs.current[shg.shgId] = el)}
-                type="file"
-                accept=".png,.jpg,.jpeg,.pdf,.tiff,.tif,.bmp,.webp"
-                onChange={(e) =>
-                  handleFileSelect(shg.shgId, shg.shgName, e)
-                }
-                className="hidden"
-                id={`file-input-${shg.shgId}`}
-              />
-              <label
-                htmlFor={`file-input-${shg.shgId}`}
-                className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white rounded-lg sm:rounded-xl font-semibold cursor-pointer transition-all shadow-md text-sm sm:text-base"
-              >
-                <Upload size={18} className="sm:hidden" />
-                <Upload size={20} className="hidden sm:block" />
-                {t?.('upload.uploadFile') || 'Upload File'}
-              </label>
+              <div className="flex gap-2">
+                {/* Standard Upload */}
+                <div className="flex-1 relative">
+                  <input
+                    ref={(el) => (fileInputRefs.current[shg.shgId] = el)}
+                    type="file"
+                    accept=".png,.jpg,.jpeg,.pdf,.tiff,.tif,.bmp,.webp"
+                    onChange={(e) =>
+                      handleFileSelect(shg.shgId, shg.shgName, e)
+                    }
+                    className="hidden"
+                    id={`file-input-${shg.shgId}`}
+                  />
+                  <label
+                    htmlFor={`file-input-${shg.shgId}`}
+                    className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-3 bg-blue-50 hover:bg-blue-100 text-blue-600 lg:bg-gradient-to-r lg:from-blue-500 lg:to-blue-600 lg:hover:from-blue-600 lg:hover:to-blue-700 lg:text-white rounded-lg sm:rounded-xl font-semibold cursor-pointer transition-all border border-blue-200 lg:border-transparent text-sm sm:text-base h-full shadow-sm"
+                  >
+                    <Upload size={18} />
+                    <span className="hidden sm:inline">{t?.('upload.uploadFile') || 'Upload File'}</span>
+                    <span className="sm:hidden">Upload</span>
+                  </label>
+                </div>
+
+                {/* Smart AI Scan - Visible on Mobile/Tablet, Hidden on Desktop */}
+                <div className="flex-1 relative lg:hidden">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={(e) => handleSmartCapture(shg.shgId, shg.shgName, e)}
+                    className="hidden"
+                    id={`smart-scan-${shg.shgId}`}
+                  />
+                  <label
+                    htmlFor={`smart-scan-${shg.shgId}`}
+                    className={`flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all shadow-md text-sm sm:text-base h-full text-white ${analyzingMap[shg.shgId]
+                      ? 'bg-gray-400 cursor-wait'
+                      : 'bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700'
+                      }`}
+                  >
+                    {analyzingMap[shg.shgId] ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                        <span className="text-xs">Analyzing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Camera size={18} />
+                        <span className="hidden sm:inline">AI Smart Scan</span>
+                        <span className="sm:hidden">Camera</span>
+                      </>
+                    )}
+                  </label>
+                </div>
+              </div>
             </div>
           ) : (
             /* 🟨 TEMP STATE (VALIDATE / VIEW / SINGLE UPLOAD / REMOVE) */
@@ -1219,7 +1293,7 @@ const SHGUploadSection = ({
                   <span className="ml-2 text-sm font-normal text-gray-500">({uploadedShgs.length})</span>
                 </h3>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5 sm:gap-2 auto-rows-min">
                 {uploadedShgs.map(renderSHGCard)}
               </div>
             </div>

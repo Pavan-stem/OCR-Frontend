@@ -40,7 +40,19 @@ const Login = () => {
             if (response.data.token) {
                 localStorage.setItem('token', response.data.token);
                 localStorage.setItem('user', JSON.stringify(response.data));
-                navigate('/scanner');
+
+                // Redirect based on role
+                const userRole = (response.data.role || 'vo').toLowerCase();
+                const isAdmin = (role) => {
+                    const r = role.toLowerCase();
+                    return r.includes('admin') || r.includes('district') || r.includes('super');
+                };
+
+                if (isAdmin(userRole)) {
+                    navigate('/dashboard');
+                } else {
+                    navigate('/scanner');
+                }
             }
         } catch (err) {
             setError(err.response?.data?.message || 'Login failed. Please check your credentials.');

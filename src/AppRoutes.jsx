@@ -15,13 +15,17 @@ const getUserRole = () => {
     }
 };
 
-const isAdmin = (role) =>
-    role.includes('admin') ||
-    role.includes('district') ||
-    role.includes('super');
+const isAdmin = (role) => {
+    if (!role) return false;
+    const r = role.toLowerCase();
+    return r.includes('admin') || r.includes('district') || r.includes('super');
+};
 
-const isVO = (role) =>
-    role === 'vo' || role.startsWith('vo-');
+const isVO = (role) => {
+    if (!role) return false;
+    const r = role.toLowerCase();
+    return r === 'vo' || r.startsWith('vo-') || r.includes('developer');
+};
 
 /* ===== routes ===== */
 
@@ -33,8 +37,8 @@ const ProtectedRoute = ({ children, type }) => {
         return <Navigate to="/login" replace />;
     }
 
-    // VO should NEVER see dashboard
-    if (type === 'dashboard' && isVO(role)) {
+    // ONLY Admins can see dashboard
+    if (type === 'dashboard' && !isAdmin(role)) {
         return <Navigate to="/scanner" replace />;
     }
 
@@ -48,7 +52,7 @@ const PublicRoute = ({ children }) => {
     if (token) {
         return (
             <Navigate
-                to={isVO(role) ? '/scanner' : '/dashboard'}
+                to={isAdmin(role) ? '/dashboard' : '/scanner'}
                 replace
             />
         );
@@ -96,7 +100,7 @@ const AppRoutes = () => {
                     path="/"
                     element={
                         <Navigate
-                            to={isVO(getUserRole()) ? '/scanner' : '/dashboard'}
+                            to={isAdmin(getUserRole()) ? '/dashboard' : '/scanner'}
                             replace
                         />
                     }
