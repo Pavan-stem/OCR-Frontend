@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FileText, LogOut, BarChart, Users, CheckCircle } from 'lucide-react';
+import { API_BASE } from '../utils/apiConfig';
 import DashboardTab from './DashboardTab';
 import UsersTab from './UsersTab';
 import OCRValidationTab from './OCRValidationTab';
@@ -8,16 +9,58 @@ import ReportsTab from './ReportsTab';
 
 const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [userRole, setUserRole] = useState('ADMIN'); // Change to 'VO' to test redirect
+  const [userRole, setUserRole] = useState('ADMIN');
+  const [username, setUsername] = useState("Administrator");
   const [selectedDistrict, setSelectedDistrict] = useState('all');
   const [selectedMandal, setSelectedMandal] = useState('all');
   const [selectedVillage, setSelectedVillage] = useState('all');
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  // Server status state
+  const [serverStatus, setServerStatus] = useState({
+    active: false,
+    checking: true,
+    message: 'Checking...'
+  });
+
+  useEffect(() => {
+    const checkServerStatus = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/api/health`);
+        const data = await response.json();
+
+        if (data.status === 'healthy') {
+          setServerStatus({
+            active: true,
+            checking: false,
+            message: 'Server Active'
+          });
+        } else {
+          setServerStatus({
+            active: false,
+            checking: false,
+            message: 'Server Error'
+          });
+        }
+      } catch (error) {
+        setServerStatus({
+          active: false,
+          checking: false,
+          message: 'Server Offline'
+        });
+      }
+    };
+
+    checkServerStatus();
+    // Check every 30 seconds
+    const interval = setInterval(checkServerStatus, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Check if user is VO and redirect
   useEffect(() => {
     const user = JSON.parse(localStorage.getItem('user'));
     setUserRole(user.role);
+    setUsername(user.voName);
     if (userRole === 'VO') {
       // Redirect to scanner page
       window.location.href = '#/scanner';
@@ -42,7 +85,8 @@ const AdminDashboard = () => {
     selectedMandal,
     setSelectedMandal,
     selectedVillage,
-    setSelectedVillage
+    setSelectedVillage,
+    serverStatus
   };
 
   const renderContent = () => {
@@ -98,11 +142,21 @@ const AdminDashboard = () => {
                 <div>
                   <h1 className="text-2xl font-bold text-gray-900">OCR Admin Console</h1>
                   <p className="text-sm text-gray-600">Administration & Reporting System</p>
+                  <div className="flex items-center gap-2">
+                    {serverStatus.checking ? (
+                      <div className="w-3 h-3 rounded-full bg-yellow-500 animate-pulse"></div>
+                    ) : (
+                      <div className={`w-3 h-3 rounded-full ${serverStatus.active ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                    )}
+                    <span className="text-sm font-medium text-gray-700">
+                      {serverStatus.message}
+                    </span>
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-4">
                 <div className="text-right">
-                  <p className="text-sm font-medium">Admin User</p>
+                  <p className="text-sm font-medium">{username}</p>
                   <p className="text-xs text-gray-600">Role: {userRole}</p>
                 </div>
                 <button className="text-gray-600 hover:text-gray-800" onClick={() => setShowLogoutModal(true)}>
@@ -126,11 +180,10 @@ const AdminDashboard = () => {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`py-4 px-2 border-b-2 font-medium text-sm whitespace-nowrap flex items-center gap-2 ${
-                    activeTab === tab.id
-                      ? 'border-blue-600 text-blue-600'
-                      : 'border-transparent text-gray-600 hover:text-gray-900'
-                  }`}
+                  className={`py-4 px-2 border-b-2 font-medium text-sm whitespace-nowrap flex items-center gap-2 ${activeTab === tab.id
+                    ? 'border-blue-600 text-blue-600'
+                    : 'border-transparent text-gray-600 hover:text-gray-900'
+                    }`}
                 >
                   <tab.icon className="w-4 h-4" />
                   {tab.label}
@@ -182,7 +235,7 @@ const AdminDashboard = () => {
           </div>
         </div>
       )}
-  </div>
+    </div>
   );
 };
 
