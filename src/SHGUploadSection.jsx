@@ -1061,7 +1061,7 @@ const SHGUploadSection = ({
                       {t?.('upload.pending') || 'Pending'}
                     </p>
                     <p className="text-xl sm:text-3xl font-bold text-white">
-                      {serverProgress?.pending || shgData.length}
+                      {serverProgress?.pending || 0}
                     </p>
                   </div>
                   <div className="w-8 h-8 sm:w-12 sm:h-12 bg-white rounded-full flex items-center justify-center flex-shrink-0">
@@ -1087,7 +1087,7 @@ const SHGUploadSection = ({
             <p>Please try selecting a different month or year using the dropdowns above.</p>
           </div>
           <button
-            onClick={loadSHGDataFromExcel}
+            onClick={loadSHGDataFromBackend}
             className="mt-4 px-4 sm:px-6 py-2 sm:py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold text-sm sm:text-base shadow-lg transition-all"
           >
             {t?.('upload.retry') || 'Retry'}
