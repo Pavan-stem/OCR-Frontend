@@ -17,7 +17,14 @@ const AdminDashboard = () => {
       return '';
     }
   });
-  const [username, setUsername] = useState("Administrator");
+  const [username, setUsername] = useState(() => {
+    try {
+      const user = JSON.parse(localStorage.getItem('user'));
+      return user?.voName || 'Administrator';
+    } catch {
+      return 'Admin';
+    }
+  });
   const [selectedDistrict, setSelectedDistrict] = useState('all');
   const [selectedMandal, setSelectedMandal] = useState('all');
   const [selectedVillage, setSelectedVillage] = useState('all');
@@ -72,12 +79,8 @@ const AdminDashboard = () => {
 
   // Check if user is Admin and redirect if not
   useEffect(() => {
-    const user = JSON.parse(localStorage.getItem('user'));
-    setUserRole(user.role);
-    setUsername(user.voName);
-    if (userRole === 'VO') {
-      // Redirect to scanner page
-      window.location.href = '#/scanner';
+    if (userRole && !isAdmin(userRole)) {
+      window.location.hash = '/scanner';
     }
   }, [userRole]);
 
