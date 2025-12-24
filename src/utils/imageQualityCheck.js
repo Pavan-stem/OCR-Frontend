@@ -80,36 +80,78 @@ export const analyzeImage = async (file) => {
                     issues.push("Shadow Detected: Uneven lighting or heavy shadows detected.");
                 }
 
-                // 4. Blur Detection (Laplacian Variance)
-                // Kernel: 
-                // 0  1  0
-                // 1 -4  1
-                // 0  1  0
+                // 4. Content Bounding Box & Orientation Detection
+                let dxSum = 0;
+                let dySum = 0;
+                let topWeight = 0;
+                let bottomWeight = 0;
+                let leftWeight = 0;
+                let rightWeight = 0;
+
+                let minX = width, minY = height, maxX = 0, maxY = 0;
+                const sampleStep = 2;
+
+                for (let y = sampleStep; y < height - sampleStep; y += sampleStep) {
+                    for (let x = sampleStep; x < width - sampleStep; x += sampleStep) {
+                        const idx = y * width + x;
+                        const dx = Math.abs(grayData[idx + 1] - grayData[idx - 1]);
+                        const dy = Math.abs(grayData[idx + width] - grayData[idx - width]);
+
+                        if (dx > 20) dxSum += dx;
+                        if (dy > 20) dySum += dy;
+
+                        const edgeStrength = dx + dy;
+                        if (edgeStrength > 40) {
+                            // Expand bounding box
+                            if (x < minX) minX = x;
+                            if (x > maxX) maxX = x;
+                            if (y < minY) minY = y;
+                            if (y > maxY) maxY = y;
+
+                            // Density check for orientation
+                            if (y < height * 0.25) topWeight++;
+                            else if (y > height * 0.75) bottomWeight++;
+
+                            if (x < width * 0.25) leftWeight++;
+                            else if (x > width * 0.75) rightWeight++;
+                        }
+                    }
+                }
+
+                // Calculate Content Box with padding (5% relative)
+                const padW = width * 0.05;
+                const padH = height * 0.05;
+                const contentBox = {
+                    x: Math.max(0, minX - padW),
+                    y: Math.max(0, minY - padH),
+                    width: Math.min(width, maxX + padW) - Math.max(0, minX - padW),
+                    height: Math.min(height, maxY + padH) - Math.max(0, minY - padH)
+                };
+
+                // Orientation Logic
+                let suggestedRotation = 0;
+                if (dxSum > dySum * 1.1) {
+                    suggestedRotation = 90;
+                }
+
+                if (suggestedRotation === 0) {
+                    if (bottomWeight > topWeight * 1.4) suggestedRotation = 180;
+                } else if (suggestedRotation === 90) {
+                    if (rightWeight > leftWeight * 1.4) suggestedRotation = 270;
+                }
+
+                const resultW = (suggestedRotation === 90 || suggestedRotation === 270) ? height : width;
+                const resultH = (suggestedRotation === 90 || suggestedRotation === 270) ? width : height;
+
+                if (resultH > resultW && (suggestedRotation === 0 || suggestedRotation === 180)) {
+                    if (height > width) suggestedRotation = (suggestedRotation + 90) % 360;
+                }
+
+                // 5. Blur Detection (Laplacian Variance)
                 let variance = 0;
                 let mean = 0;
                 let pixelCount = 0;
 
-                // Skip borders to avoid artifacts
-                for (let y = 1; y < height - 1; y++) {
-                    for (let x = 1; x < width - 1; x++) {
-                        const idx = y * width + x;
-
-                        // Apply Kernel
-                        const laplacian =
-                            grayData[idx - width] + // Top
-                            grayData[idx + width] + // Bottom
-                            grayData[idx - 1] +     // Left
-                            grayData[idx + 1] -     // Right
-                            (4 * grayData[idx]);    // Center
-
-                        mean += laplacian;
-                        pixelCount++;
-                    }
-                }
-
-                mean /= pixelCount;
-
-                // Calculate Variance
                 for (let y = 1; y < height - 1; y++) {
                     for (let x = 1; x < width - 1; x++) {
                         const idx = y * width + x;
@@ -120,25 +162,32 @@ export const analyzeImage = async (file) => {
                             grayData[idx + 1] -
                             (4 * grayData[idx]);
 
+                        mean += laplacian;
+                        pixelCount++;
+                    }
+                }
+                mean /= pixelCount;
+
+                for (let y = 1; y < height - 1; y++) {
+                    for (let x = 1; x < width - 1; x++) {
+                        const idx = y * width + x;
+                        const laplacian =
+                            grayData[idx - width] +
+                            grayData[idx + width] +
+                            grayData[idx - 1] +
+                            grayData[idx + 1] -
+                            (4 * grayData[idx]);
                         variance += Math.pow(laplacian - mean, 2);
                     }
                 }
-
                 variance /= pixelCount;
-
-                // Thresholds usually around 100-500 depending on resolution/content
-                // Text documents usually have high variance (sharp edges)
-                // Blurry images hav low variance
-                console.log("Image Analysis - Variance:", variance, "Brightness:", avgBrightness);
-
-                if (variance < 100) {
-                    issues.push("Blurry Image: The document text may be unreadable. Please hold steady.");
-                }
 
                 resolve({
                     isValid: issues.length === 0,
                     score: variance,
-                    issues: issues
+                    issues: issues,
+                    suggestedRotation: suggestedRotation,
+                    contentBox: contentBox
                 });
 
             } catch (err) {

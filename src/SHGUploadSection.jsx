@@ -1,6 +1,7 @@
 // SHGUploadSection.jsx
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload, CheckCircle, X, FileText, Search, AlertCircle, Eye, Filter, RotateCw, RotateCcw, Camera, AlertTriangle } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Upload, CheckCircle, X, FileText, Search, AlertCircle, Eye, Filter, RotateCw, RotateCcw, Camera, AlertTriangle, Activity } from 'lucide-react';
 import { API_BASE } from './utils/apiConfig';
 import { analyzeImage } from './utils/imageQualityCheck';
 
@@ -29,7 +30,39 @@ const SHGUploadSection = ({
   const [isUploading, setIsUploading] = useState(false);
   const [serverProgress, setServerProgress] = useState(null);
   const [isInitializing, setIsInitializing] = useState(false);
-  const [analyzingMap, setAnalyzingMap] = useState({}); // Track analysis state per SHG
+  const [analyzingMap, setAnalyzingMap] = useState({});
+  const [smartPreviewUrl, setSmartPreviewUrl] = useState(null);
+  const [isProcessingPreview, setIsProcessingPreview] = useState(false);
+
+  // Smart Preview Logic (Handles hard rotation and cropping for modal)
+  useEffect(() => {
+    if (!previewFile) {
+      if (smartPreviewUrl) URL.revokeObjectURL(smartPreviewUrl);
+      setSmartPreviewUrl(null);
+      return;
+    }
+
+    const generateSmartPreview = async () => {
+      setSmartPreviewUrl(null); // Clear old to show loader
+      setIsProcessingPreview(true);
+      try {
+        const processedFile = await processFileRotation(previewFile, {
+          quality: 0.9
+        });
+
+        const url = URL.createObjectURL(processedFile);
+        if (smartPreviewUrl) URL.revokeObjectURL(smartPreviewUrl);
+        setSmartPreviewUrl(url);
+      } catch (err) {
+        console.error("Smart preview generation failed:", err);
+        setSmartPreviewUrl(previewFile.previewUrl);
+      } finally {
+        setIsProcessingPreview(false);
+      }
+    };
+
+    generateSmartPreview();
+  }, [previewFile?.id, previewRotation]); // Track analysis state per SHG
 
 
   // Load SHG data from Excel on component mount or when user/month/year changes
@@ -381,7 +414,7 @@ const SHGUploadSection = ({
       }
 
       // If valid or user forced proceed, reuse existing handler
-      handleFileSelect(shgId, shgName, event);
+      handleFileSelect(shgId, shgName, event, analysis);
 
     } catch (err) {
       console.error("Smart scan error:", err);
@@ -391,7 +424,7 @@ const SHGUploadSection = ({
     }
   };
 
-  const handleFileSelect = (shgId, shgName, event) => {
+  const handleFileSelect = async (shgId, shgName, event, analysisResults = null) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -426,40 +459,68 @@ const SHGUploadSection = ({
 
     // Check image dimensions for landscape orientation
     if (['png', 'jpg', 'jpeg', 'bmp', 'webp'].includes(ext)) {
-      const img = new Image();
-      const reader = new FileReader();
+      setAnalyzingMap(prev => ({ ...prev, [shgId]: true }));
 
-      reader.onload = (e) => {
-        img.onload = () => {
-          // Store file with uploaded status
-          const newFile = {
-            file: file,
-            fileName: file.name,
-            fileSize: file.size,
-            uploadDate: new Date().toISOString(),
-            shgName: shgName,
-            shgId: shgId,
-            validated: false,
-            rotation: 0,
-            width: img.width,
-            height: img.height,
-            previewUrl: e.target.result
+      try {
+        let analysis = analysisResults;
+        if (!analysis) {
+          analysis = await analyzeImage(file);
+        }
+
+        const img = new Image();
+        const reader = new FileReader();
+
+        reader.onload = (e) => {
+          img.onload = () => {
+            // Use smart suggested rotation or fallback to simple landscape check
+            let initialRotation = analysis?.suggestedRotation ?? 0;
+
+            // If smart suggestion is 0 but image is still portrait, force to landscape
+            if (initialRotation === 0 && img.height > img.width) {
+              initialRotation = 90;
+            }
+
+            console.log(`Smart-rotated image for SHG: ${shgId} to ${initialRotation}deg`);
+
+            // Store file with uploaded status
+            const newFile = {
+              file: file,
+              fileName: file.name,
+              fileSize: file.size,
+              uploadDate: new Date().toISOString(),
+              shgName: shgName,
+              shgId: shgId,
+              validated: false,
+              rotation: initialRotation,
+              width: img.width,
+              height: img.height,
+              previewUrl: e.target.result,
+              analysis: analysis,
+            };
+
+            setUploadedFiles(prev => ({
+              ...prev,
+              [shgId]: newFile
+            }));
+
+            setAnalyzingMap(prev => ({ ...prev, [shgId]: false }));
+
+            // Reset file input
+            if (fileInputRefs.current[shgId]) {
+              fileInputRefs.current[shgId].value = '';
+            }
           };
-
-          setUploadedFiles(prev => ({
-            ...prev,
-            [shgId]: newFile
-          }));
-
-          // Reset file input
-          if (fileInputRefs.current[shgId]) {
-            fileInputRefs.current[shgId].value = '';
-          }
+          img.src = e.target.result;
         };
-        img.src = e.target.result;
-      };
 
-      reader.readAsDataURL(file);
+        reader.readAsDataURL(file);
+
+      } catch (err) {
+        console.error("Analysis during file select failed:", err);
+        setAnalyzingMap(prev => ({ ...prev, [shgId]: false }));
+        // Fallback to minimal handling without analysis
+      }
+
     } else {
       // For PDFs and other files, just store them
       const newFile = {
@@ -534,10 +595,6 @@ const SHGUploadSection = ({
     });
 
     setUploadedFiles(newUploadedFiles);
-
-    if (invalidCount > 0) {
-      alert(t?.('upload.portraitErrorMultiple') || `${invalidCount} file(s) could not be validated. They must be in landscape orientation.`);
-    }
   };
 
   const handleViewFile = (shgId) => {
@@ -566,6 +623,12 @@ const SHGUploadSection = ({
         rotation: newRotation
       }
     }));
+
+    // CRITICAL: Also update previewFile to trigger smart preview useEffect correctly
+    setPreviewFile(prev => ({
+      ...prev,
+      rotation: newRotation
+    }));
   };
 
   const closePreview = () => {
@@ -590,6 +653,73 @@ const SHGUploadSection = ({
     // Close preview if this file is being previewed
     if (previewFile?.id === shgId) {
       closePreview();
+    }
+  };
+
+  /**
+   * Helper to process image rotation and smart cropping
+   * Detects and applies the set rotation and optional content cropping using Canvas
+   */
+  const processFileRotation = async (fileData, options = {}) => {
+    const { useSmartCrop = false, quality = 0.95 } = options;
+
+    if (!fileData.previewUrl) return fileData.file;
+
+    // If no rotation and no smart crop, return original
+    if ((!fileData.rotation || fileData.rotation % 360 === 0) && !useSmartCrop) {
+      return fileData.file;
+    }
+
+    try {
+      const img = new Image();
+      await new Promise((res, rej) => {
+        img.onload = res;
+        img.onerror = rej;
+        img.src = fileData.previewUrl;
+      });
+
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const r = (fileData.rotation || 0) % 360;
+
+      // Handle Smart Crop logic
+      let sourceX = 0, sourceY = 0, sourceW = img.width, sourceH = img.height;
+      if (useSmartCrop && fileData.contentBox) {
+        const box = fileData.contentBox;
+        // Map 1000px analyze box back to original dimensions
+        const scaleX = img.width / 1000;
+        const scaleY = img.height / 1000;
+
+        sourceX = Math.max(0, box.x * scaleX);
+        sourceY = Math.max(0, box.y * scaleY);
+        sourceW = Math.min(img.width - sourceX, box.width * scaleX);
+        sourceH = Math.min(img.height - sourceY, box.height * scaleY);
+      }
+
+      const isSwapped = r === 90 || r === 270 || r === -90 || r === -270;
+      canvas.width = isSwapped ? sourceH : sourceW;
+      canvas.height = isSwapped ? sourceW : sourceH;
+
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate((r * Math.PI) / 180);
+
+      // Draw the cropped portion
+      ctx.drawImage(
+        img,
+        sourceX, sourceY, sourceW, sourceH, // Source
+        -sourceW / 2, -sourceH / 2, sourceW, sourceH // Destination
+      );
+
+      const blob = await new Promise(r =>
+        canvas.toBlob(r, 'image/jpeg', quality)
+      );
+
+      return new File([blob], fileData.fileName, {
+        type: 'image/jpeg'
+      });
+    } catch (err) {
+      console.error("Error processing rotation/crop:", err);
+      return fileData.file;
     }
   };
 
@@ -625,36 +755,8 @@ const SHGUploadSection = ({
           if (uploadStatus[fileData.shgId]?.uploaded) continue;
 
           const formData = new FormData();
-          let fileToUpload = fileData.file;
-
-          // Rotation handling
-          if (fileData.rotation !== 0 && fileData.previewUrl) {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            const img = new Image();
-
-            await new Promise((res, rej) => {
-              img.onload = res;
-              img.onerror = rej;
-              img.src = fileData.previewUrl;
-            });
-
-            const r = fileData.rotation % 360;
-            canvas.width = r === 90 || r === 270 ? img.height : img.width;
-            canvas.height = r === 90 || r === 270 ? img.width : img.height;
-
-            ctx.translate(canvas.width / 2, canvas.height / 2);
-            ctx.rotate((r * Math.PI) / 180);
-            ctx.drawImage(img, -img.width / 2, -img.height / 2);
-
-            const blob = await new Promise(r =>
-              canvas.toBlob(r, 'image/jpeg', 0.95)
-            );
-
-            fileToUpload = new File([blob], fileData.fileName, {
-              type: 'image/jpeg'
-            });
-          }
+          // Handle Rotation (including Auto-Rotate)
+          const fileToUpload = await processFileRotation(fileData);
 
           formData.append('file', fileToUpload);
           formData.append('month', selectedMonth);
@@ -743,35 +845,8 @@ const SHGUploadSection = ({
     try {
       const token = localStorage.getItem('token');
       const formData = new FormData();
-      let fileToUpload = fileData.file;
-
-      if (fileData.rotation !== 0 && fileData.previewUrl) {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        const img = new Image();
-
-        await new Promise((res, rej) => {
-          img.onload = res;
-          img.onerror = rej;
-          img.src = fileData.previewUrl;
-        });
-
-        const r = fileData.rotation % 360;
-        canvas.width = r === 90 || r === 270 ? img.height : img.width;
-        canvas.height = r === 90 || r === 270 ? img.width : img.height;
-
-        ctx.translate(canvas.width / 2, canvas.height / 2);
-        ctx.rotate((r * Math.PI) / 180);
-        ctx.drawImage(img, -img.width / 2, -img.height / 2);
-
-        const blob = await new Promise(r =>
-          canvas.toBlob(r, 'image/jpeg', 0.95)
-        );
-
-        fileToUpload = new File([blob], fileData.fileName, {
-          type: 'image/jpeg'
-        });
-      }
+      // Handle Rotation (including Auto-Rotate)
+      const fileToUpload = await processFileRotation(fileData);
 
       formData.append('file', fileToUpload);
       formData.append('month', selectedMonth);
@@ -913,11 +988,23 @@ const SHGUploadSection = ({
                   />
                   <label
                     htmlFor={`file-input-${shg.shgId}`}
-                    className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-3 bg-blue-50 hover:bg-blue-100 text-blue-600 lg:bg-gradient-to-r lg:from-blue-500 lg:to-blue-600 lg:hover:from-blue-600 lg:hover:to-blue-700 lg:text-white rounded-lg sm:rounded-xl font-semibold cursor-pointer transition-all border border-blue-200 lg:border-transparent text-sm sm:text-base h-full shadow-sm"
+                    className={`flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl font-semibold cursor-pointer transition-all border shadow-sm text-sm sm:text-base h-full ${analyzingMap[shg.shgId]
+                      ? 'bg-gray-100 text-gray-400 cursor-wait border-gray-200'
+                      : 'bg-blue-50 hover:bg-blue-100 text-blue-600 lg:bg-gradient-to-r lg:from-blue-500 lg:to-blue-600 lg:hover:from-blue-600 lg:hover:to-blue-700 lg:text-white border-blue-200 lg:border-transparent'
+                      }`}
                   >
-                    <Upload size={18} />
-                    <span className="hidden sm:inline">{t?.('upload.uploadFile') || 'Upload File'}</span>
-                    <span className="sm:hidden">Upload</span>
+                    {analyzingMap[shg.shgId] ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-indigo-500 border-t-transparent"></div>
+                        <span>{t?.('upload.analyzing') || 'Analyzing...'}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload size={18} />
+                        <span className="hidden sm:inline">{t?.('upload.uploadFile') || 'Upload File'}</span>
+                        <span className="sm:hidden">Upload</span>
+                      </>
+                    )}
                   </label>
                 </div>
 
@@ -1321,18 +1408,14 @@ const SHGUploadSection = ({
         </div>
       )}
 
-      {/* Preview Modal */}
-      {previewFile && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-2 sm:p-4">
-          <div className="bg-white rounded-xl sm:rounded-2xl max-w-5xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col">
+      {/* Preview Modal - Use Portal to ensure full screen coverage */}
+      {previewFile && createPortal(
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[9999] p-2 sm:p-4 animate-in fade-in duration-300">
+          <div className="bg-white rounded-xl sm:rounded-2xl max-w-5xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
             {/* Modal Header */}
             <div className="flex items-center justify-between p-3 sm:p-4 border-b">
               <div className="flex-1 min-w-0 mr-2">
                 <h3 className="font-bold text-sm sm:text-lg truncate">{previewFile.fileName}</h3>
-                <p className="text-xs sm:text-sm text-gray-600">
-                  {previewFile.width} × {previewFile.height}
-                  {previewRotation !== 0 && ` (Rotated ${previewRotation}°)`}
-                </p>
               </div>
               <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
                 <button
@@ -1363,51 +1446,29 @@ const SHGUploadSection = ({
             </div>
 
             {/* Modal Body */}
-            <div className="flex-1 overflow-auto p-2 sm:p-4 flex items-center justify-center bg-gray-100">
-              {previewFile.previewUrl && (
+            <div className="flex-1 overflow-auto bg-gray-100 flex flex-col relative p-2 sm:p-4 min-h-[300px]">
+              {isProcessingPreview ? (
+                <div className="m-auto flex flex-col items-center gap-2">
+                  <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent"></div>
+                  <p className="font-semibold text-gray-600 text-sm">{t?.('upload.processing') || 'Smart Processing...'}</p>
+                </div>
+              ) : smartPreviewUrl ? (
                 <img
-                  src={previewFile.previewUrl}
+                  src={smartPreviewUrl}
                   alt={previewFile.fileName}
-                  className="max-w-full max-h-full object-contain"
-                  style={{
-                    transform: `rotate(${previewRotation}deg)`,
-                    transition: 'transform 0.3s ease'
-                  }}
+                  className="max-w-full max-h-full object-contain m-auto bg-white transition-opacity duration-300"
                 />
+              ) : (
+                <div className="m-auto text-gray-400 text-sm">Preview not available</div>
               )}
             </div>
 
             {/* Modal Footer */}
             <div className="p-3 sm:p-4 border-t bg-gray-50">
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-                <div className='text-xs sm:text-sm text-gray-600 w-full sm:w-auto'>
-                  <p>{t?.('upload.autoSave') || 'Image orientation will be automatically saved.'}</p>
+                <div className='flex items-center gap-3 w-full sm:w-auto'>
                 </div>
-                <div className="text-xs sm:text-sm text-gray-600 w-full sm:w-auto">
-                  {(() => {
-                    const rotation = previewRotation % 360;
-                    const effectiveWidth = (rotation === 90 || rotation === 270) ? previewFile.height : previewFile.width;
-                    const effectiveHeight = (rotation === 90 || rotation === 270) ? previewFile.width : previewFile.height;
 
-                    if (effectiveWidth < effectiveHeight) {
-                      return (
-                        <div className="flex items-center gap-2 text-red-600 font-semibold">
-                          <AlertCircle size={16} className="sm:hidden flex-shrink-0" />
-                          <AlertCircle size={18} className="hidden sm:block flex-shrink-0" />
-                          <span className="text-xs sm:text-sm break-words">{t?.('upload.portraitWarning') || 'Portrait orientation detected. Rotate to landscape before validating.'}</span>
-                        </div>
-                      );
-                    } else {
-                      return (
-                        <div className="flex items-center gap-2 text-green-600 font-semibold">
-                          <CheckCircle size={16} className="sm:hidden flex-shrink-0" />
-                          <CheckCircle size={18} className="hidden sm:block flex-shrink-0" />
-                          <span className="text-xs sm:text-sm">{t?.('upload.landscapeConfirmed') || 'Landscape orientation confirmed.'}</span>
-                        </div>
-                      );
-                    }
-                  })()}
-                </div>
                 <button
                   onClick={closePreview}
                   className="w-full sm:w-auto px-4 sm:px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-semibold text-sm sm:text-base"
@@ -1417,7 +1478,8 @@ const SHGUploadSection = ({
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
