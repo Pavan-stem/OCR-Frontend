@@ -9,7 +9,14 @@ import ReportsTab from './ReportsTab';
 
 const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [userRole, setUserRole] = useState('ADMIN');
+  const [userRole, setUserRole] = useState(() => {
+    try {
+      const user = JSON.parse(localStorage.getItem('user'));
+      return user?.role || '';
+    } catch {
+      return '';
+    }
+  });
   const [username, setUsername] = useState("Administrator");
   const [selectedDistrict, setSelectedDistrict] = useState('all');
   const [selectedMandal, setSelectedMandal] = useState('all');
@@ -56,7 +63,14 @@ const AdminDashboard = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Check if user is VO and redirect
+  // Consistency Helper
+  const isAdmin = (role) => {
+    if (!role) return false;
+    const r = role.toLowerCase();
+    return r.includes('admin') || r.includes('district') || r.includes('super');
+  };
+
+  // Check if user is Admin and redirect if not
   useEffect(() => {
     const user = JSON.parse(localStorage.getItem('user'));
     setUserRole(user.role);
@@ -67,8 +81,8 @@ const AdminDashboard = () => {
     }
   }, [userRole]);
 
-  // If user is VO, show loading while redirecting
-  if (userRole === 'VO') {
+  // If user is NOT Admin, show loading while redirecting
+  if (!userRole || !isAdmin(userRole)) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
         <div className="text-center">

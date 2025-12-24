@@ -25,7 +25,7 @@ export const translations = {
 
         // Header & Navigation
         header: {
-            dashboard: 'SMD Scanner Dashboard',
+            dashboard: 'SHG Scanner',
             subtitle: 'Andhra Pradesh Government | Digital SHG Initiative',
             profile: 'Profile',
             documentHistory: 'Document History',
@@ -240,7 +240,7 @@ export const translations = {
 
         // Header & Navigation - Telugu
         header: {
-            dashboard: 'SMD Scanner డాష్‌బోర్డ్',
+            dashboard: 'SHG స్కానర్',
             subtitle: 'ఆంధ్రప్రదేశ్ ప్రభుత్వం | డిజిటల్ SHG చొరవ',
             profile: 'ప్రొఫైల్',
             documentHistory: 'డాక్యుమెంట్ చరిత్ర',
