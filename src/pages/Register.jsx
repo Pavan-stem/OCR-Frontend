@@ -259,7 +259,7 @@ const Register = () => {
             return;
         }
 
-        if (voID.trim().length >= 13) {
+        if (voID.trim().length <= 13) {
             setError('Please enter correct VO ID.');
             setLoading(false);
             return;
@@ -400,20 +400,20 @@ const Register = () => {
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Create Password</label>
                         <div className="relative">
-                          <input
-                              type={showPassword ? "text" : "password"}
-                              value={password}
-                              onChange={(e) => setPassword(e.target.value)}
-                              className="block w-full border rounded-lg py-2.5 px-3"
-                              required
-                          />
-                          <button
-                              type="button"
-                              onClick={() => setShowPassword(!showPassword)}
-                              className="absolute inset-y-0 right-0 px-3 text-gray-500"
-                          >
-                              {showPassword ? <Eye size={20} /> : <EyeClosed size={20} />}
-                          </button>
+                            <input
+                                type={showPassword ? "text" : "password"}
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                className="block w-full border rounded-lg py-2.5 px-3"
+                                required
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="absolute inset-y-0 right-0 px-3 text-gray-500"
+                            >
+                                {showPassword ? <Eye size={20} /> : <EyeClosed size={20} />}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -478,20 +478,20 @@ const Register = () => {
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
                         <div className="relative">
-                          <input
-                              type={showConfirmPassword ? "text" : "password"}
-                              value={confirmPassword}
-                              onChange={(e) => setConfirmPassword(e.target.value)}
-                              className="block w-full border rounded-lg py-2.5 px-3"
-                              required
-                          />
-                          <button
-                              type="button"
-                              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                              className="absolute inset-y-0 right-0 px-3 text-gray-500"
-                          >
-                              {showConfirmPassword ? <Eye size={20} /> : <EyeClosed size={20} />}
-                          </button>
+                            <input
+                                type={showConfirmPassword ? "text" : "password"}
+                                value={confirmPassword}
+                                onChange={(e) => setConfirmPassword(e.target.value)}
+                                className="block w-full border rounded-lg py-2.5 px-3"
+                                required
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                className="absolute inset-y-0 right-0 px-3 text-gray-500"
+                            >
+                                {showConfirmPassword ? <Eye size={20} /> : <EyeClosed size={20} />}
+                            </button>
                         </div>
                     </div>
                 </div>

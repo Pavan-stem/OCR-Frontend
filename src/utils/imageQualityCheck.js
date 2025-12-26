@@ -128,23 +128,37 @@ export const analyzeImage = async (file) => {
                     height: Math.min(height, maxY + padH) - Math.max(0, minY - padH)
                 };
 
-                // Orientation Logic
+                // Orientation Logic - Enhanced for SHG Tables
                 let suggestedRotation = 0;
-                if (dxSum > dySum * 1.1) {
-                    suggestedRotation = 90;
+
+                // shg tables are landscape. if edges are primarily vertical, it's likely rotated
+                const edgeRatio = dxSum / (dySum || 1);
+
+                if (edgeRatio > 1.2) {
+                    suggestedRotation = 90; // Likely needs 90 deg rotation to be landscape
                 }
 
+                // Fine-tune based on weights (densities)
                 if (suggestedRotation === 0) {
-                    if (bottomWeight > topWeight * 1.4) suggestedRotation = 180;
+                    // Check if upside down (more content at bottom than top)
+                    if (bottomWeight > topWeight * 1.5) suggestedRotation = 180;
                 } else if (suggestedRotation === 90) {
-                    if (rightWeight > leftWeight * 1.4) suggestedRotation = 270;
+                    // Check if rotated 270 instead of 90
+                    if (rightWeight > leftWeight * 1.5) suggestedRotation = 270;
                 }
 
-                const resultW = (suggestedRotation === 90 || suggestedRotation === 270) ? height : width;
-                const resultH = (suggestedRotation === 90 || suggestedRotation === 270) ? width : height;
+                // Final check: SHG forms are ALWAYS landscape. 
+                // If after suggested rotation the bounding box is still portrait, 
+                // force a 90 degree shift if it helps reach landscape.
+                const curW = maxX - minX;
+                const curH = maxY - minY;
 
-                if (resultH > resultW && (suggestedRotation === 0 || suggestedRotation === 180)) {
-                    if (height > width) suggestedRotation = (suggestedRotation + 90) % 360;
+                let finalW = (suggestedRotation === 90 || suggestedRotation === 270) ? curH : curW;
+                let finalH = (suggestedRotation === 90 || suggestedRotation === 270) ? curW : curH;
+
+                if (finalH > finalW * 1.1) {
+                    // Still portrait, try to flip it to landscape
+                    suggestedRotation = (suggestedRotation + 90) % 360;
                 }
 
                 // 5. Blur Detection (Laplacian Variance)
