@@ -15,11 +15,16 @@ const UsersTab = ({ filterProps }) => {
   const [limit] = useState(10);
   const [totalPages, setTotalPages] = useState(0);
   const [totalUsers, setTotalUsers] = useState(0);
+  const [userCounts, setUserCounts] = useState({ admin: 0, vo: 0, developer: 0, total: 0 });
   const [isTransitioning, setIsTransitioning] = useState(false);
 
   // Search state
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+
+  // Sorting state
+  const [sortBy, setSortBy] = useState('none'); // 'none', 'pending', 'uploaded'
+  const [sortOrder, setSortOrder] = useState('desc'); // 'asc', 'desc'
 
   // Location data states (local to tab for better control)
   // ... rest of the states ...
@@ -49,6 +54,19 @@ const UsersTab = ({ filterProps }) => {
   // Modal-specific location states to avoid overriding global filters
   const [modalMandals, setModalMandals] = useState([]);
   const [modalVillages, setModalVillages] = useState([]);
+
+  // Check if logged in user is a developer
+  const [isLoggedInDev, setIsLoggedInDev] = useState(false);
+  useEffect(() => {
+    try {
+      const userData = JSON.parse(localStorage.getItem('user'));
+      if (userData && (userData.role || '').toLowerCase().includes('developer')) {
+        setIsLoggedInDev(true);
+      }
+    } catch (e) {
+      console.error('Failed to parse user from localStorage', e);
+    }
+  }, []);
 
   // Load locations (Districts)
   useEffect(() => {
@@ -169,6 +187,10 @@ const UsersTab = ({ filterProps }) => {
       if (debouncedSearchTerm) params.append('search', debouncedSearchTerm);
       params.append('page', page);
       params.append('limit', limit);
+      if (sortBy !== 'none') {
+        params.append('sortBy', sortBy);
+        params.append('sortOrder', sortOrder);
+      }
 
       const res = await fetch(`${API_BASE}/api/users?${params.toString()}`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -190,22 +212,50 @@ const UsersTab = ({ filterProps }) => {
     }
   };
 
+  // Fetch user counts breakdown
+  const fetchUserCounts = async () => {
+    if (!serverStatus.active) return;
+    try {
+      const token = localStorage.getItem('token');
+      const params = new URLSearchParams();
+      if (selectedDistrict !== 'all') params.append('district', selectedDistrict);
+      if (selectedMandal !== 'all') params.append('mandal', selectedMandal);
+      if (selectedVillage !== 'all') params.append('village', selectedVillage);
+
+      const res = await fetch(`${API_BASE}/api/users/count?${params.toString()}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setUserCounts(data.counts || { admin: 0, vo: 0, developer: 0, total: data.count || 0 });
+      }
+    } catch (err) {
+      console.error('Failed to fetch user counts', err);
+    }
+  };
+
   useEffect(() => {
     fetchUsers();
-  }, [selectedDistrict, selectedMandal, selectedVillage, debouncedSearchTerm, serverStatus.active, page]);
+    fetchUserCounts();
+  }, [selectedDistrict, selectedMandal, selectedVillage, debouncedSearchTerm, serverStatus.active, page, sortBy, sortOrder]);
 
   const handleAddUser = async (e) => {
     e.preventDefault();
     setIsSaving(true);
     try {
       const token = localStorage.getItem('token');
+
+      // Construct final role
+      const finalRole = formData.isDeveloper ? `${formData.role} - Developer` : formData.role;
+      const { isDeveloper, ...submitData } = { ...formData, role: finalRole };
+
       const res = await fetch(`${API_BASE}/api/users`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(submitData)
       });
       const data = await res.json();
       if (data.success) {
@@ -227,13 +277,18 @@ const UsersTab = ({ filterProps }) => {
     setIsSaving(true);
     try {
       const token = localStorage.getItem('token');
+
+      // Construct final role
+      const finalRole = formData.isDeveloper ? `${formData.role} - Developer` : formData.role;
+      const { isDeveloper, ...submitData } = { ...formData, role: finalRole };
+
       const res = await fetch(`${API_BASE}/api/users/${currentUser._id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(submitData)
       });
       const data = await res.json();
       if (data.success) {
@@ -270,11 +325,16 @@ const UsersTab = ({ filterProps }) => {
 
   const openEditModal = (user) => {
     setCurrentUser(user);
+    const roleUpper = (user.role || '').toUpperCase();
+    const baseRole = roleUpper.includes('ADMIN') ? 'ADMIN' : 'VO';
+    const isDeveloper = roleUpper.includes('DEVELOPER');
+
     setFormData({
       voName: user.voName || '',
       phone: user.phone || '',
       password: '', // Don't show password
-      role: user.role || 'VO',
+      role: baseRole,
+      isDeveloper: isDeveloper,
       district: user.district || '',
       mandal: user.mandal || '',
       village: user.village || '',
@@ -290,6 +350,7 @@ const UsersTab = ({ filterProps }) => {
       phone: '',
       password: '',
       role: 'VO',
+      isDeveloper: false,
       district: selectedDistrict !== 'all' ? selectedDistrict : '',
       mandal: selectedMandal !== 'all' ? selectedMandal : '',
       village: selectedVillage !== 'all' ? selectedVillage : '',
@@ -354,13 +415,32 @@ const UsersTab = ({ filterProps }) => {
         </div>
         <button
           onClick={openAddModal}
-          className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-3.5 rounded-2xl hover:shadow-xl hover:scale-105 active:scale-95 flex items-center gap-3 transition-all font-black shadow-lg shadow-indigo-200"
+          className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-3.5 rounded-2xl hover:shadow-xl hover:scale-105 active:scale-95 flex items-center gap-3 transition-all font-black shadow-lg"
         >
           <div className="bg-white/20 p-1 rounded-lg">
             <Plus className="w-5 h-5" />
           </div>
           Create New User
         </button>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        {[
+          { label: 'Administrators', count: userCounts.admin, icon: Shield, color: 'from-purple-500 to-indigo-600' },
+          { label: 'Village Orgs (VO)', count: userCounts.vo, icon: User, color: 'from-blue-500 to-cyan-600' },
+          { label: 'Developers', count: userCounts.developer, icon: Lock, color: 'from-amber-500 to-orange-600' },
+          { label: 'Total Accounts', count: userCounts.total, icon: CheckCircle, color: 'from-emerald-500 to-teal-600' }
+        ].map((stat, i) => (
+          <div key={i} className={`bg-white rounded-3xl p-6 shadow-md border border-gray-100 flex items-center gap-5 transition-all hover:scale-[1.02]`}>
+            <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${stat.color} flex items-center justify-center text-white shadow-lg`}>
+              <stat.icon className="w-7 h-7" />
+            </div>
+            <div>
+              <div className="text-2xl font-black text-gray-900 leading-none">{stat.count}</div>
+              <div className="text-[11px] font-black text-gray-400 uppercase tracking-widest mt-1">{stat.label}</div>
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Search & Filters Combined Card */}
@@ -376,7 +456,7 @@ const UsersTab = ({ filterProps }) => {
                 placeholder="Search by VO Name, VOA Name or VO ID..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-12 pr-12 py-4.5 bg-gray-50 border-2 border-gray-100 rounded-2xl text-base font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all placeholder:text-gray-400"
+                className="w-full pl-14 pr-14 py-5 bg-gray-50 border-2 border-gray-100 rounded-2xl text-base font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all placeholder:text-gray-400"
               />
               {searchTerm && (
                 <button
@@ -386,6 +466,65 @@ const UsersTab = ({ filterProps }) => {
                   <X className="w-4 h-4 text-gray-600" />
                 </button>
               )}
+            </div>
+          </div>
+
+          {/* Sort Controls Row */}
+          <div className="pt-8 border-t border-gray-100/50">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+              <div className="flex items-center gap-3">
+                <div className="bg-amber-100 p-2 rounded-xl">
+                  <Filter className="w-5 h-5 text-amber-600" />
+                </div>
+                <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">Performance Sorting</h3>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="flex bg-gray-100 p-1.5 rounded-2xl border border-gray-200">
+                  {[
+                    { id: 'none', label: 'Default' },
+                    { id: 'pending', label: 'By Pending' },
+                    { id: 'uploaded', label: 'By Uploaded' }
+                  ].map((option) => (
+                    <button
+                      key={option.id}
+                      onClick={() => {
+                        setSortBy(option.id);
+                        setPage(1);
+                      }}
+                      className={`px-5 py-2 rounded-xl text-xs font-black transition-all ${sortBy === option.id
+                          ? 'bg-white text-indigo-600 shadow-md border border-gray-100'
+                          : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+
+                {sortBy !== 'none' && (
+                  <div className="flex bg-gray-100 p-1.5 rounded-2xl border border-gray-200">
+                    {[
+                      { id: 'desc', label: 'Highest First' },
+                      { id: 'asc', label: 'Lowest First' }
+                    ].map((order) => (
+                      <button
+                        key={order.id}
+                        onClick={() => {
+                          setSortOrder(order.id);
+                          setPage(1);
+                        }}
+                        className={`px-5 py-2 rounded-xl text-xs font-black transition-all ${sortOrder === order.id
+                            ? 'bg-white text-indigo-600 shadow-md border border-gray-100'
+                            : 'text-gray-500 hover:text-gray-700'
+                          }`}
+                      >
+                        {order.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -470,21 +609,35 @@ const UsersTab = ({ filterProps }) => {
               </thead>
               <tbody key={page} className="divide-y divide-gray-100 animate-slide-in">
                 {users.map((user) => {
-                  const isAdmin = user.role?.toLowerCase().includes('admin') || user.role?.toLowerCase().includes('dev');
+                  const roleLower = (user.role || '').toLowerCase();
+
+                  // Hierarchy: Developer > Admin > VO
+                  const isDev = roleLower.includes('developer');
+                  const isAdmin = roleLower.includes('admin') && !isDev;
+                  const isVO = roleLower.startsWith('vo') || roleLower === 'none' || !user.role;
+
+                  // Even if the role is Admin/Dev, if they have voID, we show it
+                  const hasVOData = user.voID || user.voaName;
+
                   return (
                     <tr key={user._id} className="hover:bg-indigo-50/30 transition-all group">
                       <td className="px-8 py-5 whitespace-nowrap">
                         <div className="flex items-center gap-4">
-                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transition-transform group-hover:scale-110 ${isAdmin ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-indigo-100' : 'bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-blue-100'}`}>
-                            {isAdmin ? <Shield className="w-6 h-6" /> : <User className="w-6 h-6" />}
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transition-transform group-hover:scale-110 ${isDev
+                            ? 'bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-amber-100'
+                            : isAdmin
+                              ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-indigo-100'
+                              : 'bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-blue-100'
+                            }`}>
+                            {isDev ? <Lock className="w-6 h-6" /> : isAdmin ? <Shield className="w-6 h-6" /> : <User className="w-6 h-6" />}
                           </div>
                           <div>
-                            <div className="text-sm font-black text-gray-900 leading-tight">{isAdmin ? user.voName : user.voaName || user.voName}</div>
+                            <div className="text-sm font-black text-gray-900 leading-tight">{isVO ? (user.voaName || user.voName) : user.voName}</div>
                             <div className="flex flex-col mt-0.5">
                               <span className="text-[11px] font-bold text-gray-500 flex items-center gap-1">
                                 <Phone className="w-2.5 h-2.5" /> {user.phone}
                               </span>
-                              {!isAdmin && user.voID && (
+                              {isVO && user.voID && (
                                 <span className="text-[10px] font-black text-indigo-600 uppercase tracking-tighter mt-0.5">ID: {user.voID}</span>
                               )}
                             </div>
@@ -492,7 +645,11 @@ const UsersTab = ({ filterProps }) => {
                         </div>
                       </td>
                       <td className="px-8 py-5 whitespace-nowrap">
-                        <span className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider shadow-sm ${isAdmin ? 'bg-purple-100 text-purple-700 border border-purple-200' : 'bg-blue-100 text-blue-700 border border-blue-200'
+                        <span className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider shadow-sm ${isDev
+                          ? 'bg-amber-100 text-amber-700 border border-amber-200'
+                          : isAdmin
+                            ? 'bg-purple-100 text-purple-700 border border-purple-200'
+                            : 'bg-blue-100 text-blue-700 border border-blue-200'
                           }`}>
                           {user.role}
                         </span>
@@ -509,7 +666,7 @@ const UsersTab = ({ filterProps }) => {
                         </div>
                       </td>
                       <td className="px-8 py-5 text-center">
-                        {isAdmin ? (
+                        {!isVO || isDev || isAdmin ? (
                           <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest italic">Administrative Access</span>
                         ) : (
                           <div className="flex justify-center gap-6">
@@ -537,13 +694,15 @@ const UsersTab = ({ filterProps }) => {
                           >
                             <Edit className="w-4.5 h-4.5" />
                           </button>
-                          <button
-                            onClick={() => handleDeleteUser(user._id)}
-                            className="p-2.5 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white rounded-xl transition-all shadow-sm"
-                            title="Delete User"
-                          >
-                            <Trash2 className="w-4.5 h-4.5" />
-                          </button>
+                          {(!isDev || isLoggedInDev) && (
+                            <button
+                              onClick={() => handleDeleteUser(user._id)}
+                              className="p-2.5 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white rounded-xl transition-all shadow-sm"
+                              title="Delete User"
+                            >
+                              <Trash2 className="w-4.5 h-4.5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -673,8 +832,22 @@ const UsersTab = ({ filterProps }) => {
                     >
                       <option value="VO">Village Organization (VO)</option>
                       <option value="ADMIN">Administrator</option>
-                      <option value="DEVELOPER">Developer</option>
                     </select>
+
+                    {isLoggedInDev && (
+                      <div className="mt-4 flex items-center gap-3 p-4 bg-amber-50 rounded-2xl border border-amber-100">
+                        <input
+                          type="checkbox"
+                          id="isDeveloper"
+                          checked={formData.isDeveloper}
+                          onChange={(e) => setFormData({ ...formData, isDeveloper: e.target.checked })}
+                          className="w-5 h-5 rounded-lg border-2 border-amber-300 text-amber-600 focus:ring-amber-500 transition-all cursor-pointer"
+                        />
+                        <label htmlFor="isDeveloper" className="text-sm font-black text-amber-900 cursor-pointer select-none">
+                          Enable Developer Access
+                        </label>
+                      </div>
+                    )}
                   </div>
                 </div>
 
