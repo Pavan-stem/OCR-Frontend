@@ -287,12 +287,12 @@ Kankipadu,Krishna,
 Movva,Krishna,
 Pamarru,Krishna,
 Pamidimukkala,Krishna,
-Penamaluru,Krishna,Penamaluru,
-Penamaluru,Krishna,Ganguru,
-Penamaluru,Krishna,Gosala,
-Penamaluru,Krishna,Chodavaram,
-Penamaluru,Krishna,Pedapulipaka,
-Penamaluru,Krishna,Vanukuru,
+Penamaluru,Krishna,Penamaluru
+Penamaluru,Krishna,Ganguru
+Penamaluru,Krishna,Gosala
+Penamaluru,Krishna,Chodavaram
+Penamaluru,Krishna,Pedapulipaka
+Penamaluru,Krishna,Vanukuru
 Thotlavalluru,Krishna,
 Vuyyuru,Krishna,
 Adoni,Kurnool,
@@ -365,7 +365,22 @@ Tiruvuru,NTR,
 Vissannapeta,NTR,
 G.Konduru,NTR,
 Ibrahimpatnam,NTR,
-Mylavaram,NTR,
+Mylavaram,NTR,Chandragudem
+Mylavaram,NTR,Chandrala
+Mylavaram,NTR,Dasullapalem
+Mylavaram,NTR,Ganapavaram
+Mylavaram,NTR,Jangalapalle
+Mylavaram,NTR,Kanimerla
+Mylavaram,NTR,Keerthirayanigudem
+Mylavaram,NTR,Morusumilli
+Mylavaram,NTR,Mylavaram
+Mylavaram,NTR,Pondugula
+Mylavaram,NTR,Pulluru
+Mylavaram,NTR,Sabjapadu
+Mylavaram,NTR,T.gannavaram
+Mylavaram,NTR,Tholukodu
+Mylavaram,NTR,Vedurubeedem
+Mylavaram,NTR,Velvadam
 Vijayawada Rural,NTR,
 Vijayawada North,NTR,
 Vijayawada Central,NTR,
