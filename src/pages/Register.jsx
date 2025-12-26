@@ -29,177 +29,67 @@ const Register = () => {
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
 
-    // Load Districts from CSV (Replicating App.jsx client-side logic)
+    // Load Districts from Backend
     useEffect(() => {
-        const fetchLocations = async () => {
+        const fetchDistricts = async () => {
             try {
-                // Detect base path - logic from App.jsx
-                let basePath = '';
-                try {
-                    if (typeof import.meta !== 'undefined' && import.meta.env?.BASE_URL) {
-                        basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
-                    }
-                } catch (e) { }
-
-                const possiblePaths = [
-                    ...(basePath ? [`${basePath}/districts-mandals.csv`] : []),
-                    "./districts-mandals.csv",
-                    "districts-mandals.csv",
-                    "/districts-mandals.csv",
-                    "/OCR/districts-mandals.csv"
-                ];
-                const uniquePaths = Array.from(new Set(possiblePaths));
-
-                let csvText = null;
-                for (const path of uniquePaths) {
-                    try {
-                        const res = await fetch(`${path}?t=${Date.now()}`);
-                        if (res.ok) {
-                            const text = await res.text();
-                            if (text.includes(',') || text.includes('mandal') || text.includes('district')) {
-                                csvText = text;
-                                break;
-                            }
-                        }
-                    } catch (err) { continue; }
-                }
-
-                if (csvText) {
-                    const lines = csvText.split('\n').filter(line => line.trim());
-                    await loadCSVDataFromText(lines);
-                }
+                const res = await fetch(`${AUTH_API_BASE}/api/districts`);
+                const data = await res.json();
+                if (data.success) setDistricts(data.districts);
+                else setError(data.error || 'Failed to fetch districts');
             } catch (err) {
-                console.warn("Could not load CSV file:", err);
-                setError('Failed to load location data.');
+                console.error('Failed to fetch districts', err);
+                setError('Failed to load districts.');
             }
         };
-        fetchLocations();
+        fetchDistricts();
     }, []);
-
-    const loadCSVDataFromText = async (lines) => {
-        try {
-            if (lines.length < 2) return;
-
-            const headerValues = [];
-            let current = '';
-            let inQuotes = false;
-            for (let char of lines[0]) {
-                if (char === '"') inQuotes = !inQuotes;
-                else if (char === ',' && !inQuotes) {
-                    headerValues.push(current.trim().replace(/^"|"$/g, '').toLowerCase());
-                    current = '';
-                } else current += char;
-            }
-            headerValues.push(current.trim().replace(/^"|"$/g, '').toLowerCase());
-
-            const mandalIdx = headerValues.findIndex(h => h.includes('mandal'));
-            const districtIdx = headerValues.findIndex(h => h.includes('district'));
-            const villageIdx = headerValues.findIndex(h => h.includes('village'));
-
-            if (districtIdx === -1 || mandalIdx === -1) return;
-
-            const districtMap = new Map();
-
-            for (let i = 1; i < lines.length; i++) {
-                const line = lines[i].trim();
-                if (!line) continue;
-
-                const values = [];
-                current = '';
-                inQuotes = false;
-                for (let char of line) {
-                    if (char === '"') inQuotes = !inQuotes;
-                    else if (char === ',' && !inQuotes) {
-                        values.push(current.trim().replace(/^"|"$/g, ''));
-                        current = '';
-                    } else current += char;
-                }
-                values.push(current.trim().replace(/^"|"$/g, ''));
-
-                const mandalName = values[mandalIdx]?.trim();
-                const districtName = values[districtIdx]?.trim();
-                const villageName = villageIdx !== -1 ? values[villageIdx]?.trim() : '';
-
-                if (!districtName || !mandalName) continue;
-
-                if (!districtMap.has(districtName)) {
-                    districtMap.set(districtName, {
-                        id: `d_${districtName.toLowerCase().replace(/\s+/g, '_')}`,
-                        name: districtName,
-                        mandals: new Map()
-                    });
-                }
-
-                const district = districtMap.get(districtName);
-                const mandalKey = mandalName.toLowerCase();
-
-                if (!district.mandals.has(mandalKey)) {
-                    district.mandals.set(mandalKey, {
-                        id: `m_${mandalName.toLowerCase().replace(/\s+/g, '_')}`,
-                        name: mandalName,
-                        villages: []
-                    });
-                }
-
-                const mandal = district.mandals.get(mandalKey);
-
-                if (villageName) {
-                    const villageId = `v_${villageName.toLowerCase().replace(/\s+/g, '_')}`;
-                    if (!mandal.villages.some(v => v.id === villageId)) {
-                        mandal.villages.push({ id: villageId, name: villageName });
-                    }
-                } else if (mandal.villages.length === 0) {
-                    // Default village as mandal name if empty
-                    const defaultId = `v_${mandalName.toLowerCase().replace(/\s+/g, '_')}`;
-                    if (!mandal.villages.some(v => v.id === defaultId)) {
-                        mandal.villages.push({ id: defaultId, name: mandalName });
-                    }
-                }
-            }
-
-            // Convert to array structure for state
-            const districtsArray = Array.from(districtMap.values()).map(d => ({
-                ...d,
-                mandals: Array.from(d.mandals.values()).map(m => ({
-                    ...m,
-                    villages: m.villages.sort((a, b) => a.name.localeCompare(b.name))
-                })).sort((a, b) => a.name.localeCompare(b.name))
-            })).sort((a, b) => a.name.localeCompare(b.name));
-
-            setDistricts(districtsArray);
-        } catch (error) {
-            console.error('Error parsing CSV:', error);
-        }
-    };
 
     // Update Mandals when District changes
     useEffect(() => {
         if (selectedDistrict) {
-            const district = districts.find(d => d.name === selectedDistrict);
-            if (district) {
-                setMandals(district.mandals || []);
-                setSelectedMandal('');
-                setSelectedVillage('');
-                setVillages([]);
-            }
+            const fetchMandals = async () => {
+                try {
+                    const res = await fetch(`${AUTH_API_BASE}/api/mandals?district=${encodeURIComponent(selectedDistrict)}`);
+                    const data = await res.json();
+                    if (data.success) {
+                        setMandals(data.mandals);
+                        setSelectedMandal('');
+                        setSelectedVillage('');
+                        setVillages([]);
+                    }
+                } catch (err) {
+                    console.error('Failed to fetch mandals', err);
+                }
+            };
+            fetchMandals();
         } else {
             setMandals([]);
             setVillages([]);
         }
-    }, [selectedDistrict, districts]);
+    }, [selectedDistrict]);
 
     // Update Villages when Mandal changes
     useEffect(() => {
         if (selectedDistrict && selectedMandal) {
-            const mandal = mandals.find(m => m.name === selectedMandal);
-            if (mandal) {
-                setVillages(mandal.villages || []);
-                setSelectedVillage('');
-            }
+            const fetchVillages = async () => {
+                try {
+                    const res = await fetch(`${AUTH_API_BASE}/api/villages?district=${encodeURIComponent(selectedDistrict)}&mandal=${encodeURIComponent(selectedMandal)}`);
+                    const data = await res.json();
+                    if (data.success) {
+                        setVillages(data.villages);
+                        setSelectedVillage('');
+                    }
+                } catch (err) {
+                    console.error('Failed to fetch villages', err);
+                }
+            };
+            fetchVillages();
         } else {
             setVillages([]);
         }
-    }, [selectedMandal, mandals]);
+    }, [selectedMandal, selectedDistrict]);
+
 
 
     const handleRegister = async (e) => {
@@ -247,13 +137,13 @@ const Register = () => {
             return;
         }
 
-        if (!voID.trim()) {
+        if (role === 'VO' && !voID.trim()) {
             setError('Please enter VO ID.');
             setLoading(false);
             return;
         }
 
-        if (!/^\d+$/.test(voID)) {
+        if (role === 'VO' && !/^\d+$/.test(voID)) {
             setError('VO ID must contain only numbers.');
             setLoading(false);
             return;
@@ -321,6 +211,25 @@ const Register = () => {
 
             <form onSubmit={handleRegister} className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
+                {/* Role Selection */}
+                <div className="md:col-span-2 bg-indigo-50 p-4 rounded-xl border border-indigo-100 mb-2">
+                    <label className="block text-sm font-semibold text-indigo-900 mb-2 flex items-center gap-2">
+                        <Users size={18} /> Register as:
+                    </label>
+                    <div className="flex gap-4">
+                        {['VO', 'ADMIN', 'DEVELOPER'].map(r => (
+                            <button
+                                key={r}
+                                type="button"
+                                onClick={() => setRole(r)}
+                                className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${role === r ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-100'}`}
+                            >
+                                {r === 'VO' ? 'Village Organization (VO)' : r.charAt(0) + r.slice(1).toLowerCase()}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
                 {/* Left Column */}
                 <div className="space-y-6">
 
@@ -367,16 +276,18 @@ const Register = () => {
                     </div>
 
                     {/* VO ID */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">VO ID</label>
-                        <input
-                            type="text"
-                            value={voID}
-                            onChange={(e) => setVOID(e.target.value.replace(/\D/g, ""))}
-                            className="block w-full border rounded-lg py-2.5 px-3"
-                            required
-                        />
-                    </div>
+                    {role === 'VO' && (
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">VO ID</label>
+                            <input
+                                type="text"
+                                value={voID}
+                                onChange={(e) => setVOID(e.target.value.replace(/\D/g, ""))}
+                                className="block w-full border rounded-lg py-2.5 px-3"
+                                required
+                            />
+                        </div>
+                    )}
 
                     {/* Mobile */}
                     <div>
@@ -400,20 +311,20 @@ const Register = () => {
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Create Password</label>
                         <div className="relative">
-                          <input
-                              type={showPassword ? "text" : "password"}
-                              value={password}
-                              onChange={(e) => setPassword(e.target.value)}
-                              className="block w-full border rounded-lg py-2.5 px-3"
-                              required
-                          />
-                          <button
-                              type="button"
-                              onClick={() => setShowPassword(!showPassword)}
-                              className="absolute inset-y-0 right-0 px-3 text-gray-500"
-                          >
-                              {showPassword ? <Eye size={20} /> : <EyeClosed size={20} />}
-                          </button>
+                            <input
+                                type={showPassword ? "text" : "password"}
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                className="block w-full border rounded-lg py-2.5 px-3"
+                                required
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="absolute inset-y-0 right-0 px-3 text-gray-500"
+                            >
+                                {showPassword ? <Eye size={20} /> : <EyeClosed size={20} />}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -440,25 +351,29 @@ const Register = () => {
 
                     {/* VO */}
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">VO Name</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{role === 'VO' ? 'VO Name' : 'Full Name'}</label>
                         <input
                             type="text"
                             value={voName}
                             onChange={(e) => setVOName(e.target.value)}
                             className="block w-full border rounded-lg py-2.5 px-3"
+                            required
                         />
                     </div>
 
                     {/* VOA Name */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">VOA Name</label>
-                        <input
-                            type="text"
-                            value={voaName}
-                            onChange={(e) => setVOAName(e.target.value)}
-                            className="block w-full border rounded-lg py-2.5 px-3"
-                        />
-                    </div>
+                    {role === 'VO' && (
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">VOA Name</label>
+                            <input
+                                type="text"
+                                value={voaName}
+                                onChange={(e) => setVOAName(e.target.value)}
+                                className="block w-full border rounded-lg py-2.5 px-3"
+                                required
+                            />
+                        </div>
+                    )}
 
                     {/* Email (Optional – Frontend Only) */}
                     <div>
@@ -478,20 +393,20 @@ const Register = () => {
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
                         <div className="relative">
-                          <input
-                              type={showConfirmPassword ? "text" : "password"}
-                              value={confirmPassword}
-                              onChange={(e) => setConfirmPassword(e.target.value)}
-                              className="block w-full border rounded-lg py-2.5 px-3"
-                              required
-                          />
-                          <button
-                              type="button"
-                              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                              className="absolute inset-y-0 right-0 px-3 text-gray-500"
-                          >
-                              {showConfirmPassword ? <Eye size={20} /> : <EyeClosed size={20} />}
-                          </button>
+                            <input
+                                type={showConfirmPassword ? "text" : "password"}
+                                value={confirmPassword}
+                                onChange={(e) => setConfirmPassword(e.target.value)}
+                                className="block w-full border rounded-lg py-2.5 px-3"
+                                required
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                className="absolute inset-y-0 right-0 px-3 text-gray-500"
+                            >
+                                {showConfirmPassword ? <Eye size={20} /> : <EyeClosed size={20} />}
+                            </button>
                         </div>
                     </div>
                 </div>

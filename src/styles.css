@@ -38,3 +38,17 @@ select,input[type=file]{padding:12px;border-radius:8px;border:1px solid #e6edf6}
 .badge{padding:6px 10px;border-radius:999px;color:#fff}
 .badge.done{background:#16a34a}
 .badge.processing{background:#d97706}
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
