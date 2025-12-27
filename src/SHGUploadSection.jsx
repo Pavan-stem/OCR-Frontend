@@ -202,7 +202,6 @@ const SHGUploadSection = ({
           month: selectedMonth,
           year: selectedYear,
           shgId: shgId,
-          total: shgData.length,
         })
       });
 
