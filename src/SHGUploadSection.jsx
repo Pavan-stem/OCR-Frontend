@@ -33,6 +33,8 @@ const SHGUploadSection = ({
   const [analyzingMap, setAnalyzingMap] = useState({});
   const [smartPreviewUrl, setSmartPreviewUrl] = useState(null);
   const [isProcessingPreview, setIsProcessingPreview] = useState(false);
+  const [failedUploads, setFailedUploads] = useState([]);
+  const [showFailedOnly, setShowFailedOnly] = useState(false);
 
   // Smart Preview Logic (Handles hard rotation and cropping for modal)
   useEffect(() => {
@@ -84,6 +86,28 @@ const SHGUploadSection = ({
     };
 
     initializeData();
+  }, [user?.voID, selectedMonth, selectedYear]);
+
+  // Load failed uploads
+  useEffect(() => {
+    const loadFailedUploads = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const res = await fetch(`${API_BASE}/api/vo/uploads/failed`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (data.success) {
+          setFailedUploads(data.failed || []);
+        }
+      } catch (err) {
+        console.error('Failed to load rejected uploads:', err);
+      }
+    };
+
+    if (user?.voID) {
+      loadFailedUploads();
+    }
   }, [user?.voID, selectedMonth, selectedYear]);
 
   // Filter SHG data based on search and filters
@@ -746,11 +770,37 @@ const SHGUploadSection = ({
     let successCount = 0;
     let failCount = 0;
     let uploadedShgs = [];
+    let skippedDuplicates = [];
 
     try {
       const token = localStorage.getItem('token');
 
-      for (const fileData of validatedFiles) {
+      // Pre-upload sync: Fetch latest upload status from server to prevent duplicates
+      // This handles multiple tabs, race conditions, and stale state
+      console.log('Pre-upload sync: Fetching latest upload status from server...');
+      try {
+        await fetchUploadProgress();
+        console.log('Pre-upload sync complete');
+      } catch (syncErr) {
+        console.warn('Pre-upload sync failed, continuing with local state:', syncErr);
+      }
+
+      // Re-filter validated files after sync to exclude any that are now marked as uploaded
+      const filesToUpload = validatedFiles.filter(f => !uploadStatus[f.shgId]?.uploaded);
+
+      if (filesToUpload.length === 0) {
+        alert('All files have already been uploaded. Your session state has been updated.');
+        setIsUploading(false);
+        return;
+      }
+
+      if (filesToUpload.length < validatedFiles.length) {
+        const alreadyUploaded = validatedFiles.length - filesToUpload.length;
+        console.log(`Pre-upload sync: Skipping ${alreadyUploaded} already-uploaded SHG(s)`);
+      }
+
+
+      for (const fileData of filesToUpload) {
         try {
           if (uploadStatus[fileData.shgId]?.uploaded) continue;
 
@@ -790,11 +840,46 @@ const SHGUploadSection = ({
               delete copy[fileData.shgId];
               return copy;
             });
+          } else if (response.status === 409) {
+            // Duplicate upload detected by server
+            console.warn(`Duplicate upload blocked for SHG ${fileData.shgId}`);
+
+            try {
+              const errorData = await response.json();
+
+              // Mark as uploaded in local state
+              setUploadStatus(prev => ({
+                ...prev,
+                [fileData.shgId]: {
+                  uploaded: true,
+                  uploadDate: errorData.existingUploadDate || new Date().toISOString(),
+                  fileName: 'Already Uploaded'
+                }
+              }));
+
+              // Remove from pending files
+              setUploadedFiles(prev => {
+                const copy = { ...prev };
+                delete copy[fileData.shgId];
+                return copy;
+              });
+
+              // Show user-friendly message
+              console.log(`Skipped duplicate: ${formatShgLabel(fileData)}`);
+
+              // Don't increment failCount - this is expected behavior
+            } catch (parseErr) {
+              console.error('Failed to parse duplicate error response:', parseErr);
+              failCount++;
+            }
           } else {
+            // Other error
             failCount++;
+            console.error(`Upload failed for ${fileData.shgId}: ${response.status}`);
           }
-        } catch {
+        } catch (err) {
           failCount++;
+          console.error(`Upload exception for ${fileData.shgId}:`, err);
         }
       }
 
@@ -860,31 +945,55 @@ const SHGUploadSection = ({
         body: formData
       });
 
-      if (!res.ok) throw new Error('Upload failed');
+      if (res.ok) {
+        await updateUploadProgress(shgId);
 
-      await updateUploadProgress(shgId);
+        setUploadStatus(prev => ({
+          ...prev,
+          [shgId]: {
+            uploaded: true,
+            uploadDate: new Date().toISOString(),
+            fileName: fileData.fileName
+          }
+        }));
 
-      setUploadStatus(prev => ({
-        ...prev,
-        [shgId]: {
-          uploaded: true,
-          uploadDate: new Date().toISOString(),
-          fileName: fileData.fileName
-        }
-      }));
+        setUploadedFiles(prev => {
+          const copy = { ...prev };
+          delete copy[shgId];
+          return copy;
+        });
 
-      setUploadedFiles(prev => {
-        const copy = { ...prev };
-        delete copy[shgId];
-        return copy;
-      });
+        alert(
+          t('upload.uploadSuccessSingle')
+            .replace('{{shg}}', formatShgLabel(fileData))
+        );
+      } else if (res.status === 409) {
+        // Duplicate detected
+        const errorData = await res.json();
 
-      alert(
-        t('upload.uploadSuccessSingle')
-          .replace('{{shg}}', formatShgLabel(fileData))
-      );
+        // Mark as uploaded in local state
+        setUploadStatus(prev => ({
+          ...prev,
+          [shgId]: {
+            uploaded: true,
+            uploadDate: errorData.existingUploadDate || new Date().toISOString(),
+            fileName: 'Already Uploaded'
+          }
+        }));
+
+        setUploadedFiles(prev => {
+          const copy = { ...prev };
+          delete copy[shgId];
+          return copy;
+        });
+
+        alert(`ℹ️ ${formatShgLabel(fileData)} has already been uploaded.`);
+      } else {
+        throw new Error(`Upload failed with status ${res.status}`);
+      }
 
     } catch (e) {
+      console.error('Single upload error:', e);
       alert(`❌ ${e.message || t?.('upload.uploadFailed')}`);
     } finally {
       setIsUploading(false);
@@ -917,6 +1026,12 @@ const SHGUploadSection = ({
   const uploadedShgs = filteredShgData.filter(shg => {
     const isPermanentlyUploaded = serverProgress?.uploadedShgIds?.includes(shg.shgId) || uploadStatus[shg.shgId]?.uploaded === true;
     return isPermanentlyUploaded;
+  });
+
+  const failedShgs = failedUploads.filter(failed => {
+    // Match failed uploads to SHG data if available, otherwise just show all failed
+    if (shgData.length === 0) return true;
+    return shgData.some(shg => shg.shgId === failed.shgID);
   });
 
   const renderSHGCard = (shg) => {
@@ -1351,9 +1466,72 @@ const SHGUploadSection = ({
         </div>
       )}
 
-      {/* SHG Upload Sections (Pending & Uploaded) */}
+      {/* SHG Upload Sections (Failed, Pending & Uploaded) */}
       {!loading && !error && shgData.length > 0 && (
         <div className="space-y-8">
+
+          {/* Failed Section */}
+          {failedShgs.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-4 bg-white rounded-xl sm:rounded-2xl shadow-lg p-3 sm:p-4 border-2 border-red-300">
+                <AlertTriangle className="text-red-600" size={24} />
+                <h3 className="text-xl font-bold text-gray-800">
+                  {t?.('upload.failedUploads') || 'Rejected Uploads'}
+                  <span className="ml-2 text-sm font-normal text-gray-500">({failedShgs.length})</span>
+                </h3>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                {failedShgs.map(failed => (
+                  <div key={failed._id} className="relative border-2 border-red-400 bg-red-50 rounded-2xl p-4 transition-all hover:shadow-lg">
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-bold text-sm text-gray-900 truncate">{failed.shgName}</h4>
+                        <p className="text-xs text-gray-600">SHG ID: {failed.shgID}</p>
+                        <p className="text-xs text-gray-500">{failed.month}/{failed.year}</p>
+                      </div>
+                      <AlertCircle className="w-6 h-6 text-red-600 flex-shrink-0" />
+                    </div>
+
+                    {/* Admin Message */}
+                    <div className="mb-3 bg-white rounded-lg p-3 border border-red-200">
+                      <p className="text-[10px] font-bold text-red-600 mb-1 uppercase">
+                        {failed.rejectionReason || 'Rejected'}
+                      </p>
+                      <p className="text-xs text-gray-800">
+                        {failed.adminMessage || (
+                          <>
+                            {t?.('upload.failedGuidelines') || 'Please follow upload guidelines: Ensure image is clear, well-lit, and shows complete document.'}
+                            <br />
+                            <span className="text-gray-600">
+                              {t?.('upload.failedGuidelinesTe') || 'దయచేసి అప్లోడ్ మార్గదర్శకాలను అనుసరించండి: చిత్రం స్పష్టంగా మరియు పూర్తి పత్రాన్ని చూపించేలా ఉండాలి.'}
+                            </span>
+                          </>
+                        )}
+                      </p>
+                    </div>
+
+                    {/* Re-upload button */}
+                    <div className="relative">
+                      <input
+                        type="file"
+                        accept=".png,.jpg,.jpeg,.pdf,.tiff,.tif,.bmp,.webp"
+                        onChange={(e) => handleFileSelect(failed.shgID, failed.shgName, e)}
+                        className="hidden"
+                        id={`reupload-${failed.shgID}`}
+                      />
+                      <label
+                        htmlFor={`reupload-${failed.shgID}`}
+                        className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-xl font-semibold cursor-pointer transition-all bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-md text-sm"
+                      >
+                        <Upload size={16} />
+                        {t?.('upload.reupload') || 'Re-upload Document'}
+                      </label>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Pending Section */}
           {pendingShgs.length > 0 && (

@@ -1,6 +1,6 @@
 import { API_BASE } from './utils/apiConfig';
 import React, { useEffect, useState } from 'react';
-import { X, FileText, Eye, Filter } from 'lucide-react';
+import { X, FileText, Eye, Filter, AlertCircle, CheckCircle, Clock } from 'lucide-react';
 import { useLanguage } from './contexts/LanguageContext';
 
 export default function DocumentHistory({ onClose }) {
@@ -35,6 +35,32 @@ export default function DocumentHistory({ onClose }) {
 
     setUploads([]);
   }
+
+  const getStatusBadge = (status) => {
+    const statusLower = (status || 'pending').toLowerCase();
+    if (statusLower === 'validated') {
+      return (
+        <div className="flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded-lg text-xs font-bold">
+          <CheckCircle className="w-3 h-3" />
+          <span>Validated</span>
+        </div>
+      );
+    } else if (statusLower === 'rejected') {
+      return (
+        <div className="flex items-center gap-1 px-2 py-1 bg-red-100 text-red-800 rounded-lg text-xs font-bold">
+          <AlertCircle className="w-3 h-3" />
+          <span>Rejected</span>
+        </div>
+      );
+    } else {
+      return (
+        <div className="flex items-center gap-1 px-2 py-1 bg-orange-100 text-orange-800 rounded-lg text-xs font-bold">
+          <Clock className="w-3 h-3" />
+          <span>Pending</span>
+        </div>
+      );
+    }
+  };
 
   // Client-side filtering based on selected month and year
   const filteredUploads = uploads.filter(upload => {
@@ -175,6 +201,9 @@ export default function DocumentHistory({ onClose }) {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase border-b">
                     {t('documentHistory.date')}
                   </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase border-b">
+                    Status
+                  </th>
                   <th className="px-4 py-3 text-center text-xs font-semibold text-slate-700 uppercase border-b">
                     {t('documentHistory.action')}
                   </th>
@@ -235,12 +264,21 @@ export default function DocumentHistory({ onClose }) {
                         : 'N/A'}
                     </td>
 
+                    {/* STATUS */}
+                    <td className="px-4 py-3">
+                      {getStatusBadge(u.status)}
+                      {u.adminMessage && (
+                        <div className="mt-1 text-xs text-gray-600 bg-gray-50 p-2 rounded border border-gray-200">
+                          <span className="font-semibold">Admin: </span>{u.adminMessage}
+                        </div>
+                      )}
+                    </td>
+
                     {/* ACTION */}
                     <td className="px-4 py-3 text-center whitespace-nowrap">
                       <button
                         onClick={() => viewDocument(u)}
-                        className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50 rounded"
-                      >
+                        className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50 rounded">
                         <Eye className="w-3 h-3" />
                         {t('documentHistory.action')}
                       </button>
@@ -372,8 +410,7 @@ export default function DocumentHistory({ onClose }) {
                         {u.shgName || u.metadata?.shgName || 'Unknown SHG'}
                         {(u.shgID || u.metadata?.shgID) && (
                           <span className="ml-1 text-slate-600 font-normal">
-                            ({u.shgID || u.metadata?.shgID})
-                          </span>
+                            ({u.shgID || u.metadata?.shgID})</span>
                         )}
                       </div>
                       <div className="text-xs text-gray-500 break-words">
@@ -382,6 +419,14 @@ export default function DocumentHistory({ onClose }) {
                           u.metadata?.originalFilename ||
                           'unknown'}
                       </div>
+                      <div className="mt-2">
+                        {getStatusBadge(u.status)}
+                      </div>
+                      {u.adminMessage && (
+                        <div className="mt-2 text-xs text-gray-600 bg-gray-50 p-2 rounded border border-gray-200">
+                          <span className="font-semibold">Admin: </span>{u.adminMessage}
+                        </div>
+                      )}
                     </div>
                   </div>
 
