@@ -68,23 +68,13 @@ export default function ProfilePage({ onClose }) {
                     </p>
                   </div>
 
-                  {/* VOA Name */}
+                  {/* VO Name */}
                   <div className="bg-white p-3 rounded border border-slate-200 min-h-[56px]">
                     <p className="text-xs text-slate-600 uppercase tracking-wide mb-1">
-                      {t('profile.voaName')}
+                      {t('profile.voName')}
                     </p>
                     <p className="text-base font-semibold text-slate-900">
-                      {user?.voaName || ''}
-                    </p>
-                  </div>
-
-                  {/* Email */}
-                  <div className="bg-white p-3 rounded border border-slate-200 min-h-[56px]">
-                    <p className="text-xs text-slate-600 uppercase tracking-wide mb-1">
-                      {t('profile.email')}
-                    </p>
-                    <p className="text-base font-semibold text-slate-900">
-                      {user?.email || ''}
+                      {user?.voName || ''}
                     </p>
                   </div>
 
@@ -128,16 +118,6 @@ export default function ProfilePage({ onClose }) {
                     </p>
                     <p className="text-base font-semibold text-slate-900">
                       {user?.village || ''}
-                    </p>
-                  </div>
-
-                  {/* VO Name */}
-                  <div className="bg-white p-3 rounded border border-slate-200 min-h-[56px]">
-                    <p className="text-xs text-slate-600 uppercase tracking-wide mb-1">
-                      {t('profile.voName')}
-                    </p>
-                    <p className="text-base font-semibold text-slate-900">
-                      {user?.voName || ''}
                     </p>
                   </div>
 
