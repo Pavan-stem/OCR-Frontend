@@ -23,8 +23,8 @@ const UsersTab = ({ filterProps }) => {
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
 
   // Sorting state
-  const [sortBy, setSortBy] = useState('none'); // 'none', 'pending', 'uploaded'
-  const [sortOrder, setSortOrder] = useState('desc'); // 'asc', 'desc'
+  const [sortBy, setSortBy] = useState([]);
+  const [sortOrders, setSortOrders] = useState({ pending: 'desc', uploaded: 'desc' });
 
   // Location data states (local to tab for better control)
   // ... rest of the states ...
@@ -187,9 +187,11 @@ const UsersTab = ({ filterProps }) => {
       if (debouncedSearchTerm) params.append('search', debouncedSearchTerm);
       params.append('page', page);
       params.append('limit', limit);
-      if (sortBy !== 'none') {
-        params.append('sortBy', sortBy);
-        params.append('sortOrder', sortOrder);
+      if (sortBy.length > 0) {
+        params.append('sortBy', sortBy.join(','));
+        // Send orders for each active sort field
+        const activeOrders = sortBy.map(id => sortOrders[id] || 'desc');
+        params.append('sortOrder', activeOrders.join(','));
       }
 
       const res = await fetch(`${API_BASE}/api/users?${params.toString()}`, {
@@ -237,7 +239,7 @@ const UsersTab = ({ filterProps }) => {
   useEffect(() => {
     fetchUsers();
     fetchUserCounts();
-  }, [selectedDistrict, selectedMandal, selectedVillage, debouncedSearchTerm, serverStatus.active, page, sortBy, sortOrder]);
+  }, [selectedDistrict, selectedMandal, selectedVillage, debouncedSearchTerm, serverStatus.active, page, sortBy, sortOrders]);
 
   const handleAddUser = async (e) => {
     e.preventDefault();
@@ -480,49 +482,70 @@ const UsersTab = ({ filterProps }) => {
               </div>
 
               <div className="flex flex-wrap items-center gap-4">
-                <div className="flex bg-gray-100 p-1.5 rounded-2xl border border-gray-200">
+                {/* Metric Selector and Individual Order Toggles */}
+                <div className="flex flex-wrap gap-4">
                   {[
-                    { id: 'none', label: 'Default' },
-                    { id: 'pending', label: 'By Pending' },
-                    { id: 'uploaded', label: 'By Uploaded' }
-                  ].map((option) => (
-                    <button
-                      key={option.id}
-                      onClick={() => {
-                        setSortBy(option.id);
-                        setPage(1);
-                      }}
-                      className={`px-5 py-2 rounded-xl text-xs font-black transition-all ${sortBy === option.id
-                          ? 'bg-white text-indigo-600 shadow-md border border-gray-100'
-                          : 'text-gray-500 hover:text-gray-700'
-                        }`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
+                    { id: 'pending', label: 'Pending' },
+                    { id: 'uploaded', label: 'Uploaded' }
+                  ].map(option => {
+                    const active = sortBy.includes(option.id);
+                    const currentOrder = sortOrders[option.id] || 'desc';
+
+                    return (
+                      <div key={option.id} className="flex bg-gray-100 p-1.5 rounded-2xl border border-gray-200 gap-1.5 items-center">
+                        <button
+                          onClick={() => {
+                            setSortBy(prev =>
+                              active ? prev.filter(v => v !== option.id) : [...prev, option.id]
+                            );
+                            setPage(1);
+                          }}
+                          className={`px-5 py-2 rounded-xl text-xs font-black transition-all ${active
+                            ? 'bg-indigo-600 text-white shadow-md'
+                            : 'bg-white text-gray-500 hover:text-gray-700 border border-gray-100'
+                            }`}
+                        >
+                          {option.label}
+                        </button>
+
+                        {active && (
+                          <div className="flex bg-white/50 p-1 rounded-lg gap-1 border border-gray-200/50">
+                            {[
+                              { id: 'desc', label: 'High' },
+                              { id: 'asc', label: 'Low' }
+                            ].map((order) => (
+                              <button
+                                key={order.id}
+                                onClick={() => {
+                                  setSortOrders(prev => ({ ...prev, [option.id]: order.id }));
+                                  setPage(1);
+                                }}
+                                className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition-all ${currentOrder === order.id
+                                  ? 'bg-indigo-100 text-indigo-700'
+                                  : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                                  }`}
+                                title={order.id === 'desc' ? 'Highest First' : 'Lowest First'}
+                              >
+                                {order.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
 
-                {sortBy !== 'none' && (
-                  <div className="flex bg-gray-100 p-1.5 rounded-2xl border border-gray-200">
-                    {[
-                      { id: 'desc', label: 'Highest First' },
-                      { id: 'asc', label: 'Lowest First' }
-                    ].map((order) => (
-                      <button
-                        key={order.id}
-                        onClick={() => {
-                          setSortOrder(order.id);
-                          setPage(1);
-                        }}
-                        className={`px-5 py-2 rounded-xl text-xs font-black transition-all ${sortOrder === order.id
-                            ? 'bg-white text-indigo-600 shadow-md border border-gray-100'
-                            : 'text-gray-500 hover:text-gray-700'
-                          }`}
-                      >
-                        {order.label}
-                      </button>
-                    ))}
-                  </div>
+                {sortBy.length > 0 && (
+                  <button
+                    onClick={() => {
+                      setSortBy([]);
+                      setPage(1);
+                    }}
+                    className="px-4 py-2.5 text-xs font-black text-red-500 hover:bg-red-50 rounded-xl transition-all flex items-center gap-2"
+                  >
+                    <X className="w-4 h-4" /> Clear Sorting
+                  </button>
                 )}
               </div>
             </div>
@@ -750,6 +773,18 @@ const UsersTab = ({ filterProps }) => {
               >
                 <ChevronRight className="w-5 h-5" />
               </button>
+
+              <div className="flex items-center gap-3 ml-4 border-l border-gray-200 pl-4">
+                <span className="text-[10px] font-black text-gray-400 uppercase">Jump to</span>
+                <input
+                  type="text"
+                  value={pageInput}
+                  onChange={(e) => setPageInput(e.target.value)}
+                  onBlur={commitPage}
+                  onKeyDown={(e) => e.key === 'Enter' && commitPage()}
+                  className="w-12 h-9 bg-white border-2 border-gray-100 rounded-lg text-center text-xs font-black focus:border-indigo-500 focus:outline-none transition-all"
+                />
+              </div>
             </div>
           </div>
         )}
