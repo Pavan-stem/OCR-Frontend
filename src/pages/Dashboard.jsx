@@ -194,7 +194,7 @@ const AdminDashboard = () => {
             <nav className="px-2 sm:px-6 border-t border-gray-100/10 bg-white/5 backdrop-blur-md">
               <div className="flex justify-around sm:justify-start sm:space-x-1 overflow-x-hidden">
                 {[
-                  { id: 'dashboard', label: 'Stats', icon: BarChart },
+                  { id: 'dashboard', label: 'Dashboard', icon: BarChart },
                   { id: 'users', label: 'Users', icon: Users, developerOnly: true },
                   { id: 'reports', label: 'Reports', icon: FileText, developerOnly: true }
                 ].filter(tab => {

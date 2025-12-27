@@ -180,6 +180,12 @@ const DashboardTab = ({ filterProps }) => {
     }
   }, [serverStatus.active, selectedDistrict, selectedMandal, selectedVillage, selectedMonth, selectedYear]);
 
+  const performanceTitle =
+    selectedVillage !== 'all' ? 'Village Performance' :
+      selectedMandal !== 'all' ? 'Mandal Performance' :
+        selectedDistrict !== 'all' ? 'District Performance' :
+          'Overall Performance';
+
   return (
     <div className="space-y-4 sm:space-y-8 animate-in fade-in duration-500 pb-10">
       {/* KPI Cards */}
@@ -591,13 +597,13 @@ const DashboardTab = ({ filterProps }) => {
           )}
         </div>
 
-        {/* District Performance Chart */}
+        {/* Mandal Performance Chart */}
         <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/30 p-8 overflow-hidden">
           <div className="flex items-center gap-3 mb-8">
             <div className="bg-purple-600 p-2 rounded-xl shadow-lg">
               <Users className="w-5 h-5 text-white" />
             </div>
-            <h3 className="text-xl font-black text-gray-900 leading-tight">District Performance</h3>
+            <h3 className="text-xl font-black text-gray-900 leading-tight">{performanceTitle}</h3>
           </div>
 
           {stats.loading ? (
