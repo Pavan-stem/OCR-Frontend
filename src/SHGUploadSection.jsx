@@ -232,6 +232,15 @@ const SHGUploadSection = ({
       if (response.ok) {
         const data = await response.json();
         setServerProgress(data.progress);
+      } else if (response.status === 422) {
+        // Handle invalid SHG ID (not found under this VO)
+        const errorData = await response.json();
+        if (errorData.action === 'REFRESH_SHG_LIST') {
+          console.warn('Invalid SHG ID detected. Refreshing SHG list from backend...');
+          alert(errorData.message || 'The SHG ID is not valid. Refreshing the list...');
+          // Reload the SHG list
+          await loadSHGDataFromBackend();
+        }
       }
     } catch (err) {
       console.error('Error updating upload progress:', err);
