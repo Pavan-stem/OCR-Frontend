@@ -129,8 +129,15 @@ const SHGUploadSection = ({
       filtered = filtered.filter(shg => !uploadStatus[shg.shgId]?.uploaded);
     }
 
+    if (showFailedOnly) {
+      filtered = filtered.filter(shg => {
+        const isFailed = failedUploads.some(failed => failed.shgID === shg.shgId);
+        return isFailed;
+      });
+    }
+
     setFilteredShgData(filtered);
-  }, [searchTerm, shgData, uploadStatus, showUploadedOnly, showPendingOnly]);
+  }, [searchTerm, shgData, uploadStatus, showUploadedOnly, showPendingOnly, showFailedOnly, failedUploads]);
 
   // Check if all uploaded files are validated
   useEffect(() => {
@@ -1047,16 +1054,21 @@ const SHGUploadSection = ({
     const isTempUploaded = !!fileData;
     const isPermanentlyUploaded = serverProgress?.uploadedShgIds?.includes(shg.shgId) || uploadStatus[shg.shgId]?.uploaded === true;
 
+    // Check if this SHG has been rejected (but only show if NOT permanently uploaded - after re-upload, hide rejection)
+    const rejectionInfo = !isPermanentlyUploaded && failedUploads.find(failed => failed.shgID === shg.shgId);
+
     return (
       <div
         key={shg.shgId}
-        className={`relative bg-white rounded-xl sm:rounded-2xl shadow-lg border-2 transition-all ${isPermanentlyUploaded
-          ? 'border-green-400 bg-green-50'
-          : isTempUploaded
-            ? fileData.validated
-              ? 'border-green-400 bg-green-50'
-              : 'border-yellow-400 bg-yellow-50'
-            : 'border-gray-300 hover:border-blue-400 hover:shadow-xl'
+        className={`relative bg-white rounded-xl sm:rounded-2xl shadow-lg border-2 transition-all ${rejectionInfo
+          ? 'border-red-400 bg-red-50'
+          : isPermanentlyUploaded
+            ? 'border-green-400 bg-green-50'
+            : isTempUploaded
+              ? fileData.validated
+                ? 'border-green-400 bg-green-50'
+                : 'border-yellow-400 bg-yellow-50'
+              : 'border-gray-300 hover:border-blue-400 hover:shadow-xl'
           }`}
       >
         {/* ✅ PERMANENT UPLOAD STATUS BADGE */}
@@ -1067,12 +1079,19 @@ const SHGUploadSection = ({
           </div>
         )}
 
+        {/* ❌ REJECTION STATUS BADGE - Hide if successfully re-uploaded */}
+        {rejectionInfo && !isPermanentlyUploaded && (
+          <div className="absolute -top-1 -right-1 sm:-top-1 sm:-right-1 w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-red-500 flex items-center justify-center shadow-md border border-white z-10">
+            <X size={14} className="text-white sm:hidden font-bold" />
+            <X size={16} className="text-white hidden sm:block font-bold" />
+          </div>
+        )}
+
         <div className={isPermanentlyUploaded ? "p-1.5 sm:p-2" : "p-3 sm:p-4"}>
           {/* SHG Header */}
           <div className={isPermanentlyUploaded ? "mb-0.5" : "mb-2 sm:mb-3"}>
             <h3
               className="font-bold text-sm sm:text-base text-gray-800 mb-0.5 line-clamp-2 break-words"
-              title={shg.shgName}
             >
               {shg.shgName}
             </h3>
@@ -1081,8 +1100,133 @@ const SHGUploadSection = ({
             </p>
           </div>
 
+          {/* Rejection Info Alert - Show only if no file selected for re-upload */}
+          {rejectionInfo && !fileData && (
+            <div className="mb-2 sm:mb-3 bg-white rounded-lg p-2 sm:p-3 border-l-4 border-red-500">
+              <div className="flex items-start gap-2">
+                <AlertTriangle size={16} className="text-red-600 flex-shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-red-700 mb-1">
+                    {t?.('upload.rejectedReason' || 'Rejected Reason:')}
+                  </p>
+                  <p className="text-xs text-gray-800">
+                    {rejectionInfo.rejectionReason || (
+                      <>
+                        {t?.('upload.failedGuidelines') || 'Please follow upload guidelines: Ensure image is clear, well-lit, and shows complete document.'}
+                      </>
+                    )}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* ================= UPLOAD SECTION ================= */}
-          {isPermanentlyUploaded ? (
+          {rejectionInfo ? (
+            /* 🔴 REJECTED STATE - Show full upload workflow (validate, view, etc.) */
+            !fileData ? (
+              // Show re-upload button if no file selected yet
+              <div className="space-y-2 sm:space-y-3">
+                <div className="relative">
+                  <input
+                    ref={(el) => (fileInputRefs.current[shg.shgId] = el)}
+                    type="file"
+                    accept=".png,.jpg,.jpeg,.pdf,.tiff,.tif,.bmp,.webp"
+                    onChange={(e) => handleFileSelect(shg.shgId, shg.shgName, e)}
+                    className="hidden"
+                    id={`file-input-rejected-${shg.shgId}`}
+                  />
+                  <label
+                    htmlFor={`file-input-rejected-${shg.shgId}`}
+                    className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl font-semibold cursor-pointer transition-all bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white border-transparent text-sm sm:text-base shadow-md"
+                  >
+                    <Upload size={16} />
+                    {t?.('upload.reupload') || 'Re-upload Document'}
+                  </label>
+                </div>
+              </div>
+            ) : (
+              // Once file is selected, show the full workflow (same as normal upload)
+              <div className="space-y-2 sm:space-y-3">
+                {/* File Info */}
+                <div className="bg-white rounded-lg p-2 sm:p-3 border border-gray-300">
+                  <div className="flex items-start gap-2">
+                    <FileText size={18} className="sm:hidden text-blue-600 flex-shrink-0 mt-1" />
+                    <FileText size={20} className="hidden sm:block text-blue-600 flex-shrink-0 mt-1" />
+                    <div className="flex-1 min-w-0">
+                      <p
+                        className="text-xs sm:text-sm font-semibold text-gray-800 truncate"
+                      >
+                        {fileData.fileName}
+                      </p>
+                      <p className="text-[10px] sm:text-xs text-gray-600">
+                        {formatBytes(fileData.fileSize)}
+                      </p>
+                      {fileData.width && fileData.height && (
+                        <p className="text-[10px] sm:text-xs text-gray-500">
+                          {fileData.width} × {fileData.height}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {!fileData.validated && (
+                  <div className="flex items-center gap-2 text-xs text-red-600 font-semibold">
+                    <AlertCircle size={14} />
+                    {t?.('upload.validateError')}
+                  </div>
+                )}
+
+                {/* Validate & View */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => handleValidateFile(shg.shgId)}
+                    disabled={fileData.validated}
+                    className={`px-2 sm:px-3 py-2 rounded-lg font-semibold text-xs sm:text-sm flex items-center justify-center gap-1 sm:gap-2 transition-all ${fileData.validated
+                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      : 'bg-blue-500 hover:bg-blue-600 text-white'
+                      }`}
+                  >
+                    <CheckCircle size={14} />
+                    {fileData.validated
+                      ? t?.('upload.validated') || 'Validated'
+                      : t?.('upload.validate') || 'Validate'}
+                  </button>
+
+                  <button
+                    onClick={() => handleViewFile(shg.shgId)}
+                    className="px-2 sm:px-3 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg font-semibold text-xs sm:text-sm flex items-center justify-center gap-1 sm:gap-2 transition-all"
+                  >
+                    <Eye size={14} />
+                    {t?.('upload.view') || 'View'}
+                  </button>
+                </div>
+
+                {/* Upload & Remove */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => handleUploadSingleFile(shg.shgId)}
+                    disabled={!fileData.validated || isUploading}
+                    className={`px-2 sm:px-3 py-2 rounded-lg font-semibold text-xs sm:text-sm flex items-center justify-center gap-1 sm:gap-2 transition-all ${fileData.validated && !isUploading
+                      ? 'bg-orange-500 hover:bg-orange-600 text-white'
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      }`}
+                  >
+                    <Upload size={14} />
+                    {isUploading ? (t?.('upload.uploading') || 'Uploading...') : (t?.('upload.uploadFileOne') || 'Upload File')}
+                  </button>
+                  <button
+                    onClick={() => handleRemoveFile(shg.shgId)}
+                    className="px-2 sm:px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold text-xs sm:text-sm flex items-center justify-center gap-1 sm:gap-2 transition-all"
+                  >
+                    <X size={14} />
+                    {t?.('upload.remove') || 'Remove'}
+                  </button>
+                </div>
+              </div>
+            )
+          ) : isPermanentlyUploaded ? (
             /* 🔒 FINAL LOCKED STATE */
             <div className="flex flex-col items-center justify-center py-0.5 text-green-700">
               <CheckCircle size={24} className="mb-1" />
@@ -1175,7 +1319,6 @@ const SHGUploadSection = ({
                   <div className="flex-1 min-w-0">
                     <p
                       className="text-xs sm:text-sm font-semibold text-gray-800 truncate"
-                      title={fileData.fileName}
                     >
                       {fileData.fileName}
                     </p>
@@ -1416,7 +1559,10 @@ const SHGUploadSection = ({
               <button
                 onClick={() => {
                   setShowUploadedOnly(!showUploadedOnly);
-                  if (!showUploadedOnly) setShowPendingOnly(false);
+                  if (!showUploadedOnly) {
+                    setShowPendingOnly(false);
+                    setShowFailedOnly(false);
+                  }
                 }}
                 className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl font-semibold transition-all flex items-center justify-center gap-2 text-sm sm:text-base ${showUploadedOnly
                   ? 'bg-green-500 text-white'
@@ -1431,7 +1577,10 @@ const SHGUploadSection = ({
               <button
                 onClick={() => {
                   setShowPendingOnly(!showPendingOnly);
-                  if (!showPendingOnly) setShowUploadedOnly(false);
+                  if (!showPendingOnly) {
+                    setShowUploadedOnly(false);
+                    setShowFailedOnly(false);
+                  }
                 }}
                 className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl font-semibold transition-all flex items-center justify-center gap-2 text-sm sm:text-base ${showPendingOnly
                   ? 'bg-orange-500 text-white'
@@ -1441,6 +1590,24 @@ const SHGUploadSection = ({
                 <Filter size={16} className="sm:hidden" />
                 <Filter size={18} className="hidden sm:block" />
                 {t?.('upload.pending') || 'Pending'}
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowFailedOnly(!showFailedOnly);
+                  if (!showFailedOnly) {
+                    setShowUploadedOnly(false);
+                    setShowPendingOnly(false);
+                  }
+                }}
+                className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl font-semibold transition-all flex items-center justify-center gap-2 text-sm sm:text-base ${showFailedOnly
+                  ? 'bg-red-500 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+              >
+                <Filter size={16} className="sm:hidden" />
+                <Filter size={18} className="hidden sm:block" />
+                {t?.('upload.rejected') || 'Rejected'}
               </button>
 
               {/* Validate All Button */}
@@ -1474,75 +1641,35 @@ const SHGUploadSection = ({
         </div>
       )}
 
-      {/* SHG Upload Sections (Failed, Pending & Uploaded) */}
+      {/* SHG Upload Sections (Rejected if filter active, Pending & Uploaded) */}
       {!loading && !error && shgData.length > 0 && (
         <div className="space-y-8">
 
-          {/* Failed Section */}
-          {failedShgs.length > 0 && (
+          {/* Show Rejected SHGs when filter is active */}
+          {showFailedOnly && failedShgs.length > 0 && (
             <div>
               <div className="flex items-center gap-2 mb-4 bg-white rounded-xl sm:rounded-2xl shadow-lg p-3 sm:p-4 border-2 border-red-300">
                 <AlertTriangle className="text-red-600" size={24} />
                 <h3 className="text-xl font-bold text-gray-800">
-                  {t?.('upload.failedUploads') || 'Rejected Uploads'}
+                  {t?.('upload.rejectedUploads') || 'Rejected Uploads'}
                   <span className="ml-2 text-sm font-normal text-gray-500">({failedShgs.length})</span>
                 </h3>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-                {failedShgs.map(failed => (
-                  <div key={failed._id} className="relative border-2 border-red-400 bg-red-50 rounded-2xl p-4 transition-all hover:shadow-lg">
-                    <div className="flex justify-between items-start mb-3">
-                      <div className="flex-1 min-w-0">
-                        <h4 className="font-bold text-sm text-gray-900 truncate">{failed.shgName}</h4>
-                        <p className="text-xs text-gray-600">SHG ID: {failed.shgID}</p>
-                        <p className="text-xs text-gray-500">{failed.month}/{failed.year}</p>
-                      </div>
-                      <AlertCircle className="w-6 h-6 text-red-600 flex-shrink-0" />
-                    </div>
-
-                    {/* Admin Message */}
-                    <div className="mb-3 bg-white rounded-lg p-3 border border-red-200">
-                      <p className="text-[10px] font-bold text-red-600 mb-1 uppercase">
-                        {failed.rejectionReason || 'Rejected'}
-                      </p>
-                      <p className="text-xs text-gray-800">
-                        {failed.adminMessage || (
-                          <>
-                            {t?.('upload.failedGuidelines') || 'Please follow upload guidelines: Ensure image is clear, well-lit, and shows complete document.'}
-                            <br />
-                            <span className="text-gray-600">
-                              {t?.('upload.failedGuidelinesTe') || 'దయచేసి అప్లోడ్ మార్గదర్శకాలను అనుసరించండి: చిత్రం స్పష్టంగా మరియు పూర్తి పత్రాన్ని చూపించేలా ఉండాలి.'}
-                            </span>
-                          </>
-                        )}
-                      </p>
-                    </div>
-
-                    {/* Re-upload button */}
-                    <div className="relative">
-                      <input
-                        type="file"
-                        accept=".png,.jpg,.jpeg,.pdf,.tiff,.tif,.bmp,.webp"
-                        onChange={(e) => handleFileSelect(failed.shgID, failed.shgName, e)}
-                        className="hidden"
-                        id={`reupload-${failed.shgID}`}
-                      />
-                      <label
-                        htmlFor={`reupload-${failed.shgID}`}
-                        className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-xl font-semibold cursor-pointer transition-all bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-md text-sm"
-                      >
-                        <Upload size={16} />
-                        {t?.('upload.reupload') || 'Re-upload Document'}
-                      </label>
-                    </div>
-                  </div>
-                ))}
+                {failedShgs.map(failed => {
+                  // Convert failed upload object to match SHG format for renderSHGCard
+                  const shgObj = {
+                    shgId: failed.shgID,
+                    shgName: failed.shgName
+                  };
+                  return renderSHGCard(shgObj);
+                })}
               </div>
             </div>
           )}
 
           {/* Pending Section */}
-          {pendingShgs.length > 0 && (
+          {pendingShgs.length > 0 && !showFailedOnly && (
             <div>
               <div className="flex items-center gap-2 mb-4 bg-white rounded-xl sm:rounded-2xl shadow-lg p-3 sm:p-4 border-2 border-gray-200">
                 <AlertCircle className="text-orange-500" size={24} />
@@ -1558,7 +1685,7 @@ const SHGUploadSection = ({
           )}
 
           {/* Uploaded Section */}
-          {uploadedShgs.length > 0 && (
+          {uploadedShgs.length > 0 && !showFailedOnly && (
             <div>
               <div className="flex items-center gap-2 mb-4 flex items-center gap-2 mb-4 bg-white rounded-xl sm:rounded-2xl shadow-lg p-3 sm:p-4 border-2 border-gray-200">
                 <CheckCircle className="text-green-500" size={24} />

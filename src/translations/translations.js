@@ -114,7 +114,10 @@ export const translations = {
             noSHGsAvailable: 'No SHGs available',
             autoSave: 'Image orientation will be automatically saved.',
             uploadSuccessSingle: "{{shg}} file has been uploaded successfully.",
-            uploadSuccessMultiple: "{{count}} files have been uploaded successfully."
+            uploadSuccessMultiple: "{{count}} files have been uploaded successfully.",
+            rejected: "Rejected",
+            reupload: "Reupload",
+            rejectedReason: "Rejected Reason:"
         },
 
         // Months
@@ -166,7 +169,6 @@ export const translations = {
             subtitle: 'View your uploaded documents',
             document: 'Document',
             date: 'Date',
-            status: 'Status',
             action: 'View Document',
             noDocuments: 'No documents uploaded yet',
             unableToLoadImage: 'Unable to load image',
@@ -176,6 +178,7 @@ export const translations = {
             showing: 'Showing',
             documents: 'Documents',
             tryDifferentFilter: 'Try selecting a different month or year',
+            status: 'Upload Status',
         },
 
         // Toast Messages
@@ -332,7 +335,10 @@ export const translations = {
             noSHGsAvailable: 'SHGలు అందుబాటులో లేవు',
             autoSave: 'చిత్రం యొక్క దిశ దానంతట అదే సేవ్ చేయబడుతుంది.',
             uploadSuccessSingle: "{{shg}} పత్రం విజయవంతంగా అప్‌లోడ్ అయింది.",
-            uploadSuccessMultiple: "{{count}} పత్రాలు విజయవంతంగా అప్‌లోడ్ అయ్యాయి."
+            uploadSuccessMultiple: "{{count}} పత్రాలు విజయవంతంగా అప్‌లోడ్ అయ్యాయి.",
+            rejected: "తిరస్కరించబడింది",
+            reupload: "మళ్లీ అప్‌లోడ్ చేయండి",
+            rejectedReason: "తిరస్కరణకు కారణం: ",
         },
 
         // Months - Telugu
@@ -384,7 +390,7 @@ export const translations = {
             subtitle: 'మీ అప్‌లోడ్ చేసిన డాక్యుమెంట్‌లను వీక్షించండి',
             document: 'డాక్యుమెంట్',
             date: 'తేదీ',
-            status: 'స్థితి',
+            status: 'అప్‌లోడ్ స్థితి',
             action: 'పత్రాన్ని చూడండి',
             noDocuments: 'ఇంకా డాక్యుమెంట్‌లు అప్‌లోడ్ చేయలేదు',
             unableToLoadImage: 'చిత్రాన్ని లోడ్ చేయడం సాధ్యం కాలేదు',

@@ -202,7 +202,7 @@ export default function DocumentHistory({ onClose }) {
                     {t('documentHistory.date')}
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-slate-700 uppercase border-b">
-                    Status
+                    {t('documentHistory.status')}
                   </th>
                   <th className="px-4 py-3 text-center text-xs font-semibold text-slate-700 uppercase border-b">
                     {t('documentHistory.action')}
