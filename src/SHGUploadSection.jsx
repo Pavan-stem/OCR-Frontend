@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { Upload, CheckCircle, X, FileText, Search, AlertCircle, Eye, Filter, RotateCw, RotateCcw, Camera, AlertTriangle, Activity } from 'lucide-react';
 import { API_BASE } from './utils/apiConfig';
 import { analyzeImage } from './utils/imageQualityCheck';
+import SmartCamera from './smartcamera';
 
 const SHGUploadSection = ({
   selectedMonth,
@@ -35,6 +36,11 @@ const SHGUploadSection = ({
   const [isProcessingPreview, setIsProcessingPreview] = useState(false);
   const [failedUploads, setFailedUploads] = useState([]);
   const [showFailedOnly, setShowFailedOnly] = useState(false);
+  const [openSmartCamera, setOpenSmartCamera] = useState(false);
+  const [activeShgId, setActiveShgId] = useState(null);
+  const [activeShgName, setActiveShgName] = useState(null);
+
+  const isDeveloper = user?.role?.toLowerCase().includes('developer')
 
   // Smart Preview Logic (Handles hard rotation and cropping for modal)
   useEffect(() => {
@@ -462,6 +468,39 @@ const SHGUploadSection = ({
       handleFileSelect(shgId, shgName, event);
     }
   };
+
+  const handleSmartCameraCapture = async (file) => {
+    if (!file || !activeShgId || !activeShgName) return;
+
+    setAnalyzingMap(prev => ({ ...prev, [activeShgId]: true }));
+
+    try {
+      const analysis = await analyzeImage(file);
+      setAnalyzingMap(prev => ({ ...prev, [activeShgId]: false }));
+
+      // Create a fake event object for compatibility with handleFileSelect
+      const fakeEvent = {
+        target: {
+          files: [file]
+        }
+      };
+
+      handleFileSelect(activeShgId, activeShgName, fakeEvent, analysis);
+
+    } catch (err) {
+      console.error("Smart camera error:", err);
+      setAnalyzingMap(prev => ({ ...prev, [activeShgId]: false }));
+
+      // Fallback to normal handling
+      const fakeEvent = {
+        target: {
+          files: [file]
+        }
+      };
+      handleFileSelect(activeShgId, activeShgName, fakeEvent);
+    }
+  };
+
 
   const handleFileSelect = async (shgId, shgName, event, analysisResults = null) => {
     const file = event.target.files?.[0];
@@ -1275,37 +1314,23 @@ const SHGUploadSection = ({
                   </label>
                 </div>
 
-                {/* Smart AI Scan - Visible on Mobile/Tablet, Hidden on Desktop */}
-                <div className="flex-1 relative lg:hidden">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    onChange={(e) => handleSmartCapture(shg.shgId, shg.shgName, e)}
-                    className="hidden"
-                    id={`smart-scan-${shg.shgId}`}
-                  />
-                  <label
-                    htmlFor={`smart-scan-${shg.shgId}`}
-                    className={`flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all shadow-md text-sm sm:text-base h-full text-white ${analyzingMap[shg.shgId]
-                      ? 'bg-gray-400 cursor-wait'
-                      : 'bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700'
-                      }`}
-                  >
-                    {analyzingMap[shg.shgId] ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
-                        <span className="text-xs">Analyzing...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Camera size={18} />
-                        <span className="hidden sm:inline">AI Smart Scan</span>
-                        <span className="sm:hidden">Camera</span>
-                      </>
-                    )}
-                  </label>
-                </div>
+                {/* Smart Camera Button - Visible on Mobile/Tablet, Hidden on Desktop - DEVELOPER ONLY */}
+                {isDeveloper && (
+                  <div className="flex-1 relative lg:hidden">
+                    <button
+                      onClick={() => {
+                        setActiveShgId(shg.shgId);
+                        setActiveShgName(shg.shgName);
+                        setOpenSmartCamera(true);
+                      }}
+                      className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all shadow-md text-sm sm:text-base h-full text-white bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700"
+                    >
+                      <Camera size={18} />
+                      <span className="hidden sm:inline">Smart Camera</span>
+                      <span className="sm:hidden">Camera</span>
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ) : (
@@ -1794,6 +1819,17 @@ const SHGUploadSection = ({
         </div>,
         document.body
       )}
+
+      {/* SmartCamera Modal */}
+      <SmartCamera
+        open={openSmartCamera}
+        onClose={() => {
+          setOpenSmartCamera(false);
+          setActiveShgId(null);
+          setActiveShgName(null);
+        }}
+        onCapture={handleSmartCameraCapture}
+      />
     </div>
   );
 };
