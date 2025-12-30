@@ -113,7 +113,7 @@ const AdminDashboard = () => {
       case 'dashboard':
         return <DashboardTab filterProps={filterProps} />;
       case 'users':
-        return isDev ? <UsersTab filterProps={filterProps} /> : <DashboardTab filterProps={filterProps} />;
+        return isDev || userRole.toLowerCase().includes('admin') ? <UsersTab filterProps={filterProps} /> : <DashboardTab filterProps={filterProps} />;
       case 'validation':
         return isDev ? <OCRValidationTab /> : <DashboardTab filterProps={filterProps} />;
       case 'reports':
@@ -189,13 +189,13 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          {/* Navigation - Only show for Developers */}
-          {userRole.toLowerCase().includes('developer') && (
+          {/* Navigation - Show for Developers and Admins */}
+          {(userRole.toLowerCase().includes('developer') || userRole.toLowerCase().includes('admin')) && (
             <nav className="px-2 sm:px-6 border-t border-gray-100/10 bg-white/5 backdrop-blur-md">
               <div className="flex justify-around sm:justify-start sm:space-x-1 overflow-x-hidden">
                 {[
                   { id: 'dashboard', label: 'Dashboard', icon: BarChart },
-                  { id: 'users', label: 'Users', icon: Users, developerOnly: true },
+                  { id: 'users', label: 'Users', icon: Users },
                   { id: 'reports', label: 'Reports', icon: FileText, developerOnly: true }
                 ].filter(tab => {
                   const isDev = userRole.toLowerCase().includes('developer');
