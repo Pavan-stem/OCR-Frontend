@@ -537,7 +537,7 @@ const UsersTab = ({ filterProps }) => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
           { label: 'Administrators', count: userCounts.admin, icon: Shield, color: 'from-purple-500 to-indigo-600' },
-          { label: 'Village Orgs (VO)', count: userCounts.vo, icon: User, color: 'from-blue-500 to-cyan-600' },
+          { label: 'Village VOs', count: userCounts.vo, icon: User, color: 'from-blue-500 to-cyan-600' },
           { label: 'Developers', count: userCounts.developer, icon: Lock, color: 'from-amber-500 to-orange-600' },
           { label: 'Total Accounts', count: userCounts.total, icon: CheckCircle, color: 'from-emerald-500 to-teal-600' }
         ].map((stat, i) => (
@@ -751,10 +751,10 @@ const UsersTab = ({ filterProps }) => {
               <table className="w-full text-left border-collapse min-w-[1000px]">
                 <thead>
                   <tr className="bg-indigo-700 text-white">
-                    <th className="px-4 sm:px-8 py-5 text-[10px] font-black uppercase tracking-wider border-r border-indigo-600/50">User Profile</th>
-                    <th className="px-4 sm:px-8 py-5 text-[10px] font-black uppercase tracking-wider border-r border-indigo-600/50">Access Level</th>
-                    <th className="px-4 sm:px-8 py-5 text-[10px] font-black uppercase tracking-wider border-r border-indigo-600/50">Jurisdiction</th>
-                    <th className="px-4 sm:px-8 py-5 text-[10px] font-black uppercase tracking-wider border-r border-indigo-600/50 text-center">Operational Metrics</th>
+                    <th className="px-4 sm:px-8 py-5 text-[10px] font-black uppercase tracking-wider border-r border-indigo-600/50">SHG Profile</th>
+                    <th className="px-4 sm:px-8 py-5 text-[10px] font-black uppercase tracking-wider border-r border-indigo-600/50">Roles</th>
+                    <th className="px-4 sm:px-8 py-5 text-[10px] font-black uppercase tracking-wider border-r border-indigo-600/50">Location</th>
+                    <th className="px-4 sm:px-8 py-5 text-[10px] font-black uppercase tracking-wider border-r border-indigo-600/50 text-center">Uploads Tracking</th>
                     <th className="px-4 sm:px-8 py-5 text-[10px] font-black uppercase tracking-wider text-right">Control</th>
                   </tr>
                 </thead>
