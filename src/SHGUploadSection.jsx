@@ -330,8 +330,8 @@ const SHGUploadSection = ({
       }
     } catch (e) {
       const currentPath = window.location.pathname;
-      if (currentPath.startsWith('/SMD')) {
-        basePath = '/SMD';
+      if (currentPath.startsWith('/Test')) {
+        basePath = '/Test';
       } else {
         const pathParts = currentPath.split('/').filter(p => p);
         if (pathParts.length > 0) {
