@@ -14,12 +14,12 @@ export const getApiBase = () => {
 
   // 2️⃣ Local development (React dev server)
   if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-    // Use HTTP for local backend (Flask dev server) to avoid SSL protocol errors
-    return "https://api.stemverse.app/OCRtest";
+    // Use local backend server on port 5004
+    return "http://localhost:5004/OCRtest";
   }
 
   // 3️⃣ Production (deployed site)
-  return "https://api.stemverse.app/OCR";
+  return "https://api.stemverse.app/OCRtest";
 };
 
 export const getAuthApiBase = () => {
@@ -29,10 +29,10 @@ export const getAuthApiBase = () => {
 
   if (typeof window !== "undefined" &&
     (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
-    return "https://api.stemverse.app/OCRtest";
+    return "http://localhost:5004/OCRtest";
   }
 
-  return "https://api.stemverse.app/OCR";
+  return "https://api.stemverse.app/OCRtest";
 };
 
 export const API_BASE = getApiBase();
