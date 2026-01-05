@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Upload, CheckCircle, AlertCircle, FileText, Image as ImageIcon, X, Loader2 } from 'lucide-react';
+import { Upload, CheckCircle, AlertCircle, FileText, Image as ImageIcon, X, Loader2, Eye, EyeOff, Download } from 'lucide-react';
 import { API_BASE } from '../utils/apiConfig';
 
 const OCRValidationTab = () => {
@@ -10,6 +10,10 @@ const OCRValidationTab = () => {
   const [error, setError] = useState(null);
   const [viewMode, setViewMode] = useState('original'); // 'original' or 'digitized'
   const [dragActive, setDragActive] = useState(false);
+  const [activeCell, setActiveCell] = useState(null);
+  const [showCellDetails, setShowCellDetails] = useState(true);
+  const [elapsedTime, setElapsedTime] = useState(null);
+  const [downloading, setDownloading] = useState(false);
 
   const handleDrag = (e) => {
     e.preventDefault();
@@ -69,6 +73,7 @@ const OCRValidationTab = () => {
     setResults(null);
     setError(null);
     setViewMode('original');
+    setElapsedTime(null);
   };
 
   const processImage = async () => {
@@ -97,6 +102,10 @@ const OCRValidationTab = () => {
         const fileResult = data.files[0];
         if (fileResult.pages && fileResult.pages.length > 0) {
           setResults(fileResult.pages[0]);
+          // Capture elapsed time from response
+          if (data.elapsed_time !== undefined) {
+            setElapsedTime(data.elapsed_time);
+          }
         } else {
           throw new Error('No pages found in response');
         }
@@ -109,6 +118,62 @@ const OCRValidationTab = () => {
     } finally {
       setProcessing(false);
     }
+  };
+
+  const downloadExcel = async () => {
+    if (!results?.table_data) return;
+
+    setDownloading(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/export-to-excel`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          table_data: results.table_data,
+          filename: selectedFile?.name || 'shg_table'
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Excel export failed');
+      }
+
+      // Get the blob from response
+      const blob = await response.blob();
+
+      // Get filename from uploaded file (remove extension and add .xlsx)
+      let downloadName = 'shg_table.xlsx';
+      if (selectedFile?.name) {
+        const nameWithoutExt = selectedFile.name.replace(/\.[^/.]+$/, '');
+        downloadName = `${nameWithoutExt}.xlsx`;
+      }
+
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = downloadName;
+      document.body.appendChild(a);
+      a.click();
+
+      // Cleanup
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error('Excel download error:', err);
+      setError(err.message || 'Failed to download Excel file');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const formatElapsedTime = (seconds) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+    return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
   };
 
   const getConfidenceColor = (confidence) => {
@@ -157,61 +222,236 @@ const OCRValidationTab = () => {
     const tableData = results.table_data;
     const headers = tableData.column_headers || [];
     const dataRows = tableData.data_rows || [];
-    const shgMbkId = tableData.shg_mbk_id || 'N/A';
+    const headerRows = tableData.header_rows || [];
 
     return (
       <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
         <div className="mb-6">
-          <div className="flex items-center gap-2 mb-2">
-            <FileText className="w-5 h-5 text-indigo-600" />
-            <h3 className="text-lg font-black text-gray-900">Extracted SHG Table</h3>
-          </div>
-          <div className="flex items-center gap-2 bg-indigo-50 p-3 rounded-xl">
-            <span className="text-sm font-bold text-gray-600">SHG MBK ID:</span>
-            <span className="text-lg font-black text-indigo-600">{shgMbkId}</span>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <FileText className="w-5 h-5 text-indigo-600" />
+              <h3 className="text-lg font-black text-gray-900">Extracted SHG Table</h3>
+            </div>
+            <button
+              onClick={downloadExcel}
+              disabled={downloading}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-bold text-sm shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+              title="Download as Excel"
+            >
+              {downloading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Downloading...
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  Download Excel
+                </>
+              )}
+            </button>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full border-collapse">
-            <thead>
-              <tr className="bg-gradient-to-r from-indigo-600 to-purple-600">
-                <th className="px-3 py-3 text-left text-xs font-black text-white uppercase tracking-wider border border-indigo-500">
-                  Row
-                </th>
-                {headers.map((header, idx) => (
-                  <th key={idx} className="px-3 py-3 text-left text-xs font-black text-white uppercase tracking-wider border border-indigo-500 min-w-[150px]">
-                    <div className="truncate" title={header.label}>
-                      {header.label}
-                    </div>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {dataRows.map((row, rowIdx) => (
-                <tr key={rowIdx} className={rowIdx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
-                  <td className="px-3 py-2 text-sm font-bold text-gray-900 border border-gray-200">
-                    {row.row_number}
-                  </td>
-                  {row.cells?.map((cell, cellIdx) => (
-                    <td key={cellIdx} className="px-3 py-2 text-sm border border-gray-200">
-                      <div className="space-y-1">
-                        <div className="font-medium text-gray-900 break-words">
-                          {cell.text || '-'}
-                        </div>
-                        {cell.confidence !== undefined && (
-                          <div className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${getConfidenceColor(cell.confidence)}`}>
-                            {(cell.confidence * 100).toFixed(0)}%
+        <div className="flex items-center justify-end mb-4">
+          <p className="text-xs font-bold text-gray-900 mr-2">Debug Cell details:</p>
+          <button
+            onClick={() => setShowCellDetails(!showCellDetails)}
+            className="flex items-center gap-1 px-2 py-1 text-xs font-bold text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors"
+            title={showCellDetails ? "Hide panel" : "Show panel"}
+          >
+            {showCellDetails ? (
+              <>
+                <EyeOff className="w-3 h-3" />
+                Hide
+              </>
+            ) : (
+              <>
+                <Eye className="w-3 h-3" />
+                Show
+              </>
+            )}
+          </button>
+        </div>
+
+        <div className="lg:grid-cols-4 gap-6 relative">
+          <div className="width-full overflow-x-auto">
+            <table className="min-w-full border-collapse">
+              <thead>
+                {headerRows && headerRows.length > 0 ? (
+                  headerRows.map((row, rowIdx) => (
+                    <tr key={`header-row-${rowIdx}`} className="bg-gradient-to-r from-indigo-600 to-purple-600">
+                      {row.map((cell, cellIdx) => {
+                        // Left-align cells with colspan 15 and rowspan 1
+                        const isLeftAligned = (cell.col_span === 15 || cell.col_span === '15') &&
+                          (cell.row_span === 1 || cell.row_span === '1');
+
+                        // Check if this cell has data and if it's active
+                        const hasData = cell.text || cell.image_base64;
+                        const headerRowId = `header-${rowIdx}`;
+                        const isActive = activeCell?.rowIdx === headerRowId && activeCell?.cellIdx === cellIdx;
+
+                        return (
+                          <th
+                            key={`header-cell-${rowIdx}-${cellIdx}`}
+                            colSpan={cell.col_span || 1}
+                            rowSpan={cell.row_span || 1}
+                            onClick={() => hasData ? setActiveCell({ ...cell, rowIdx: headerRowId, cellIdx }) : null}
+                            className={`px-3 py-2 text-xs font-black text-white border border-indigo-500 ${hasData ? 'cursor-pointer hover:bg-indigo-700 transition-colors' : ''
+                              } ${isActive ? 'ring-2 ring-yellow-400 ring-inset' : ''} ${isLeftAligned ? 'text-left' : 'text-center'
+                              }`}
+                          >
+                            {cell.label || ''}
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  ))
+                ) : (
+                  <tr className="bg-gradient-to-r from-indigo-600 to-purple-600">
+                    {headers.map((header, idx) => {
+                      const isLeftAligned = header.label && (header.label.includes('SHG MBK ID') || header.label.includes('ID'));
+                      return (
+                        <th key={idx} className={`px-3 py-3 text-xs font-black text-white uppercase border border-indigo-500 min-w-[120px] ${isLeftAligned ? 'text-left' : 'text-center'}`}>
+                          <div className="truncate" title={header.label}>
+                            {header.label}
                           </div>
-                        )}
+                        </th>
+                      );
+                    })}
+                  </tr>
+                )}
+              </thead>
+              <tbody>
+                {dataRows.map((row, rowIdx) => (
+                  <tr key={rowIdx} className={rowIdx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                    {row.cells?.map((cell, cellIdx) => {
+                      const isActive = activeCell?.rowIdx === rowIdx && activeCell?.cellIdx === cellIdx;
+                      // Check if this column should be left-aligned (first column is typically ID)
+                      const isLeftAligned = cellIdx === 0;
+                      return (
+                        <td
+                          key={cellIdx}
+                          onClick={() => cell.text || cell.image_base64 ? setActiveCell({ ...cell, rowIdx, cellIdx }) : null}
+                          className={`px-3 py-3 text-sm border border-gray-200 cursor-pointer transition-all ${isActive ? 'bg-indigo-100 ring-2 ring-indigo-500 ring-inset z-10' :
+                            (cell.text || cell.image_base64) ? 'hover:bg-indigo-50' : 'opacity-40 cursor-not-allowed'
+                            }`}
+                        >
+                          <div className="space-y-1">
+                            <div className={`font-medium break-words ${isActive ? 'text-indigo-900' : 'text-gray-900'} ${isLeftAligned ? 'text-left' : 'text-center'}`}>
+                              {cell.text || '-'}
+                            </div>
+                            {cell.confidence !== undefined && cell.confidence > 0 && (
+                              <div className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${getConfidenceColor(cell.confidence)} `}>
+                                {(cell.confidence * 100).toFixed(0)}%
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+
+                {/* Totals Row */}
+                {dataRows.length > 0 && dataRows[0].cells && (
+                  <tr className="bg-indigo-50 border-t-2 border-indigo-600">
+                    {dataRows[0].cells.map((_, cellIdx) => {
+                      if (cellIdx === 0) {
+                        // First cell with "మొత్తం :" label spanning 2 columns
+                        return (
+                          <td
+                            key={cellIdx}
+                            colSpan={2}
+                            className="px-3 py-3 text-sm font-black text-indigo-900 border border-gray-200 text-left"
+                          >
+                            మొత్తం :
+                          </td>
+                        );
+                      } else if (cellIdx === 1) {
+                        // Skip the second cell since first cell spans 2 columns
+                        return null;
+                      } else {
+                        // Calculate total for this column
+                        const columnTotal = dataRows.reduce((sum, row) => {
+                          const cellText = row.cells[cellIdx]?.text || '';
+                          const numValue = parseFloat(cellText.replace(/[^0-9.-]/g, ''));
+                          return !isNaN(numValue) ? sum + numValue : sum;
+                        }, 0);
+
+                        return (
+                          <td
+                            key={cellIdx}
+                            className="px-3 py-3 text-sm font-black text-indigo-900 border border-gray-200 text-center"
+                          >
+                            {columnTotal > 0 ? columnTotal.toFixed(2) : '-'}
+                          </td>
+                        );
+                      }
+                    })}
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Cell Details Panel */}
+          {showCellDetails && (
+            <div className="absolute top-0 right-0 p-6 rounded-xl shadow-lg bg-white border-l border-gray-100 pl-6 space-y-6">
+              <div className="sticky top-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-sm font-black text-gray-400 uppercase tracking-widest">Cell Details</h4>
+                </div>
+                {activeCell ? (
+                  <div className="space-y-4 animate-in slide-in-from-right duration-300">
+                    <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+                      <p className="text-xs font-bold text-gray-500 uppercase mb-2">Original Segment</p>
+                      {activeCell.image_base64 ? (
+                        <div className="rounded-xl overflow-hidden border border-gray-200 shadow-sm bg-white">
+                          <img
+                            src={`data:image/png;base64,${activeCell.image_base64}`}
+                            alt="Cell Segment"
+                            className="w-full h-auto object-contain max-h-32 p-2 mx-auto"
+                          />
+                        </div>
+                      ) : (
+                        <div className="aspect-video flex items-center justify-center bg-gray-100 rounded-xl text-gray-400 text-xs font-bold">
+                          No Image Available
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="bg-indigo-50 rounded-2xl p-4">
+                        <p className="text-xs font-bold text-indigo-400 uppercase mb-1">OCR Text</p>
+                        <p className="text-xl font-black text-indigo-900 break-words">{activeCell.text || 'Empty'}</p>
                       </div>
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-gray-50 rounded-xl p-3">
+                          <p className="text-[10px] font-bold text-gray-400 uppercase">Confidence</p>
+                          <p className={`text-lg font-black ${activeCell.confidence >= 0.7 ? 'text-green-600' : 'text-red-600'}`}>
+                            {(activeCell.confidence * 100).toFixed(1)}%
+                          </p>
+                        </div>
+                        <div className="bg-gray-50 rounded-xl p-3">
+                          <p className="text-[10px] font-bold text-gray-400 uppercase">Debug ID</p>
+                          <p className="text-lg font-black text-gray-900">#{activeCell.debug_id ?? 'N/A'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="h-64 flex flex-col items-center justify-center text-center p-6 border-2 border-dashed border-gray-100 rounded-3xl">
+                    <div className="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center mb-4">
+                      <CheckCircle className="w-6 h-6 text-gray-300" />
+                    </div>
+                    <p className="text-sm font-bold text-gray-400">Select a cell from the table to view details</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="mt-4 flex items-center gap-4 text-xs text-gray-500">
@@ -225,10 +465,10 @@ const OCRValidationTab = () => {
           </span>
           <span className="flex items-center gap-1">
             <div className="w-3 h-3 rounded-full bg-red-500"></div>
-            Low (\u003c70%)
+            Low (&lt;70%)
           </span>
         </div>
-      </div>
+      </div >
     );
   };
 
@@ -349,6 +589,29 @@ const OCRValidationTab = () => {
       {/* Results */}
       {results && (
         <div className="space-y-6">
+          {/* Processing Time Display */}
+          {elapsedTime !== null && (
+            <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-2xl p-6 shadow-lg border border-green-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center">
+                    <CheckCircle className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-gray-900">Processing Complete</h3>
+                    <p className="text-sm text-gray-600">OCR analysis finished successfully</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Total Time</p>
+                  <p className="text-3xl font-black text-green-600">
+                    {formatElapsedTime(elapsedTime)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Image View Toggle */}
           <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/30 overflow-hidden">
             <div className="p-8">
