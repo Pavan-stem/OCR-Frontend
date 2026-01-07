@@ -1,6 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, Eye, Filter, Loader2, X, Shield, User, MapPin, Phone, Lock, CheckCircle, Search, ChevronLeft, ChevronRight, FileText, Calendar, AlertCircle, AlertTriangle } from 'lucide-react';
 import { API_BASE } from '../utils/apiConfig';
+const REJECTION_REASONS = [
+  "Follow guidelines",
+  "Table was cut off",
+  "There are dark shadows",
+  "table wasn't visible",
+  "wrong table",
+  "There was too much blur",
+  "There was background noise use plane background"
+];
 
 const UsersTab = ({ filterProps }) => {
   const { selectedDistrict, setSelectedDistrict, selectedMandal, setSelectedMandal, selectedVillage, setSelectedVillage, serverStatus } = filterProps;
@@ -32,11 +41,14 @@ const UsersTab = ({ filterProps }) => {
   const [userUploads, setUserUploads] = useState([]);
   const [uploadsLoading, setUploadsLoading] = useState(false);
   const [uploadsSummary, setUploadsSummary] = useState(null);
-  const [filterMonth, setFilterMonth] = useState('');
-  const [filterYear, setFilterYear] = useState('');
+  const now = new Date();
+  const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
+  const currentYear = String(now.getFullYear());
+  const [filterMonth, setFilterMonth] = useState(currentMonth);
+  const [filterYear, setFilterYear] = useState(currentYear);
   const [selectedUpload, setSelectedUpload] = useState(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
-  const [statusFormData, setStatusFormData] = useState({ status: 'pending', rejectionReason: '' });
+  const [statusFormData, setStatusFormData] = useState({ status: 'pending', rejectionReason: REJECTION_REASONS[0] });
 
   // Location data states (local to tab for better control)
   // ... rest of the states ...
@@ -207,6 +219,8 @@ const UsersTab = ({ filterProps }) => {
         const activeOrders = sortBy.map(id => sortOrders[id] || 'desc');
         params.append('sortOrder', activeOrders.join(','));
       }
+      if (filterMonth) params.append('month', filterMonth);
+      if (filterYear) params.append('year', filterYear);
 
       const res = await fetch(`${API_BASE}/api/users?${params.toString()}`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -253,7 +267,7 @@ const UsersTab = ({ filterProps }) => {
   useEffect(() => {
     fetchUsers();
     fetchUserCounts();
-  }, [selectedDistrict, selectedMandal, selectedVillage, debouncedSearchTerm, serverStatus.active, page, sortBy, sortOrders]);
+  }, [selectedDistrict, selectedMandal, selectedVillage, debouncedSearchTerm, serverStatus.active, page, sortBy, sortOrders, filterMonth, filterYear]);
 
   const handleAddUser = async (e) => {
     e.preventDefault();
@@ -341,9 +355,9 @@ const UsersTab = ({ filterProps }) => {
 
   const openEditModal = (user) => {
     setCurrentUser(user);
-    const roleUpper = (user.role || '').toUpperCase();
-    const baseRole = roleUpper.includes('ADMIN') ? 'ADMIN' : 'VO';
-    const isDeveloper = roleUpper.includes('DEVELOPER');
+    const roleRaw = user.role || 'VO';
+    const baseRole = roleRaw.split(' - ')[0];
+    const isDeveloper = roleRaw.toUpperCase().includes('DEVELOPER');
 
     setFormData({
       voName: user.voName || '',
@@ -428,6 +442,39 @@ const UsersTab = ({ filterProps }) => {
         alert('Status updated successfully!');
         setShowStatusModal(false);
         setSelectedUpload(null);
+        // Refresh uploads
+        fetchUserUploads(selectedUser._id);
+      } else {
+        alert(data.message || 'Failed to update status');
+      }
+    } catch (err) {
+      console.error('Error updating status:', err);
+      alert('Failed to update status');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleQuickStatusUpdate = async (upload, status, reason = REJECTION_REASONS[0]) => {
+    if (uploading) return;
+    setUploading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const payload = {
+        status: status,
+        rejectionReason: reason
+      };
+
+      const res = await fetch(`${API_BASE}/api/admin/uploads/${upload._id}/status`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.success) {
         // Refresh uploads
         fetchUserUploads(selectedUser._id);
       } else {
@@ -672,6 +719,44 @@ const UsersTab = ({ filterProps }) => {
                       <X className="w-4 h-4" /> Clear Sorting
                     </button>
                   )}
+                </div>
+              </div>
+            </div>
+
+            {/* Period Filters row */}
+            <div className="pt-8 border-t border-gray-100/50">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="bg-amber-100 p-2 rounded-xl">
+                  <Calendar className="w-5 h-5 text-amber-600" />
+                </div>
+                <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">Time Period Filters</h3>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-gray-500 ml-1 uppercase">Month</label>
+                  <select
+                    value={filterMonth}
+                    onChange={(e) => setFilterMonth(e.target.value)}
+                    className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 hover:bg-white"
+                  >
+                    <option value="">All Months</option>
+                    {['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'].map(m => (
+                      <option key={m} value={m}>{['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][parseInt(m) - 1]}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-gray-500 ml-1 uppercase">Year</label>
+                  <select
+                    value={filterYear}
+                    onChange={(e) => setFilterYear(e.target.value)}
+                    className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 hover:bg-white"
+                  >
+                    <option value="">All Years</option>
+                    {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map(y => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
             </div>
@@ -1096,6 +1181,8 @@ const UsersTab = ({ filterProps }) => {
                       >
                         <option value="VO">Village Organization (VO)</option>
                         <option value="ADMIN">Administrator</option>
+                        <option value="Admin CC">Admin CC</option>
+                        <option value="Admin APM">Admin APM</option>
                       </select>
 
                       {isLoggedInDev && (
@@ -1228,7 +1315,7 @@ const UsersTab = ({ filterProps }) => {
               <div className="px-4 sm:px-8 py-3 sm:py-6 border-b border-gray-100 bg-gradient-to-r from-indigo-600 to-purple-600">
                 <div className="flex justify-between items-center mb-2 sm:mb-4">
                   <div>
-                    <h3 className="text-lg sm:text-2xl font-black text-white leading-tight">{selectedUser.voName}'s Uploads</h3>
+                    <h3 className="text-lg sm:text-2xl font-black text-white leading-tight">{selectedUser.voName} VO Uploads</h3>
                     <div className="flex items-center gap-2 mt-0.5">
                       <p className="text-[9px] sm:text-sm text-white/80 font-bold uppercase tracking-wider">VO ID: {selectedUser.voID}</p>
                     </div>
@@ -1239,41 +1326,19 @@ const UsersTab = ({ filterProps }) => {
                 </div>
 
                 {/* Filters and Stats */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-6">
-                  <div className='flex items-center gap-2 sm:gap-3'>
-                    <select
-                      value={filterMonth}
-                      onChange={(e) => setFilterMonth(e.target.value)}
-                      className="px-3 sm:px-4 py-1.5 sm:py-2.5 border-2 border-white/30 rounded-xl bg-white/95 text-[11px] sm:text-sm font-bold focus:border-white focus:outline-none transition-all text-gray-700 w-28 sm:w-36"
-                    >
-                      <option value="">All Months</option>
-                      {['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'].map(m => (
-                        <option key={m} value={m}>{['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][parseInt(m) - 1]}</option>
-                      ))}
-                    </select>
-                    <select
-                      value={filterYear}
-                      onChange={(e) => setFilterYear(e.target.value)}
-                      className="px-3 sm:px-4 py-1.5 sm:py-2.5 border-2 border-white/30 rounded-xl bg-white/95 text-[11px] sm:text-sm font-bold focus:border-white focus:outline-none transition-all text-gray-700 w-24 sm:w-32"
-                    >
-                      <option value="">All Years</option>
-                      {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map(y => (
-                        <option key={y} value={y}>{y}</option>
-                      ))}
-                    </select>
-                  </div>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6 w-full">
 
                   {uploadsSummary && (
-                    <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto custom-scrollbar pb-1 sm:pb-0">
-                      <div className="bg-white/10 backdrop-blur-sm rounded-xl px-2.5 sm:px-4 py-1 sm:py-2.5 border border-white/20 min-w-[70px] sm:min-w-0">
+                    <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto custom-scrollbar pb-1 sm:pb-0 w-full">
+                      <div className="bg-white/10 backdrop-blur-sm rounded-xl px-2.5 sm:px-4 py-1 sm:py-2.5 border border-white/20 w-full">
                         <div className="text-[7px] sm:text-[10px] font-black text-white/70 uppercase">Pending</div>
                         <div className="text-sm sm:text-2xl font-black text-white">{uploadsSummary.pending}</div>
                       </div>
-                      <div className="bg-white/10 backdrop-blur-sm rounded-xl px-2.5 sm:px-4 py-1 sm:py-2.5 border border-white/20 min-w-[70px] sm:min-w-0">
+                      <div className="bg-white/10 backdrop-blur-sm rounded-xl px-2.5 sm:px-4 py-1 sm:py-2.5 border border-white/20 w-full">
                         <div className="text-[7px] sm:text-[10px] font-black text-white/70 uppercase">Validated</div>
                         <div className="text-sm sm:text-2xl font-black text-white">{uploadsSummary.validated}</div>
                       </div>
-                      <div className="bg-white/10 backdrop-blur-sm rounded-xl px-2.5 sm:px-4 py-1 sm:py-2.5 border border-white/20 min-w-[70px] sm:min-w-0">
+                      <div className="bg-white/10 backdrop-blur-sm rounded-xl px-2.5 sm:px-4 py-1 sm:py-2.5 border border-white/20 w-full">
                         <div className="text-[7px] sm:text-[10px] font-black text-white/70 uppercase">Rejected</div>
                         <div className="text-sm sm:text-2xl font-black text-white">{uploadsSummary.rejected}</div>
                       </div>
@@ -1311,6 +1376,13 @@ const UsersTab = ({ filterProps }) => {
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                           {userUploads.filter(u => u.status === 'pending').map(upload => (
                             <div key={upload._id} className="relative border-2 border-orange-300 bg-orange-50 rounded-2xl p-4 transition-all hover:shadow-lg hover:border-orange-400">
+                              {/* Thumbnail */}
+                              {upload.s3Url && (
+                                <div className="h-32 -mx-4 -mt-4 mb-3 overflow-hidden rounded-t-2xl border-b border-orange-200 bg-black/5">
+                                  <img src={upload.s3Url} alt="" className="w-full h-full object-contain" />
+                                </div>
+                              )}
+
                               <div className="flex justify-between items-start mb-3">
                                 <div className="flex-1 min-w-0">
                                   <h4 className="font-bold text-sm text-gray-900 truncate">{upload.shgName}</h4>
@@ -1331,12 +1403,22 @@ const UsersTab = ({ filterProps }) => {
                                 </div>
                               </div>
 
-                              <button
-                                onClick={() => openStatusModal(upload)}
-                                className="w-full px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs transition-all shadow-sm"
-                              >
-                                Update Status
-                              </button>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => handleQuickStatusUpdate(upload, 'validated')}
+                                  disabled={uploading}
+                                  className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1"
+                                >
+                                  <CheckCircle size={14} /> Validate
+                                </button>
+                                <button
+                                  onClick={() => openStatusModal(upload)}
+                                  disabled={uploading}
+                                  className="flex-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1"
+                                >
+                                  <X size={14} /> Reject
+                                </button>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -1356,6 +1438,13 @@ const UsersTab = ({ filterProps }) => {
                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                           {userUploads.filter(u => u.status === 'validated').map(upload => (
                             <div key={upload._id} className="relative border-2 border-green-300 bg-green-50 rounded-2xl p-3 transition-all hover:shadow-lg hover:border-green-400">
+                              {/* Thumbnail */}
+                              {upload.s3Url && (
+                                <div className="h-24 -mx-3 -mt-3 mb-2 overflow-hidden rounded-t-2xl border-b border-green-200 bg-black/5">
+                                  <img src={upload.s3Url} alt="" className="w-full h-full object-contain" />
+                                </div>
+                              )}
+
                               <div className="mb-2">
                                 <h4 className="font-bold text-xs text-gray-900 truncate">{upload.shgName}</h4>
                                 <p className="text-[10px] text-gray-600">SHG ID: {upload.shgID}</p>
@@ -1393,6 +1482,13 @@ const UsersTab = ({ filterProps }) => {
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                           {userUploads.filter(u => u.status === 'rejected').map(upload => (
                             <div key={upload._id} className="relative border-2 border-red-300 bg-red-50 rounded-2xl p-4 transition-all hover:shadow-lg hover:border-red-400">
+                              {/* Thumbnail */}
+                              {upload.s3Url && (
+                                <div className="h-32 -mx-4 -mt-4 mb-3 overflow-hidden rounded-t-2xl border-b border-red-200 bg-black/5">
+                                  <img src={upload.s3Url} alt="" className="w-full h-full object-contain" />
+                                </div>
+                              )}
+
                               <div className="flex justify-between items-start mb-3">
                                 <div className="flex-1 min-w-0">
                                   <h4 className="font-bold text-sm text-gray-900 truncate">{upload.shgName}</h4>
@@ -1488,19 +1584,21 @@ const UsersTab = ({ filterProps }) => {
                 {statusFormData.status === 'rejected' && (
                   <div>
                     <label className="block text-sm font-black text-gray-700 mb-2">Reason for Rejection</label>
-                    <textarea
+                    <select
                       value={statusFormData.rejectionReason}
                       onChange={(e) => setStatusFormData({ ...statusFormData, rejectionReason: e.target.value })}
                       className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl font-bold focus:border-indigo-500 focus:outline-none transition-all"
-                      rows="3"
-                      placeholder="e.g., Poor image quality, Blurry, Incomplete data, Please ensure document is clear and complete"
-                    />
+                    >
+                      {REJECTION_REASONS.map((reason, idx) => (
+                        <option key={idx} value={reason}>{reason}</option>
+                      ))}
+                    </select>
                     <p className="mt-1 text-xs text-gray-600 font-bold">
-                      This will be shown to VO users. Leave empty to show default guidelines.
+                      This will be shown to VO users. Default is "Follow guidelines".
                     </p>
                     <p className="mt-2 text-xs text-red-600 font-bold flex items-center gap-2">
                       <AlertCircle className="w-4 h-4" />
-                      Warning: File will be permanently deleted from database when rejected
+                      Warning: File data will be permanently cleared from database when rejected
                     </p>
                   </div>
                 )}
