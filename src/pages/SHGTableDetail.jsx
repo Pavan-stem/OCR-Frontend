@@ -197,7 +197,7 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                 >
                     <div className="flex items-center justify-center gap-2 sm:gap-3">
                         <Download className="w-4 h-4 sm:w-5 sm:h-5" />
-                        <span className="text-sm sm:text-base">Export to Excel</span>
+                        <span className="text-sm sm:text-base">Download Excel</span>
                     </div>
                 </button>
 
@@ -211,13 +211,13 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                             <TableIcon className="text-white" size={24} />
                         </div>
                         <div>
-                            <h4 className="text-sm font-black text-white uppercase tracking-[0.2em]">Transaction Ledger</h4>
-                            <p className="text-[10px] text-indigo-200 font-bold uppercase tracking-widest mt-0.5">Automated Extraction Record</p>
+                            <h4 className="text-sm font-black text-white uppercase tracking-[0.2em]">SHG Digital Table</h4>
+                            <p className="text-[10px] text-indigo-200 font-bold uppercase tracking-widest mt-0.5">SHG Digitally Converted Table</p>
                         </div>
                     </div>
                     <div className="hidden sm:flex items-center gap-2 px-4 py-2 bg-white/10 rounded-full border border-white/10">
                         <ShieldCheck className="text-indigo-200" size={16} />
-                        <span className="text-[10px] text-white font-black uppercase tracking-tight">Security Validated</span>
+                        <span className="text-[10px] text-white font-black uppercase tracking-tight">Digital Validate</span>
                     </div>
                 </div>
 
@@ -338,20 +338,10 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                         <AlertCircle size={40} />
                     </div>
                     <div>
-                        <h5 className="text-xl font-black text-indigo-900 mb-3 tracking-tight">Machine Perception Metadata</h5>
+                        <h5 className="text-xl font-black text-indigo-900 mb-3 tracking-tight">Information about the SHG Digital Table</h5>
                         <p className="text-sm text-indigo-800/80 font-medium leading-relaxed max-w-2xl">
-                            This ledger was reconstructed using Advanced Neural OCR. Values highlighted in <span className="text-amber-600 font-bold">Gold</span> failed the 60% confidence threshold and should be reconciled against the original physical records.
+                            This SHG Digital Table was reconstructed using OCR Model. Values highlighted in <span className="text-amber-600 font-bold">Gold</span> failed the 60% confidence threshold and should be validated against the original physical records.
                         </p>
-                        <div className="flex flex-wrap gap-4 mt-8">
-                            <div className="flex items-center gap-3 px-5 py-3 bg-white/60 rounded-2xl border border-indigo-200">
-                                <div className="w-2.5 h-2.5 bg-emerald-500 rounded-full shadow-[0_0_8px_rgba(52,211,153,0.5)]"></div>
-                                <span className="text-[10px] text-indigo-900 font-black uppercase tracking-widest">Structural Integrity: OK</span>
-                            </div>
-                            <div className="flex items-center gap-3 px-5 py-3 bg-white/60 rounded-2xl border border-indigo-200">
-                                <div className="w-2.5 h-2.5 bg-indigo-500 rounded-full shadow-[0_0_8px_rgba(129,140,248,0.5)]"></div>
-                                <span className="text-[10px] text-indigo-900 font-black uppercase tracking-widest">Model: TROCR-v2.1</span>
-                            </div>
-                        </div>
                     </div>
                 </div>
             </div>
