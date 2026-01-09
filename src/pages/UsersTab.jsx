@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Eye, Filter, Loader2, X, Shield, User, MapPin, Phone, Lock, CheckCircle, Search, ChevronLeft, ChevronRight, FileText, Calendar, AlertCircle, AlertTriangle } from 'lucide-react';
+import { Plus, Edit, Trash2, Eye, Filter, Loader2, X, Shield, User, MapPin, Phone, Lock, CheckCircle, Search, ChevronLeft, ChevronRight, FileText, Calendar, AlertCircle, AlertTriangle, Settings, Power, Clock } from 'lucide-react';
 import { API_BASE } from '../utils/apiConfig';
 const REJECTION_REASONS = [
   "Follow guidelines",
@@ -12,7 +12,24 @@ const REJECTION_REASONS = [
 ];
 
 const UsersTab = ({ filterProps }) => {
-  const { selectedDistrict, setSelectedDistrict, selectedMandal, setSelectedMandal, selectedVillage, setSelectedVillage, serverStatus } = filterProps;
+  const formatLastActive = (dateStr) => {
+    if (!dateStr) return 'Never';
+    try {
+      const date = new Date(dateStr);
+      const now = new Date();
+      const diffMs = now - date;
+      const diffMins = Math.floor(diffMs / 60000);
+
+      if (diffMins < 1) return 'Just now';
+      if (diffMins < 60) return `${diffMins}m ago`;
+      if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h ago`;
+      return date.toLocaleDateString();
+    } catch (e) {
+      return 'Unknown';
+    }
+  };
+  const { selectedDistrict, setSelectedDistrict, selectedMandal, setSelectedMandal, selectedVillage, setSelectedVillage, serverStatus, setSelectedUserId, setSelectedUserName, setActiveTab } = filterProps;
+
 
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -80,6 +97,12 @@ const UsersTab = ({ filterProps }) => {
   const [modalVillages, setModalVillages] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+
+  const [maintenanceStatus, setMaintenanceStatus] = useState({ is_active: false, message: 'Server is under maintenance', end_time: null });
+  const [lastSynced, setLastSynced] = useState(new Date());
+  const [isConnected, setIsConnected] = useState(true);
+  const [updatingMaintenance, setUpdatingMaintenance] = useState(false);
+  const [isMaintenanceCollapsed, setIsMaintenanceCollapsed] = useState(true);
 
   // Check if logged in user is a developer
   const [isLoggedInDev, setIsLoggedInDev] = useState(false);
@@ -267,7 +290,69 @@ const UsersTab = ({ filterProps }) => {
   useEffect(() => {
     fetchUsers();
     fetchUserCounts();
-  }, [selectedDistrict, selectedMandal, selectedVillage, debouncedSearchTerm, serverStatus.active, page, sortBy, sortOrders, filterMonth, filterYear]);
+  }, [page, limit, debouncedSearchTerm, selectedDistrict, selectedMandal, selectedVillage, sortBy, sortOrders, filterMonth, filterYear]);
+
+  // Dedicated Maintenance Polling for Admin
+  useEffect(() => {
+    fetchMaintenanceStatus();
+    const interval = setInterval(fetchMaintenanceStatus, 20000); // Sync every 20s
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchMaintenanceStatus = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/maintenance-status`);
+      const data = await res.json();
+      if (data.success) {
+        setMaintenanceStatus({
+          is_active: data.is_active,
+          message: data.message,
+          end_time: data.end_time
+        });
+        setLastSynced(new Date());
+        setIsConnected(true);
+      } else {
+        setIsConnected(false);
+      }
+    } catch (err) {
+      console.error('Error fetching maintenance status:', err);
+      setIsConnected(false);
+    }
+  };
+
+  const handleUpdateMaintenance = async (payload) => {
+    setUpdatingMaintenance(true);
+    try {
+      const token = localStorage.getItem('token');
+      const { end_time, ...rest } = payload;
+      let utcEndTime = end_time;
+      if (end_time && !end_time.endsWith('Z')) {
+        // new Date('2026-01-08T10:00') creates a local date, .toISOString() converts to UTC
+        utcEndTime = new Date(end_time).toISOString();
+      }
+
+      const res = await fetch(`${API_BASE}/api/maintenance-status`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ ...rest, end_time: utcEndTime })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMaintenanceStatus(payload);
+        alert('Maintenance status updated successfully');
+      } else {
+        alert(data.error || 'Failed to update maintenance status');
+      }
+    } catch (err) {
+      console.error('Error updating maintenance status:', err);
+      alert('Error updating maintenance status');
+    } finally {
+      setUpdatingMaintenance(false);
+    }
+  };
 
   const handleAddUser = async (e) => {
     e.preventDefault();
@@ -581,6 +666,106 @@ const UsersTab = ({ filterProps }) => {
         </button>
       </div>
 
+      {/* Maintenance Controls - Admin/Dev Only */}
+      <div className="bg-white rounded-3xl p-4 sm:p-6 shadow-md border border-gray-100">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="flex items-center gap-3">
+            <div className={`p-2 rounded-xl ${maintenanceStatus.is_active ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'}`}>
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm sm:text-base font-black text-gray-900 flex items-center gap-2">
+                System Maintenance
+                {!isConnected && (
+                  <span className="flex items-center gap-1 text-[10px] bg-red-100 text-red-600 px-2 py-0.5 rounded-full animate-pulse">
+                    <AlertCircle className="w-3 h-3" /> Offline
+                  </span>
+                )}
+              </h3>
+              <p className="text-[10px] sm:text-xs text-gray-400 font-bold uppercase tracking-wider mt-0.5">
+                {isConnected ? `Synced ${lastSynced.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : 'Connection Lost'}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <button
+              onClick={() => setIsMaintenanceCollapsed(!isMaintenanceCollapsed)}
+              className="px-4 py-2 text-xs font-black text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all border border-indigo-100 flex items-center gap-2"
+            >
+              <Settings className="w-4 h-4" />
+              {isMaintenanceCollapsed ? 'Open Controls' : 'Close Controls'}
+            </button>
+            <button
+              onClick={() => handleUpdateMaintenance({ ...maintenanceStatus, is_active: !maintenanceStatus.is_active })}
+              disabled={updatingMaintenance}
+              className={`flex-1 sm:flex-none px-6 py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 shadow-sm ${maintenanceStatus.is_active
+                ? 'bg-amber-50 text-amber-600 border border-amber-100 hover:bg-amber-600 hover:text-white'
+                : 'bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-600 hover:text-white'
+                }`}
+            >
+              <Power className="w-4 h-4" />
+              <div className="flex flex-col items-center">
+                <span>{maintenanceStatus.is_active ? 'Stop Maintenance' : 'Start Maintenance'}</span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        {!isMaintenanceCollapsed && (
+          <div className="mt-6 pt-6 border-t border-gray-100 space-y-6 animate-in fade-in slide-in-from-top-4 duration-300">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-gray-500 ml-1 uppercase tracking-widest">Maintenance Message</label>
+                <div className="relative">
+                  <FileText className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    value={maintenanceStatus.message}
+                    onChange={(e) => setMaintenanceStatus({ ...maintenanceStatus, message: e.target.value })}
+                    placeholder="server is under maintenance"
+                    className="w-full pl-11 pr-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-2xl text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-gray-500 ml-1 uppercase tracking-widest">Estimated End Time / Timer (Optional)</label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Clock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="datetime-local"
+                      value={maintenanceStatus.end_time ?
+                        (() => {
+                          const d = new Date(maintenanceStatus.end_time);
+                          // Format to YYYY-MM-DDTHH:mm in local time
+                          return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+                        })() : ''
+                      }
+                      onChange={(e) => setMaintenanceStatus({ ...maintenanceStatus, end_time: e.target.value })}
+                      className="w-full pl-11 pr-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-2xl text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
+                    />
+                  </div>
+                  <button
+                    onClick={() => handleUpdateMaintenance(maintenanceStatus)}
+                    disabled={updatingMaintenance}
+                    className="px-6 py-3 bg-indigo-600 text-white font-black text-xs rounded-2xl shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95 transition-all"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 p-3 bg-amber-50 text-amber-700 rounded-2xl border border-amber-100 text-[10px] font-bold">
+              <Shield className="w-4 h-4 shrink-0" />
+              Note: System maintenance will log out all non-admin users and block new logins.
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
           { label: 'Administrators', count: userCounts.admin, icon: Shield, color: 'from-purple-500 to-indigo-600' },
@@ -864,15 +1049,22 @@ const UsersTab = ({ filterProps }) => {
                             </div>
                             <div>
                               <div
-                                className="text-sm font-black text-gray-900 leading-tight cursor-pointer hover:underline"
+                                className="text-sm font-black text-gray-900 leading-tight cursor-pointer hover:underline flex items-center gap-2"
                                 onClick={() => isVO && handleViewUserUploads(user)}
                               >
                                 {user.voName}
+                                {user.isOnline && (
+                                  <span className="flex h-2 w-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse" title="Online"></span>
+                                )}
                               </div>
                               <div className="flex flex-col mt-0.5">
                                 {isVO && user.voID && (
                                   <span className="text-[10px] font-black text-indigo-600 uppercase tracking-tighter">ID: {user.voID}</span>
                                 )}
+                                <div className="flex items-center gap-1 mt-0.5">
+                                  <Clock className="w-2.5 h-2.5 text-gray-400" />
+                                  <span className="text-[9px] font-bold text-gray-400 uppercase">Active: {formatLastActive(user.lastActiveAt)}</span>
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -921,7 +1113,19 @@ const UsersTab = ({ filterProps }) => {
                         <td className="px-4 sm:px-8 py-5 whitespace-nowrap text-right">
                           <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button
+                              onClick={() => {
+                                setSelectedUserId(user._id);
+                                setSelectedUserName(user.voName);
+                                setActiveTab('conversion');
+                              }}
+                              className="p-2.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-xl transition-all shadow-sm"
+                              title="View Converted SHGs"
+                            >
+                              <Eye className="w-4.5 h-4.5" />
+                            </button>
+                            <button
                               onClick={() => openEditModal(user)}
+
                               className="p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all shadow-sm"
                               title="Edit User"
                             >
@@ -957,53 +1161,42 @@ const UsersTab = ({ filterProps }) => {
                   <div key={user._id} className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden animate-slide-in">
                     <div className="p-5 space-y-4">
                       {/* Header Info */}
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-md ${isDev
-                            ? 'bg-gradient-to-br from-amber-500 to-orange-600 text-white'
-                            : isAdmin
-                              ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white'
-                              : 'bg-gradient-to-br from-blue-500 to-blue-600 text-white'
-                            }`}>
-                            {isDev ? <Lock className="w-6 h-6" /> : isAdmin ? <Shield className="w-6 h-6" /> : <User className="w-6 h-6" />}
-                          </div>
-                          <div>
-                            <div
-                              className="text-base font-black text-gray-900 leading-tight"
-                              onClick={() => isVO && handleViewUserUploads(user)}
-                            >
-                              {user.voName}
-                            </div>
-                            <div className="flex items-center gap-2 mt-1">
-                              <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider ${isDev
-                                ? 'bg-amber-100 text-amber-700'
-                                : isAdmin
-                                  ? 'bg-purple-100 text-purple-700'
-                                  : 'bg-blue-100 text-blue-700'
-                                }`}>
-                                {user.role}
-                              </span>
-                              {isVO && user.voID && (
-                                <span className="text-[10px] font-black text-gray-400 uppercase">ID: {user.voID}</span>
-                              )}
-                            </div>
-                          </div>
+                      <div className="flex items-center gap-3">
+                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-md shrink-0 ${isDev
+                          ? 'bg-gradient-to-br from-amber-500 to-orange-600 text-white'
+                          : isAdmin
+                            ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white'
+                            : 'bg-gradient-to-br from-blue-500 to-blue-600 text-white'
+                          }`}>
+                          {isDev ? <Lock className="w-6 h-6" /> : isAdmin ? <Shield className="w-6 h-6" /> : <User className="w-6 h-6" />}
                         </div>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => openEditModal(user)}
-                            className="p-2 bg-blue-50 text-blue-600 rounded-xl"
+                        <div className="flex-1 min-w-0">
+                          <div
+                            className="text-base font-black text-gray-900 leading-tight flex items-center gap-2"
+                            onClick={() => isVO && handleViewUserUploads(user)}
                           >
-                            <Edit className="w-4.5 h-4.5" />
-                          </button>
-                          {(!isDev || isLoggedInDev) && (
-                            <button
-                              onClick={() => handleDeleteUser(user._id)}
-                              className="p-2 bg-red-50 text-red-600 rounded-xl"
-                            >
-                              <Trash2 className="w-4.5 h-4.5" />
-                            </button>
-                          )}
+                            {user.voName}
+                            {user.isOnline && (
+                              <span className="flex h-2 w-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse shrink-0" title="Online"></span>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 mt-1">
+                            <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider ${isDev
+                              ? 'bg-amber-100 text-amber-700'
+                              : isAdmin
+                                ? 'bg-purple-100 text-purple-700'
+                                : 'bg-blue-100 text-blue-700'
+                              }`}>
+                              {user.role}
+                            </span>
+                            {isVO && user.voID && (
+                              <span className="text-[10px] font-black text-gray-400 uppercase">ID: {user.voID}</span>
+                            )}
+                            <div className="flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-gray-400" />
+                              <span className="text-[10px] font-bold text-gray-400 uppercase">Active: {formatLastActive(user.lastActiveAt)}</span>
+                            </div>
+                          </div>
                         </div>
                       </div>
 
@@ -1033,6 +1226,40 @@ const UsersTab = ({ filterProps }) => {
                           </div>
                         </div>
                       )}
+
+                      {/* Action Buttons */}
+                      <div className="flex flex-wrap gap-2 pt-2">
+                        <button
+                          onClick={() => {
+                            setSelectedUserId(user._id);
+                            setSelectedUserName(user.voName);
+                            setActiveTab('conversion');
+                          }}
+                          className="flex-1 p-2.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-xl transition-all shadow-sm flex items-center justify-center gap-2"
+                          title="View Converted SHGs"
+                        >
+                          <Eye className="w-4.5 h-4.5" />
+                          <span className="text-xs font-black">Converted</span>
+                        </button>
+                        <button
+                          onClick={() => openEditModal(user)}
+                          className="flex-1 p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all shadow-sm flex items-center justify-center gap-2"
+                          title="Edit User"
+                        >
+                          <Edit className="w-4.5 h-4.5" />
+                          <span className="text-xs font-black">Edit</span>
+                        </button>
+                        {(!isDev || isLoggedInDev) && (
+                          <button
+                            onClick={() => handleDeleteUser(user._id)}
+                            className="flex-1 p-2.5 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white rounded-xl transition-all shadow-sm flex items-center justify-center gap-2"
+                            title="Delete User"
+                          >
+                            <Trash2 className="w-4.5 h-4.5" />
+                            <span className="text-xs font-black">Delete</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                     {isVO && !isDev && !isAdmin && (
                       <button

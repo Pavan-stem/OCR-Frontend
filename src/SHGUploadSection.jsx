@@ -13,7 +13,8 @@ const SHGUploadSection = ({
   onYearChange,
   user,
   onUploadComplete,
-  t
+  t,
+  setMaintenance
 }) => {
   const [shgData, setShgData] = useState([]);
   const [filteredShgData, setFilteredShgData] = useState([]);
@@ -39,6 +40,18 @@ const SHGUploadSection = ({
   const [openSmartCamera, setOpenSmartCamera] = useState(false);
   const [activeShgId, setActiveShgId] = useState(null);
   const [activeShgName, setActiveShgName] = useState(null);
+
+  const handleMaintenanceResponse = (data) => {
+    if (setMaintenance) {
+      const maintenanceData = {
+        active: true,
+        message: data.message || "Server is under maintenance",
+        endTime: data.end_time || null
+      };
+      setMaintenance(maintenanceData);
+      localStorage.setItem('maintenance_mode', JSON.stringify(maintenanceData));
+    }
+  };
 
   const isDeveloper = user?.role?.toLowerCase().includes('developer')
 
@@ -894,6 +907,13 @@ const SHGUploadSection = ({
               delete copy[fileData.shgId];
               return copy;
             });
+          } else if (response.status === 503) {
+            // Maintenance mode detected
+            console.error("Maintenance mode detected during upload loop");
+            const data = await response.json().catch(() => ({}));
+            handleMaintenanceResponse(data);
+            setIsUploading(false);
+            return; // EXIT the entire function/loop
           } else if (response.status === 409) {
             // Duplicate upload detected by server
             console.warn(`Duplicate upload blocked for SHG ${fileData.shgId}`);
@@ -1021,6 +1041,13 @@ const SHGUploadSection = ({
           t('upload.uploadSuccessSingle')
             .replace('{{shg}}', formatShgLabel(fileData))
         );
+        if (onUploadComplete) onUploadComplete();
+      } else if (res.status === 503) {
+        // Maintenance mode detected
+        const data = await res.json().catch(() => ({}));
+        handleMaintenanceResponse(data);
+        setIsUploading(false);
+        return;
       } else if (res.status === 409) {
         // Duplicate detected
         const errorData = await res.json();
@@ -1468,63 +1495,73 @@ const SHGUploadSection = ({
             </select>
           </div>
 
-          {!error && (
-            <div className="w-full flex gap-5 sm:gap-4 flex-wrap mt-4 sm:mt-0">
-              {/* Total SHGs Card */}
-              <div className="flex-1 sm:min-w-[140px] bg-white/20 backdrop-blur-sm rounded-lg sm:rounded-xl p-3 sm:p-4 border border-white/30">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-white/80 text-[10px] sm:text-xs font-semibold mb-1 truncate">
-                      {t?.('upload.totalSHGs') || 'Total SHGs'}
-                    </p>
-                    <p className="text-xl sm:text-3xl font-bold text-white">
-                      {serverProgress?.total || shgData.length}
-                    </p>
-                  </div>
-                  <div className="w-8 h-8 sm:w-12 sm:h-12 bg-white rounded-full flex items-center justify-center flex-shrink-0">
-                    <FileText size={16} className="sm:hidden text-cyan-500" />
-                    <FileText size={24} className="hidden sm:block text-cyan-500" />
-                  </div>
-                </div>
-              </div>
+          {/* Stats Cards Row */}
+          {!error && (() => {
+            const totalCount = serverProgress?.total || shgData.length;
+            const uploadedCount = shgData.filter(shg =>
+              serverProgress?.uploadedShgIds?.includes(shg.shgId) ||
+              uploadStatus[shg.shgId]?.uploaded === true
+            ).length;
+            const pendingCount = Math.max(0, totalCount - uploadedCount);
 
-              {/* Uploaded Card */}
-              <div className="flex-1 sm:min-w-[140px] bg-white/20 backdrop-blur-sm rounded-lg sm:rounded-xl p-3 sm:p-4 border border-white/30">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-white/80 text-[10px] sm:text-xs font-semibold mb-1 truncate">
-                      {t?.('upload.uploaded') || 'Uploaded'}
-                    </p>
-                    <p className="text-xl sm:text-3xl font-bold text-white">
-                      {serverProgress?.uploaded || 0}
-                    </p>
-                  </div>
-                  <div className="w-8 h-8 sm:w-12 sm:h-12 bg-white rounded-full flex items-center justify-center flex-shrink-0">
-                    <CheckCircle size={16} className="sm:hidden text-green-500" />
-                    <CheckCircle size={24} className="hidden sm:block text-green-500" />
+            return (
+              <div className="w-full flex gap-5 sm:gap-4 flex-wrap mt-4 sm:mt-0">
+                {/* Total SHGs Card */}
+                <div className="flex-1 sm:min-w-[140px] bg-white/20 backdrop-blur-sm rounded-lg sm:rounded-xl p-3 sm:p-4 border border-white/30">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-white/80 text-[10px] sm:text-xs font-semibold mb-1 truncate">
+                        {t?.('upload.totalSHGs') || 'Total SHGs'}
+                      </p>
+                      <p className="text-xl sm:text-3xl font-bold text-white">
+                        {totalCount}
+                      </p>
+                    </div>
+                    <div className="w-8 h-8 sm:w-12 sm:h-12 bg-white rounded-full flex items-center justify-center flex-shrink-0">
+                      <FileText size={16} className="sm:hidden text-cyan-500" />
+                      <FileText size={24} className="hidden sm:block text-cyan-500" />
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Pending Card */}
-              <div className="flex-1 sm:min-w-[140px] bg-white/20 backdrop-blur-sm rounded-lg sm:rounded-xl p-3 sm:p-4 border border-white/30">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-white/80 text-[10px] sm:text-xs font-semibold mb-1 truncate">
-                      {t?.('upload.pending') || 'Pending'}
-                    </p>
-                    <p className="text-xl sm:text-3xl font-bold text-white">
-                      {serverProgress?.pending || 0}
-                    </p>
+                {/* Uploaded Card */}
+                <div className="flex-1 sm:min-w-[140px] bg-white/20 backdrop-blur-sm rounded-lg sm:rounded-xl p-3 sm:p-4 border border-white/30">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-white/80 text-[10px] sm:text-xs font-semibold mb-1 truncate">
+                        {t?.('upload.uploaded') || 'Uploaded'}
+                      </p>
+                      <p className="text-xl sm:text-3xl font-bold text-white">
+                        {uploadedCount}
+                      </p>
+                    </div>
+                    <div className="w-8 h-8 sm:w-12 sm:h-12 bg-white rounded-full flex items-center justify-center flex-shrink-0">
+                      <CheckCircle size={16} className="sm:hidden text-green-500" />
+                      <CheckCircle size={24} className="hidden sm:block text-green-500" />
+                    </div>
                   </div>
-                  <div className="w-8 h-8 sm:w-12 sm:h-12 bg-white rounded-full flex items-center justify-center flex-shrink-0">
-                    <AlertCircle size={16} className="sm:hidden text-orange-500" />
-                    <AlertCircle size={24} className="hidden sm:block text-orange-500" />
+                </div>
+
+                {/* Pending Card */}
+                <div className="flex-1 sm:min-w-[140px] bg-white/20 backdrop-blur-sm rounded-lg sm:rounded-xl p-3 sm:p-4 border border-white/30">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-white/80 text-[10px] sm:text-xs font-semibold mb-1 truncate">
+                        {t?.('upload.pending') || 'Pending'}
+                      </p>
+                      <p className="text-xl sm:text-3xl font-bold text-white">
+                        {pendingCount}
+                      </p>
+                    </div>
+                    <div className="w-8 h-8 sm:w-12 sm:h-12 bg-white rounded-full flex items-center justify-center flex-shrink-0">
+                      <AlertCircle size={16} className="sm:hidden text-orange-500" />
+                      <AlertCircle size={24} className="hidden sm:block text-orange-500" />
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       </div>
 

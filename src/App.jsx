@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Eye, FileText, Table2, CheckCircle, AlertCircle, X, Upload, MapPin, RotateCw, RotateCcw, ZoomIn, ZoomOut, Camera, LogOut, CircleUserRound } from 'lucide-react';
+import { Eye, FileText, Table2, CheckCircle, AlertCircle, X, Upload, MapPin, RotateCw, RotateCcw, ZoomIn, ZoomOut, Camera, LogOut, CircleUserRound, AlertTriangle, Clock } from 'lucide-react';
 import ProfilePage from './ProfilePage';
 import DocumentHistory from './DocumentHistory';
 import LanguageToggle from './components/LanguageToggle';
@@ -324,6 +324,14 @@ export default function EnhancedTableOCRSystem() {
   const [systemOnline, setSystemOnline] = useState(false);
   const [timeAgo, setTimeAgo] = useState('');
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [maintenance, setMaintenance] = useState(() => {
+    try {
+      const saved = localStorage.getItem('maintenance_mode');
+      return saved ? JSON.parse(saved) : { active: false, message: '', endTime: null };
+    } catch (e) {
+      return { active: false, message: '', endTime: null };
+    }
+  });
 
   useEffect(() => {
     if (!user?.previousLogin) {
@@ -388,6 +396,33 @@ export default function EnhancedTableOCRSystem() {
 
   useEffect(() => {
     refreshUserFromStorage();
+  }, []);
+
+  // Maintenance Check Polling
+  useEffect(() => {
+    const checkMaintenance = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/maintenance-status`);
+        const data = await res.json().catch(() => ({}));
+        if (data.success) {
+          const newStatus = {
+            active: data.is_active,
+            message: data.message,
+            endTime: data.end_time
+          };
+          setMaintenance(newStatus);
+          localStorage.setItem('maintenance_mode', JSON.stringify(newStatus));
+        }
+      } catch (err) {
+        console.warn('Failed to check maintenance status:', err);
+        // If fetch fails (backend down), we keep the current state, 
+        // which might be 'active: true' from localStorage.
+      }
+    };
+
+    checkMaintenance();
+    const interval = setInterval(checkMaintenance, 30000); // Check every 30s
+    return () => clearInterval(interval);
   }, []);
 
   const fileInputRef = useRef(null);
@@ -1503,6 +1538,40 @@ export default function EnhancedTableOCRSystem() {
 
   return (
     <div className="fixed inset-0 bg-gradient-to-br from-indigo-900 via-blue-900 to-blue-700 overflow-hidden">
+      {/* Maintenance Overlay */}
+      {maintenance.active && !['admin', 'developer'].some(r => (user?.role || '').toLowerCase().includes(r)) && (
+        <div className="fixed inset-0 z-[9999] bg-indigo-950/95 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="max-w-md w-full bg-white rounded-[32px] p-8 text-center shadow-2xl animate-in zoom-in-95 duration-300">
+            <div className="w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-6">
+              <AlertTriangle size={40} className="text-amber-600" />
+            </div>
+            <h1 className="text-2xl font-black text-gray-900 mb-2">{t.maintenance.title}</h1>
+            <p className="text-gray-600 font-medium mb-6">
+              {maintenance.message || "We're currently performing scheduled maintenance to improve our services. Please check back soon."}
+            </p>
+
+            {maintenance.endTime && (
+              <div className="bg-indigo-50 rounded-2xl p-4 mb-6 flex items-center justify-center gap-3">
+                <Clock className="text-indigo-600" size={20} />
+                <div className="text-left">
+                  <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Estimated Resolution</div>
+                  <div className="text-sm font-bold text-indigo-900">
+                    {new Date(maintenance.endTime).toLocaleString()}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl shadow-lg hover:shadow-xl transition-all"
+            >
+              {t.maintenance.button}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="h-full overflow-y-auto">
         <div className="max-w-7xl mx-auto p-4 lg:p-6">
           {/* Header */}
@@ -1594,7 +1663,7 @@ export default function EnhancedTableOCRSystem() {
           {(
             <>
               {/* Location Information Card */}
-              <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl shadow-xl border border-white-400 mb-8 p-6">
+              <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl shadow-xl border border-white mb-8 p-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     <div className="w-14 h-14 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center shadow-lg border border-white/30">
@@ -1644,6 +1713,7 @@ export default function EnhancedTableOCRSystem() {
                 onMonthChange={setSelectedMonth}
                 onYearChange={setSelectedYear}
                 user={user}
+                setMaintenance={setMaintenance}
                 onUploadComplete={(data) => {
                   console.log('SHG Upload complete:', data);
                 }}
