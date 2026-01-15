@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Upload, CheckCircle, AlertCircle, FileText, Image as ImageIcon, X, Loader2, Eye, EyeOff } from 'lucide-react';
+import { Upload, CheckCircle, AlertCircle, FileText, Image as ImageIcon, X, Loader2, Eye, EyeOff, Download } from 'lucide-react';
 import { API_BASE } from '../utils/apiConfig';
 
 const OCRValidationTab = () => {
@@ -12,6 +12,8 @@ const OCRValidationTab = () => {
   const [dragActive, setDragActive] = useState(false);
   const [activeCell, setActiveCell] = useState(null);
   const [showCellDetails, setShowCellDetails] = useState(true);
+  const [elapsedTime, setElapsedTime] = useState(null);
+  const [downloading, setDownloading] = useState(false);
 
   const handleDrag = (e) => {
     e.preventDefault();
@@ -71,6 +73,7 @@ const OCRValidationTab = () => {
     setResults(null);
     setError(null);
     setViewMode('original');
+    setElapsedTime(null);
   };
 
   const processImage = async () => {
@@ -99,6 +102,10 @@ const OCRValidationTab = () => {
         const fileResult = data.files[0];
         if (fileResult.pages && fileResult.pages.length > 0) {
           setResults(fileResult.pages[0]);
+          // Capture elapsed time from response
+          if (data.elapsed_time !== undefined) {
+            setElapsedTime(data.elapsed_time);
+          }
         } else {
           throw new Error('No pages found in response');
         }
@@ -111,6 +118,62 @@ const OCRValidationTab = () => {
     } finally {
       setProcessing(false);
     }
+  };
+
+  const downloadExcel = async () => {
+    if (!results?.table_data) return;
+
+    setDownloading(true);
+    try {
+      const response = await fetch(`${API_BASE}/api/export-to-excel`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          table_data: results.table_data,
+          filename: selectedFile?.name || 'shg_table'
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Excel export failed');
+      }
+
+      // Get the blob from response
+      const blob = await response.blob();
+
+      // Get filename from uploaded file (remove extension and add .xlsx)
+      let downloadName = 'shg_table.xlsx';
+      if (selectedFile?.name) {
+        const nameWithoutExt = selectedFile.name.replace(/\.[^/.]+$/, '');
+        downloadName = `${nameWithoutExt}.xlsx`;
+      }
+
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = downloadName;
+      document.body.appendChild(a);
+      a.click();
+
+      // Cleanup
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      console.error('Excel download error:', err);
+      setError(err.message || 'Failed to download Excel file');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const formatElapsedTime = (seconds) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+    return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
   };
 
   const getConfidenceColor = (confidence) => {
@@ -164,9 +227,29 @@ const OCRValidationTab = () => {
     return (
       <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
         <div className="mb-6">
-          <div className="flex items-center gap-2 mb-2">
-            <FileText className="w-5 h-5 text-indigo-600" />
-            <h3 className="text-lg font-black text-gray-900">Extracted SHG Table</h3>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <FileText className="w-5 h-5 text-indigo-600" />
+              <h3 className="text-lg font-black text-gray-900">Extracted SHG Table</h3>
+            </div>
+            <button
+              onClick={downloadExcel}
+              disabled={downloading}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl font-bold text-sm shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+              title="Download as Excel"
+            >
+              {downloading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Downloading...
+                </>
+              ) : (
+                <>
+                  <Download className="w-4 h-4" />
+                  Download Excel
+                </>
+              )}
+            </button>
           </div>
         </div>
 
@@ -199,15 +282,24 @@ const OCRValidationTab = () => {
                   headerRows.map((row, rowIdx) => (
                     <tr key={`header-row-${rowIdx}`} className="bg-gradient-to-r from-indigo-600 to-purple-600">
                       {row.map((cell, cellIdx) => {
-                        // Left-align cells with colspan 16 and rowspan 1
-                        const isLeftAligned = (cell.col_span === 16 || cell.col_span === '16') &&
+                        // Left-align cells with colspan 15 and rowspan 1
+                        const isLeftAligned = (cell.col_span === 15 || cell.col_span === '15') &&
                           (cell.row_span === 1 || cell.row_span === '1');
+
+                        // Check if this cell has data and if it's active
+                        const hasData = cell.text || cell.image_base64;
+                        const headerRowId = `header-${rowIdx}`;
+                        const isActive = activeCell?.rowIdx === headerRowId && activeCell?.cellIdx === cellIdx;
+
                         return (
                           <th
                             key={`header-cell-${rowIdx}-${cellIdx}`}
                             colSpan={cell.col_span || 1}
                             rowSpan={cell.row_span || 1}
-                            className={`px-3 py-2 text-xs font-black text-white border border-indigo-500 ${isLeftAligned ? 'text-left' : 'text-center'}`}
+                            onClick={() => hasData ? setActiveCell({ ...cell, rowIdx: headerRowId, cellIdx }) : null}
+                            className={`px-3 py-2 text-xs font-black text-white border border-indigo-500 ${hasData ? 'cursor-pointer hover:bg-indigo-700 transition-colors' : ''
+                              } ${isActive ? 'ring-2 ring-yellow-400 ring-inset' : ''} ${isLeftAligned ? 'text-left' : 'text-center'
+                              }`}
                           >
                             {cell.label || ''}
                           </th>
@@ -250,7 +342,7 @@ const OCRValidationTab = () => {
                               {cell.text || '-'}
                             </div>
                             {cell.confidence !== undefined && cell.confidence > 0 && (
-                              <div className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${getConfidenceColor(cell.confidence)}`}>
+                              <div className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${getConfidenceColor(cell.confidence)} `}>
                                 {(cell.confidence * 100).toFixed(0)}%
                               </div>
                             )}
@@ -497,6 +589,29 @@ const OCRValidationTab = () => {
       {/* Results */}
       {results && (
         <div className="space-y-6">
+          {/* Processing Time Display */}
+          {elapsedTime !== null && (
+            <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-2xl p-6 shadow-lg border border-green-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center">
+                    <CheckCircle className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-gray-900">Processing Complete</h3>
+                    <p className="text-sm text-gray-600">OCR analysis finished successfully</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Total Time</p>
+                  <p className="text-3xl font-black text-green-600">
+                    {formatElapsedTime(elapsedTime)}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Image View Toggle */}
           <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/30 overflow-hidden">
             <div className="p-8">

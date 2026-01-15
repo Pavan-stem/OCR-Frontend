@@ -218,6 +218,12 @@ export const translations = {
             loginError: 'Login failed',
             registerError: 'Registration failed',
         },
+
+        // Maintainance
+        maintainance: {
+            title: 'Maintenance in Progress',
+            button: 'Check',
+        },
     },
 
     te: {
@@ -438,6 +444,12 @@ export const translations = {
             registerSuccess: 'రిజిస్ట్రేషన్ విజయవంతమైంది',
             loginError: 'లాగిన్ విఫలమైంది',
             registerError: 'రిజిస్ట్రేషన్ విఫలమైంది',
+        },
+
+        // Maintainance
+        maintainance: {
+            title: 'నిర్వహణ జరుగుతోంది',
+            button: 'తనిఖీ చేయు',
         },
     },
 };
