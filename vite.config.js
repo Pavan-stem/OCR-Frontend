@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
-  base: '/Test/',  // ***IMPORTANT for GitHub Pages***
+  base: '/',  // ***IMPORTANT for GitHub Pages***
   plugins: [react()],
   server: {
     open: true,

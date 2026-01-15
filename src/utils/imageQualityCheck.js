@@ -1,6 +1,7 @@
 /**
  * Image Quality Analysis Utility
  * Detects blur, lighting issues, and shadow presence using HTML5 Canvas
+ * Integrated with AI Document Scanner for professional document processing
  */
 
 export const analyzeImage = async (file) => {
@@ -48,9 +49,9 @@ export const analyzeImage = async (file) => {
 
                 // 2. Lighting Check
                 if (avgBrightness < 50) {
-                    issues.push("Low Lighting: The image is too dark. Please use flash or find better lighting.");
+                    issues.push("Image is too dark. Please use flash or find better lighting and capture again.");
                 } else if (avgBrightness > 200) {
-                    issues.push("Overexposed: The image is too bright or washed out.");
+                    issues.push("Image is overexposed. Avoid glare and capture again.");
                 }
 
                 // 3. Shadow/Contrast Check (Simple Variance)

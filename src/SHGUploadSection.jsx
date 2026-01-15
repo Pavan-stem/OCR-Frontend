@@ -39,8 +39,13 @@ const SHGUploadSection = ({
   const [openSmartCamera, setOpenSmartCamera] = useState(false);
   const [activeShgId, setActiveShgId] = useState(null);
   const [activeShgName, setActiveShgName] = useState(null);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [pendingUploadShgId, setPendingUploadShgId] = useState(null);
+  const [pendingUploadShgName, setPendingUploadShgName] = useState(null);
 
-  const isDeveloper = user?.role?.toLowerCase().includes('developer')
+  const isDeveloper = user?.role?.toLowerCase().includes('developer');
+  const isTestMode = window.location.pathname.startsWith('/Test');
+  const hasAIFeatures = isTestMode && isDeveloper;
 
   // Smart Preview Logic (Handles hard rotation and cropping for modal)
   useEffect(() => {
@@ -1279,59 +1284,40 @@ const SHGUploadSection = ({
           ) : !isTempUploaded ? (
             /* 🟦 INITIAL STATE */
             <div>
-              <div className="flex gap-2">
-                {/* Standard Upload */}
-                <div className="flex-1 relative">
-                  <input
-                    ref={(el) => (fileInputRefs.current[shg.shgId] = el)}
-                    type="file"
-                    accept=".png,.jpg,.jpeg,.pdf,.tiff,.tif,.bmp,.webp"
-                    onChange={(e) =>
-                      handleFileSelect(shg.shgId, shg.shgName, e)
-                    }
-                    className="hidden"
-                    id={`file-input-${shg.shgId}`}
-                  />
-                  <label
-                    htmlFor={`file-input-${shg.shgId}`}
-                    className={`flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl font-semibold cursor-pointer transition-all border shadow-sm text-sm sm:text-base h-full ${analyzingMap[shg.shgId]
-                      ? 'bg-gray-100 text-gray-400 cursor-wait border-gray-200'
-                      : 'bg-blue-50 hover:bg-blue-100 text-blue-600 lg:bg-gradient-to-r lg:from-blue-500 lg:to-blue-600 lg:hover:from-blue-600 lg:hover:to-blue-700 lg:text-white border-blue-200 lg:border-transparent'
-                      }`}
-                  >
-                    {analyzingMap[shg.shgId] ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-indigo-500 border-t-transparent"></div>
-                        <span>{t?.('upload.analyzing') || 'Analyzing...'}</span>
-                      </>
-                    ) : (
-                      <>
-                        <Upload size={18} />
-                        <span className="hidden sm:inline">{t?.('upload.uploadFile') || 'Upload File'}</span>
-                        <span className="sm:hidden">Upload</span>
-                      </>
-                    )}
-                  </label>
-                </div>
-
-                {/* Smart Camera Button - Visible on Mobile/Tablet, Hidden on Desktop - DEVELOPER ONLY */}
-                {isDeveloper && (
-                  <div className="flex-1 relative lg:hidden">
-                    <button
-                      onClick={() => {
-                        setActiveShgId(shg.shgId);
-                        setActiveShgName(shg.shgName);
-                        setOpenSmartCamera(true);
-                      }}
-                      className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all shadow-md text-sm sm:text-base h-full text-white bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700"
-                    >
-                      <Camera size={18} />
-                      <span className="hidden sm:inline">Smart Camera</span>
-                      <span className="sm:hidden">Camera</span>
-                    </button>
-                  </div>
+              <input
+                ref={(el) => (fileInputRefs.current[shg.shgId] = el)}
+                type="file"
+                accept=".png,.jpg,.jpeg,.pdf,.tiff,.tif,.bmp,.webp"
+                onChange={(e) =>
+                  handleFileSelect(shg.shgId, shg.shgName, e)
+                }
+                className="hidden"
+                id={`file-input-${shg.shgId}`}
+              />
+              <button
+                onClick={() => {
+                  setPendingUploadShgId(shg.shgId);
+                  setPendingUploadShgName(shg.shgName);
+                  setShowUploadModal(true);
+                }}
+                className={`flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl font-semibold cursor-pointer transition-all border shadow-sm text-sm sm:text-base ${analyzingMap[shg.shgId]
+                  ? 'bg-gray-100 text-gray-400 cursor-wait border-gray-200'
+                  : 'bg-blue-50 hover:bg-blue-100 text-blue-600 lg:bg-gradient-to-r lg:from-blue-500 lg:to-blue-600 lg:hover:from-blue-600 lg:hover:to-blue-700 lg:text-white border-blue-200 lg:border-transparent'
+                  }`}
+              >
+                {analyzingMap[shg.shgId] ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-indigo-500 border-t-transparent"></div>
+                    <span>{t?.('upload.analyzing') || 'Analyzing...'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Upload size={18} />
+                    <span className="hidden sm:inline">{t?.('upload.uploadFile') || 'Upload File'}</span>
+                    <span className="sm:hidden">Upload</span>
+                  </>
                 )}
-              </div>
+              </button>
             </div>
           ) : (
             /* 🟨 TEMP STATE (VALIDATE / VIEW / SINGLE UPLOAD / REMOVE) */
@@ -1830,6 +1816,152 @@ const SHGUploadSection = ({
         }}
         onCapture={handleSmartCameraCapture}
       />
+
+      {/* Upload Method Modal */}
+      {showUploadModal && createPortal(
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[9999] p-2 sm:p-4">
+          <div className="bg-white rounded-xl sm:rounded-2xl shadow-2xl max-w-sm w-full max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 sm:p-6 border-b sticky top-0 bg-white">
+              <h3 className="text-lg sm:text-xl font-bold text-gray-800">
+                {t?.('upload.chooseMethod') || 'Choose Upload Method'}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowUploadModal(false);
+                  setPendingUploadShgId(null);
+                  setPendingUploadShgName(null);
+                }}
+                className="p-1.5 hover:bg-gray-100 rounded-lg transition-all"
+              >
+                <X size={20} className="text-gray-600" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-4 sm:p-6 space-y-3 sm:space-y-4">
+              {/* Info Banner - Only for developers in test mode */}
+              {hasAIFeatures && (
+                <div className="p-3 sm:p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-xs sm:text-sm text-blue-800">
+                    <strong>💡 Tip:</strong> Both methods include AI-powered document scanning with automatic quality validation and enhancement.
+                  </p>
+                </div>
+              )}
+
+              {/* File Upload Option */}
+              <label
+                htmlFor={`file-input-${pendingUploadShgId}`}
+                className="block cursor-pointer"
+              >
+                <input
+                  ref={(el) => (fileInputRefs.current[pendingUploadShgId] = el)}
+                  type="file"
+                  accept=".png,.jpg,.jpeg,.pdf,.tiff,.tif,.bmp,.webp"
+                  onChange={(e) => {
+                    handleFileSelect(pendingUploadShgId, pendingUploadShgName, e);
+                    setShowUploadModal(false);
+                    setPendingUploadShgId(null);
+                    setPendingUploadShgName(null);
+                  }}
+                  className="hidden"
+                  id={`file-input-${pendingUploadShgId}`}
+                />
+                <div className="flex items-center gap-4 p-4 sm:p-5 border-2 border-gray-300 rounded-lg sm:rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all">
+                  <div className="w-12 h-12 sm:w-14 sm:h-14 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <FileText size={24} className="text-blue-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm sm:text-base text-gray-800">
+                      {t?.('upload.uploadFile') || 'Upload File'}
+                    </p>
+                    <p className="text-xs sm:text-sm text-gray-600 mt-1">
+                      {t?.('upload.selectFromDevice') || 'Select from your device'}
+                    </p>
+                  </div>
+                </div>
+              </label>
+
+              {/* Camera Option - Only for developers in test mode */}
+              {hasAIFeatures && (
+                <>
+                  <button
+                    onClick={() => {
+                      setActiveShgId(pendingUploadShgId);
+                      setActiveShgName(pendingUploadShgName);
+                      setOpenSmartCamera(true);
+                      setShowUploadModal(false);
+                      setPendingUploadShgId(null);
+                      setPendingUploadShgName(null);
+                    }}
+                    className="w-full cursor-pointer"
+                  >
+                    <div className="flex items-center gap-4 p-4 sm:p-5 border-2 border-gray-300 rounded-lg sm:rounded-xl hover:border-purple-500 hover:bg-purple-50 transition-all">
+                      <div className="w-12 h-12 sm:w-14 sm:h-14 bg-purple-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <Camera size={24} className="text-purple-600" />
+                      </div>
+                      <div className="flex-1 text-left min-w-0">
+                        <p className="font-semibold text-sm sm:text-base text-gray-800">
+                          {t?.('upload.aiScanner') || 'AI Document Scanner'}
+                        </p>
+                        <p className="text-xs sm:text-sm text-gray-600 mt-1">
+                          {t?.('upload.captureFromCamera') || 'Capture & validate with AI'}
+                        </p>
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* Features List - Only for developers in test mode */}
+                  <div className="bg-gray-50 rounded-lg p-3 sm:p-4 border border-gray-200 mt-2">
+                    <p className="text-xs font-semibold text-gray-700 mb-2">✨ AI Scanner Features:</p>
+                    <ul className="text-xs text-gray-600 space-y-1.5">
+                      <li className="flex items-start gap-2">
+                        <span className="text-green-600 font-bold mt-0.5">✓</span>
+                        <span>Blur detection & focus verification</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-green-600 font-bold mt-0.5">✓</span>
+                        <span>Lighting & contrast analysis</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-green-600 font-bold mt-0.5">✓</span>
+                        <span>Document edge detection</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-green-600 font-bold mt-0.5">✓</span>
+                        <span>Table structure validation</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-green-600 font-bold mt-0.5">✓</span>
+                        <span>Text presence verification</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="text-green-600 font-bold mt-0.5">✓</span>
+                        <span>Auto enhancement & cleanup</span>
+                      </li>
+                    </ul>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex gap-3 p-4 sm:p-6 border-t bg-gray-50">
+              <button
+                onClick={() => {
+                  setShowUploadModal(false);
+                  setPendingUploadShgId(null);
+                  setPendingUploadShgName(null);
+                }}
+                className="flex-1 px-4 py-2 sm:py-3 bg-gray-300 hover:bg-gray-400 text-gray-800 rounded-lg font-semibold text-sm sm:text-base transition-all"
+              >
+                {t?.('common.cancel') || 'Cancel'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };

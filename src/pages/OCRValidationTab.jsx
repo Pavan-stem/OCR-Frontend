@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Upload, CheckCircle, AlertCircle, FileText, Image as ImageIcon, X, Loader2 } from 'lucide-react';
+import { Upload, CheckCircle, AlertCircle, FileText, Image as ImageIcon, X, Loader2, Eye, EyeOff } from 'lucide-react';
 import { API_BASE } from '../utils/apiConfig';
 
 const OCRValidationTab = () => {
@@ -10,6 +10,8 @@ const OCRValidationTab = () => {
   const [error, setError] = useState(null);
   const [viewMode, setViewMode] = useState('original'); // 'original' or 'digitized'
   const [dragActive, setDragActive] = useState(false);
+  const [activeCell, setActiveCell] = useState(null);
+  const [showCellDetails, setShowCellDetails] = useState(true);
 
   const handleDrag = (e) => {
     e.preventDefault();
@@ -157,7 +159,7 @@ const OCRValidationTab = () => {
     const tableData = results.table_data;
     const headers = tableData.column_headers || [];
     const dataRows = tableData.data_rows || [];
-    const shgMbkId = tableData.shg_mbk_id || 'N/A';
+    const headerRows = tableData.header_rows || [];
 
     return (
       <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
@@ -166,52 +168,198 @@ const OCRValidationTab = () => {
             <FileText className="w-5 h-5 text-indigo-600" />
             <h3 className="text-lg font-black text-gray-900">Extracted SHG Table</h3>
           </div>
-          <div className="flex items-center gap-2 bg-indigo-50 p-3 rounded-xl">
-            <span className="text-sm font-bold text-gray-600">SHG MBK ID:</span>
-            <span className="text-lg font-black text-indigo-600">{shgMbkId}</span>
-          </div>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="min-w-full border-collapse">
-            <thead>
-              <tr className="bg-gradient-to-r from-indigo-600 to-purple-600">
-                <th className="px-3 py-3 text-left text-xs font-black text-white uppercase tracking-wider border border-indigo-500">
-                  Row
-                </th>
-                {headers.map((header, idx) => (
-                  <th key={idx} className="px-3 py-3 text-left text-xs font-black text-white uppercase tracking-wider border border-indigo-500 min-w-[150px]">
-                    <div className="truncate" title={header.label}>
-                      {header.label}
-                    </div>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {dataRows.map((row, rowIdx) => (
-                <tr key={rowIdx} className={rowIdx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
-                  <td className="px-3 py-2 text-sm font-bold text-gray-900 border border-gray-200">
-                    {row.row_number}
-                  </td>
-                  {row.cells?.map((cell, cellIdx) => (
-                    <td key={cellIdx} className="px-3 py-2 text-sm border border-gray-200">
-                      <div className="space-y-1">
-                        <div className="font-medium text-gray-900 break-words">
-                          {cell.text || '-'}
-                        </div>
-                        {cell.confidence !== undefined && (
-                          <div className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${getConfidenceColor(cell.confidence)}`}>
-                            {(cell.confidence * 100).toFixed(0)}%
+        <div className="flex items-center justify-end mb-4">
+          <p className="text-xs font-bold text-gray-900 mr-2">Debug Cell details:</p>
+          <button
+            onClick={() => setShowCellDetails(!showCellDetails)}
+            className="flex items-center gap-1 px-2 py-1 text-xs font-bold text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors"
+            title={showCellDetails ? "Hide panel" : "Show panel"}
+          >
+            {showCellDetails ? (
+              <>
+                <EyeOff className="w-3 h-3" />
+                Hide
+              </>
+            ) : (
+              <>
+                <Eye className="w-3 h-3" />
+                Show
+              </>
+            )}
+          </button>
+        </div>
+
+        <div className="lg:grid-cols-4 gap-6 relative">
+          <div className="width-full overflow-x-auto">
+            <table className="min-w-full border-collapse">
+              <thead>
+                {headerRows && headerRows.length > 0 ? (
+                  headerRows.map((row, rowIdx) => (
+                    <tr key={`header-row-${rowIdx}`} className="bg-gradient-to-r from-indigo-600 to-purple-600">
+                      {row.map((cell, cellIdx) => {
+                        // Left-align cells with colspan 16 and rowspan 1
+                        const isLeftAligned = (cell.col_span === 16 || cell.col_span === '16') &&
+                          (cell.row_span === 1 || cell.row_span === '1');
+                        return (
+                          <th
+                            key={`header-cell-${rowIdx}-${cellIdx}`}
+                            colSpan={cell.col_span || 1}
+                            rowSpan={cell.row_span || 1}
+                            className={`px-3 py-2 text-xs font-black text-white border border-indigo-500 ${isLeftAligned ? 'text-left' : 'text-center'}`}
+                          >
+                            {cell.label || ''}
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  ))
+                ) : (
+                  <tr className="bg-gradient-to-r from-indigo-600 to-purple-600">
+                    {headers.map((header, idx) => {
+                      const isLeftAligned = header.label && (header.label.includes('SHG MBK ID') || header.label.includes('ID'));
+                      return (
+                        <th key={idx} className={`px-3 py-3 text-xs font-black text-white uppercase border border-indigo-500 min-w-[120px] ${isLeftAligned ? 'text-left' : 'text-center'}`}>
+                          <div className="truncate" title={header.label}>
+                            {header.label}
                           </div>
-                        )}
+                        </th>
+                      );
+                    })}
+                  </tr>
+                )}
+              </thead>
+              <tbody>
+                {dataRows.map((row, rowIdx) => (
+                  <tr key={rowIdx} className={rowIdx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                    {row.cells?.map((cell, cellIdx) => {
+                      const isActive = activeCell?.rowIdx === rowIdx && activeCell?.cellIdx === cellIdx;
+                      // Check if this column should be left-aligned (first column is typically ID)
+                      const isLeftAligned = cellIdx === 0;
+                      return (
+                        <td
+                          key={cellIdx}
+                          onClick={() => cell.text || cell.image_base64 ? setActiveCell({ ...cell, rowIdx, cellIdx }) : null}
+                          className={`px-3 py-3 text-sm border border-gray-200 cursor-pointer transition-all ${isActive ? 'bg-indigo-100 ring-2 ring-indigo-500 ring-inset z-10' :
+                            (cell.text || cell.image_base64) ? 'hover:bg-indigo-50' : 'opacity-40 cursor-not-allowed'
+                            }`}
+                        >
+                          <div className="space-y-1">
+                            <div className={`font-medium break-words ${isActive ? 'text-indigo-900' : 'text-gray-900'} ${isLeftAligned ? 'text-left' : 'text-center'}`}>
+                              {cell.text || '-'}
+                            </div>
+                            {cell.confidence !== undefined && cell.confidence > 0 && (
+                              <div className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${getConfidenceColor(cell.confidence)}`}>
+                                {(cell.confidence * 100).toFixed(0)}%
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+
+                {/* Totals Row */}
+                {dataRows.length > 0 && dataRows[0].cells && (
+                  <tr className="bg-indigo-50 border-t-2 border-indigo-600">
+                    {dataRows[0].cells.map((_, cellIdx) => {
+                      if (cellIdx === 0) {
+                        // First cell with "మొత్తం :" label spanning 2 columns
+                        return (
+                          <td
+                            key={cellIdx}
+                            colSpan={2}
+                            className="px-3 py-3 text-sm font-black text-indigo-900 border border-gray-200 text-left"
+                          >
+                            మొత్తం :
+                          </td>
+                        );
+                      } else if (cellIdx === 1) {
+                        // Skip the second cell since first cell spans 2 columns
+                        return null;
+                      } else {
+                        // Calculate total for this column
+                        const columnTotal = dataRows.reduce((sum, row) => {
+                          const cellText = row.cells[cellIdx]?.text || '';
+                          const numValue = parseFloat(cellText.replace(/[^0-9.-]/g, ''));
+                          return !isNaN(numValue) ? sum + numValue : sum;
+                        }, 0);
+
+                        return (
+                          <td
+                            key={cellIdx}
+                            className="px-3 py-3 text-sm font-black text-indigo-900 border border-gray-200 text-center"
+                          >
+                            {columnTotal > 0 ? columnTotal.toFixed(2) : '-'}
+                          </td>
+                        );
+                      }
+                    })}
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Cell Details Panel */}
+          {showCellDetails && (
+            <div className="absolute top-0 right-0 p-6 rounded-xl shadow-lg bg-white border-l border-gray-100 pl-6 space-y-6">
+              <div className="sticky top-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-sm font-black text-gray-400 uppercase tracking-widest">Cell Details</h4>
+                </div>
+                {activeCell ? (
+                  <div className="space-y-4 animate-in slide-in-from-right duration-300">
+                    <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+                      <p className="text-xs font-bold text-gray-500 uppercase mb-2">Original Segment</p>
+                      {activeCell.image_base64 ? (
+                        <div className="rounded-xl overflow-hidden border border-gray-200 shadow-sm bg-white">
+                          <img
+                            src={`data:image/png;base64,${activeCell.image_base64}`}
+                            alt="Cell Segment"
+                            className="w-full h-auto object-contain max-h-32 p-2 mx-auto"
+                          />
+                        </div>
+                      ) : (
+                        <div className="aspect-video flex items-center justify-center bg-gray-100 rounded-xl text-gray-400 text-xs font-bold">
+                          No Image Available
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="bg-indigo-50 rounded-2xl p-4">
+                        <p className="text-xs font-bold text-indigo-400 uppercase mb-1">OCR Text</p>
+                        <p className="text-xl font-black text-indigo-900 break-words">{activeCell.text || 'Empty'}</p>
                       </div>
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-gray-50 rounded-xl p-3">
+                          <p className="text-[10px] font-bold text-gray-400 uppercase">Confidence</p>
+                          <p className={`text-lg font-black ${activeCell.confidence >= 0.7 ? 'text-green-600' : 'text-red-600'}`}>
+                            {(activeCell.confidence * 100).toFixed(1)}%
+                          </p>
+                        </div>
+                        <div className="bg-gray-50 rounded-xl p-3">
+                          <p className="text-[10px] font-bold text-gray-400 uppercase">Debug ID</p>
+                          <p className="text-lg font-black text-gray-900">#{activeCell.debug_id ?? 'N/A'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="h-64 flex flex-col items-center justify-center text-center p-6 border-2 border-dashed border-gray-100 rounded-3xl">
+                    <div className="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center mb-4">
+                      <CheckCircle className="w-6 h-6 text-gray-300" />
+                    </div>
+                    <p className="text-sm font-bold text-gray-400">Select a cell from the table to view details</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="mt-4 flex items-center gap-4 text-xs text-gray-500">
@@ -225,10 +373,10 @@ const OCRValidationTab = () => {
           </span>
           <span className="flex items-center gap-1">
             <div className="w-3 h-3 rounded-full bg-red-500"></div>
-            Low (\u003c70%)
+            Low (&lt;70%)
           </span>
         </div>
-      </div>
+      </div >
     );
   };
 
