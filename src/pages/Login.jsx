@@ -17,9 +17,9 @@ const Login = () => {
         setError('');
         setLoading(true);
 
-        // Frontend validation
-        if (!/^\d{10}$/.test(identifier) && !/^\d{15}$/.test(identifier)) {
-            setError('Please enter either a 10-digit Admin Number or a 15-digit VO ID.');
+        // Frontend validation: 6 (User ID), 8 (Cluster ID), 10 (Admin Phone), 15 (VO ID)
+        if (!/^\d{6}$/.test(identifier) && !/^\d{8}$/.test(identifier) && !/^\d{10}$/.test(identifier) && !/^\d{15}$/.test(identifier)) {
+            setError('Please enter a valid 6-digit User ID, 8-digit Cluster ID, 10-digit Admin Number or 15-digit VO ID.');
             setLoading(false);
             return;
         }
@@ -78,7 +78,7 @@ const Login = () => {
 
             <form onSubmit={handleLogin} className="space-y-6 w-full">
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">VO ID / Admin Number</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">VO ID / User ID / Cluster ID / Admin Number</label>
                     <div className="relative">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                             <Phone size={18} className="text-gray-400" />
@@ -92,7 +92,7 @@ const Login = () => {
                                 if (val.length <= 15) setIdentifier(val);
                             }}
                             className="pl-10 block w-full border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm py-3 border"
-                            placeholder="Enter 15-digit VO ID or 10-digit Admin Number"
+                            placeholder="Enter 6, 8, 10, or 15 digit ID"
                             required
                         />
                     </div>
