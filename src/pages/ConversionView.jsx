@@ -27,7 +27,6 @@ const ConversionView = ({ userId, userName, onClose }) => {
     const [activeFolder, setActiveFolder] = useState('success');
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedSHG, setSelectedSHG] = useState(null);
-    const [triggering, setTriggering] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
 
     // Month and Year filtering
@@ -63,38 +62,11 @@ const ConversionView = ({ userId, userName, onClose }) => {
     useEffect(() => {
         fetchStatus(true);
         const interval = setInterval(() => {
-            // Auto refresh if there are pending or processing items
-            if (summary.pending > 0 || summary.processing > 0) {
-                fetchStatus();
-            }
+            fetchStatus();
         }, 5000);
         return () => clearInterval(interval);
-    }, [fetchStatus, summary.pending, summary.processing]);
+    }, [fetchStatus]);
 
-    const handleTriggerConversion = async () => {
-        setTriggering(true);
-        try {
-            const token = localStorage.getItem('token');
-            const res = await fetch(`${API_BASE}/api/conversion/trigger`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ userId })
-            });
-            const data = await res.json();
-            if (data.success) {
-                fetchStatus();
-            } else {
-                alert(data.message || 'Failed to trigger conversion');
-            }
-        } catch (err) {
-            console.error('Error triggering conversion:', err);
-        } finally {
-            setTriggering(false);
-        }
-    };
 
     const handleRetryAll = async () => {
         setRefreshing(true);
@@ -181,14 +153,6 @@ const ConversionView = ({ userId, userName, onClose }) => {
                             title="Refresh Status"
                         >
                             <RefreshCw className="w-5 h-5" />
-                        </button>
-                        <button
-                            onClick={handleTriggerConversion}
-                            disabled={triggering}
-                            className="px-6 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-2xl font-black shadow-xl shadow-indigo-200 hover:scale-105 active:scale-95 transition-all flex items-center gap-3 disabled:opacity-50"
-                        >
-                            {triggering ? <RotateCw className="w-5 h-5 animate-spin" /> : <Play className="w-5 h-5 fill-current" />}
-                            {summary.total > 0 ? 'Sync Conversions' : 'Start Conversion'}
                         </button>
                     </div>
                 </div>

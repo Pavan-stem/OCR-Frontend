@@ -11,7 +11,13 @@ import {
     XCircle,
     AlertCircle,
     ChevronRight,
-    ShieldCheck
+    ShieldCheck,
+    Edit3,
+    Save,
+    X,
+    Image as ImageIcon,
+    Eye,
+    EyeOff
 } from 'lucide-react';
 import { API_BASE } from '../utils/apiConfig';
 
@@ -37,6 +43,12 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState(null);
     const [error, setError] = useState(null);
+    const [isEditing, setIsEditing] = useState(false);
+    const [originalData, setOriginalData] = useState(null);
+    const [saving, setSaving] = useState(false);
+    const [showImage, setShowImage] = useState(false);
+    const [s3Url, setS3Url] = useState(null);
+    const [opacity, setOpacity] = useState(0.5);
 
     useEffect(() => {
         const fetchDetail = async () => {
@@ -50,6 +62,8 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
 
                 if (result.success) {
                     setData(result.data);
+                    setOriginalData(JSON.parse(JSON.stringify(result.data)));
+                    setS3Url(result.s3Url);
                 } else {
                     setError(result.message || 'Failed to load table data');
                 }
@@ -65,6 +79,7 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
     }, [uploadId]);
 
     const handleDownloadExcel = async () => {
+        // ... (existing code remains but use current 'data')
         try {
             if (!data || !data.table_data) return;
 
@@ -76,16 +91,7 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    table_data: {
-                        ...data.table_data,
-                        data_rows: (data.table_data.data_rows || []).map(row => ({
-                            ...row,
-                            cells: (row.cells || []).map((cell, idx) => ({
-                                ...cell,
-                                text: idx === 0 ? padMBKId(cell.text) : cell.text
-                            }))
-                        }))
-                    },
+                    table_data: data.table_data,
                     shg_mbk_id: padSHGId(data.shgID) || 'Unknown',
                     month: new Date(data.convertedAt).getMonth() + 1,
                     year: new Date(data.convertedAt).getFullYear()
@@ -109,6 +115,46 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
         }
     };
 
+    const handleSave = async () => {
+        setSaving(true);
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(`${API_BASE}/api/conversion/detail/${uploadId}`, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    table_data: data.table_data
+                })
+            });
+            const result = await res.json();
+            if (result.success) {
+                setOriginalData(JSON.parse(JSON.stringify(data)));
+                setIsEditing(false);
+            } else {
+                alert(result.message || 'Failed to save changes');
+            }
+        } catch (err) {
+            console.error('Error saving changes:', err);
+            alert('Network error. Failed to save changes.');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleCancel = () => {
+        setData(JSON.parse(JSON.stringify(originalData)));
+        setIsEditing(false);
+    };
+
+    const handleCellChange = (rIdx, cIdx, val) => {
+        const newData = { ...data };
+        newData.table_data.data_rows[rIdx].cells[cIdx].text = val;
+        setData(newData);
+    };
+
     if (loading) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[500px] bg-white/40 backdrop-blur-xl rounded-[40px] p-12 shadow-2xl border border-white/50 animate-in fade-in zoom-in duration-500">
@@ -117,10 +163,10 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                     <Loader2 className="w-20 h-20 animate-spin text-indigo-600 mb-8 relative z-10" />
                 </div>
                 <h3 className="text-3xl font-black text-gray-900 mb-3 tracking-tight">Compiling Data</h3>
-                <p className="text-gray-500 font-bold uppercase tracking-widest text-xs flex items-center gap-2">
+                <div className="text-gray-500 font-bold uppercase tracking-widest text-xs flex items-center gap-2">
                     <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse"></div>
                     Reconstructing table archives...
-                </p>
+                </div>
             </div>
         );
     }
@@ -190,16 +236,57 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                     </div>
                 </div>
 
-                {/* ACTION BUTTON */}
-                <button
-                    onClick={handleDownloadExcel}
-                    className="group relative w-full md:w-auto px-5 sm:px-8 py-3 sm:py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl sm:rounded-[24px] font-black shadow-lg transition-all md:hover:-translate-y-1 active:translate-y-0"
-                >
-                    <div className="flex items-center justify-center gap-2 sm:gap-3">
-                        <Download className="w-4 h-4 sm:w-5 sm:h-5" />
-                        <span className="text-sm sm:text-base">Download Excel</span>
-                    </div>
-                </button>
+                {/* ACTION BUTTONS */}
+                <div className="flex flex-wrap items-center gap-3">
+                    {s3Url && (
+                        <button
+                            onClick={() => setShowImage(!showImage)}
+                            className={`p-3 sm:p-4 rounded-xl sm:rounded-2xl transition-all shadow-md border ${showImage ? 'bg-indigo-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-200'}`}
+                            title="Toggle Original Image"
+                        >
+                            <ImageIcon className="w-5 h-5 sm:w-6 sm:h-6" />
+                        </button>
+                    )}
+
+                    {!isEditing ? (
+                        <>
+                            <button
+                                onClick={() => setIsEditing(true)}
+                                className="px-5 sm:px-6 py-3 sm:py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl sm:rounded-[24px] font-black shadow-lg transition-all flex items-center gap-2"
+                            >
+                                <Edit3 className="w-4 h-4 sm:w-5 sm:h-5" />
+                                <span className="text-sm sm:text-base">Edit</span>
+                            </button>
+                            <button
+                                onClick={handleDownloadExcel}
+                                className="group relative px-5 sm:px-8 py-3 sm:py-4 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl sm:rounded-[24px] font-black shadow-lg transition-all"
+                            >
+                                <div className="flex items-center justify-center gap-2 sm:gap-3">
+                                    <Download className="w-4 h-4 sm:w-5 sm:h-5" />
+                                    <span className="text-sm sm:text-base">Download Excel</span>
+                                </div>
+                            </button>
+                        </>
+                    ) : (
+                        <>
+                            <button
+                                onClick={handleCancel}
+                                className="px-5 sm:px-6 py-3 sm:py-4 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-xl sm:rounded-[24px] font-black transition-all flex items-center gap-2"
+                            >
+                                <X className="w-4 h-4 sm:w-5 sm:h-5" />
+                                <span className="text-sm sm:text-base font-bold">Cancel</span>
+                            </button>
+                            <button
+                                onClick={handleSave}
+                                disabled={saving}
+                                className="px-5 sm:px-8 py-3 sm:py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl sm:rounded-[24px] font-black shadow-lg transition-all flex items-center gap-2"
+                            >
+                                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4 sm:w-5 sm:h-5" />}
+                                <span className="text-sm sm:text-base">Save Changes</span>
+                            </button>
+                        </>
+                    )}
+                </div>
 
             </div>
 
@@ -215,106 +302,164 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                             <p className="text-[10px] text-indigo-200 font-bold uppercase tracking-widest mt-0.5">SHG Digitally Converted Table</p>
                         </div>
                     </div>
-                    <div className="hidden sm:flex items-center gap-2 px-4 py-2 bg-white/10 rounded-full border border-white/10">
-                        <ShieldCheck className="text-indigo-200" size={16} />
-                        <span className="text-[10px] text-white font-black uppercase tracking-tight">Digital Validate</span>
+                    <div className="flex items-center gap-6">
+                        {showImage && s3Url && (
+                            <div className="hidden lg:flex items-center gap-3 px-4 py-2 bg-white/10 rounded-full border border-white/10">
+                                <span className="text-[10px] text-white font-black uppercase tracking-widest">Adjust Visibility</span>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max="100"
+                                    value={opacity * 100}
+                                    onChange={(e) => setOpacity(e.target.value / 100)}
+                                    className="w-24 h-1.5 bg-white/20 rounded-full appearance-none cursor-pointer accent-white"
+                                />
+                            </div>
+                        )}
+                        <div className="hidden sm:flex items-center gap-2 px-4 py-2 bg-white/10 rounded-full border border-white/10">
+                            <ShieldCheck className="text-indigo-200" size={16} />
+                            <span className="text-[10px] text-white font-black uppercase tracking-tight">Digital Validate</span>
+                        </div>
                     </div>
                 </div>
 
                 <div className="overflow-x-auto custom-scrollbar">
-                    <table className="w-full border-collapse">
-                        <thead>
-                            {/* Complex Headers from backend */}
-                            {tableData.header_rows && tableData.header_rows.map((row, rIdx) => (
-                                <tr key={rIdx}>
-                                    {row.map((cell, cIdx) => {
-                                        const isLastLevel = (rIdx + (cell.row_span || 1)) === tableData.header_rows.length;
-                                        const isSHGIDHeader = (cell.col_span === 15 && cell.row_span === 1);
-                                        return (
-                                            <th
-                                                key={cIdx}
-                                                colSpan={cell.col_span || 1}
-                                                rowSpan={cell.row_span || 1}
-                                                className={`bg-indigo-50/50 border-b border-r border-indigo-100/50 px-6 py-4 text-[11px] font-black text-indigo-900 transition-colors uppercase tracking-wider ${isLastLevel ? 'bg-indigo-100/30' : ''} ${isSHGIDHeader ? 'text-left' : 'text-center'}`}
-                                            >
-                                                {cell.label}
+                    <div className="inline-block min-w-full align-top">
+                        {/* Inline Image Container - Moved inside scrollable div for width alignment */}
+                        {showImage && s3Url && (
+                            <div className="border-b border-gray-200 bg-gray-50/50 flex flex-col animate-in slide-in-from-top-4 duration-500">
+                                <div className="w-full relative rounded-2xl overflow-hidden shadow-inner border border-gray-200 bg-gray-100 max-h-[600px] overflow-y-auto custom-scrollbar">
+                                    <img
+                                        src={s3Url}
+                                        alt="Original Record"
+                                        className="w-full h-auto transition-opacity duration-300 block"
+                                        style={{ opacity: opacity }}
+                                    />
+                                    {/* Overlay Controls for Mobile/Small views */}
+                                    <div className="absolute top-4 right-4 lg:hidden">
+                                        <div className="bg-black/60 backdrop-blur-md p-3 rounded-2xl border border-white/20 flex items-center gap-3">
+                                            <Eye size={16} className="text-white" />
+                                            <input
+                                                type="range"
+                                                min="10"
+                                                max="100"
+                                                value={opacity * 100}
+                                                onChange={(e) => setOpacity(e.target.value / 100)}
+                                                className="w-20 h-1 bg-white/20 rounded-full appearance-none cursor-pointer accent-white"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="mt-3 flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                                    <AlertCircle size={14} className="text-indigo-400" />
+                                    Use the image above to verify the digital entries below
+                                </div>
+                            </div>
+                        )}
+
+                        <table className="w-full border-collapse">
+                            <thead>
+                                {/* Complex Headers from backend */}
+                                {tableData.header_rows && tableData.header_rows.map((row, rIdx) => (
+                                    <tr key={rIdx}>
+                                        {row.map((cell, cIdx) => {
+                                            const isLastLevel = (rIdx + (cell.row_span || 1)) === tableData.header_rows.length;
+                                            const isSHGIDHeader = (cell.col_span === 15 && cell.row_span === 1);
+                                            return (
+                                                <th
+                                                    key={cIdx}
+                                                    colSpan={cell.col_span || 1}
+                                                    rowSpan={cell.row_span || 1}
+                                                    className={`bg-indigo-50/50 border-b border-r border-indigo-100/50 px-6 py-4 text-[11px] font-black text-indigo-900 transition-colors uppercase tracking-wider ${isLastLevel ? 'bg-indigo-100/30' : ''} ${isSHGIDHeader ? 'text-left' : 'text-center'}`}
+                                                >
+                                                    {cell.label}
+                                                </th>
+                                            );
+                                        })}
+                                    </tr>
+                                ))}
+                                {/* Fallback Simple Header */}
+                                {!tableData.header_rows && (
+                                    <tr className="bg-indigo-50/50">
+                                        {headers.map((header, idx) => (
+                                            <th key={idx} className="border-b border-r border-indigo-100/50 px-6 py-4 text-xs font-black text-indigo-900 text-left whitespace-nowrap uppercase tracking-widest">
+                                                {header.label}
                                             </th>
-                                        );
-                                    })}
-                                </tr>
-                            ))}
-                            {/* Fallback Simple Header */}
-                            {!tableData.header_rows && (
-                                <tr className="bg-indigo-50/50">
-                                    {headers.map((header, idx) => (
-                                        <th key={idx} className="border-b border-r border-indigo-100/50 px-6 py-4 text-xs font-black text-indigo-900 text-left whitespace-nowrap uppercase tracking-widest">
-                                            {header.label}
-                                        </th>
-                                    ))}
-                                </tr>
-                            )}
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 bg-white/50">
-                            {rows.map((row, rIdx) => (
-                                <tr key={rIdx} className="hover:bg-indigo-50/30 transition-all duration-200 group">
-                                    {row.cells.map((cell, cIdx) => (
-                                        <td key={cIdx} className="px-6 py-4 text-sm font-semibold text-gray-700 border-r border-gray-100/50 group-last:border-r-0">
-                                            <div className="flex flex-col">
-                                                <span>{cIdx === 0 ? padMBKId(cell.text) : cell.text}</span>
-                                                {cell.confidence < 0.6 && cell.text && (
-                                                    <div className="flex items-center gap-1.5 mt-2">
-                                                        <div className="h-1 flex-1 bg-amber-100 rounded-full overflow-hidden">
-                                                            <div
-                                                                className="h-full bg-amber-500 rounded-full animate-pulse"
-                                                                style={{ width: `${Math.max(20, cell.confidence * 100)}%` }}
-                                                            ></div>
+                                        ))}
+                                    </tr>
+                                )}
+                            </thead>
+                            <tbody className="divide-y divide-gray-100 bg-white/50">
+                                {rows.map((row, rIdx) => (
+                                    <tr key={rIdx} className="hover:bg-indigo-50/30 transition-all duration-200 group">
+                                        {row.cells.map((cell, cIdx) => (
+                                            <td key={cIdx} className="px-6 py-4 text-sm font-semibold text-gray-700 border-r border-gray-100/50 group-last:border-r-0 min-w-[150px]">
+                                                <div className="flex flex-col">
+                                                    {isEditing ? (
+                                                        <input
+                                                            type="text"
+                                                            value={cell.text}
+                                                            onChange={(e) => handleCellChange(rIdx, cIdx, e.target.value)}
+                                                            className="w-full bg-indigo-50/50 border border-indigo-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-gray-800"
+                                                        />
+                                                    ) : (
+                                                        <span>{cIdx === 0 ? padMBKId(cell.text) : cell.text}</span>
+                                                    )}
+                                                    {!isEditing && cell.confidence < 0.6 && cell.text && (
+                                                        <div className="flex items-center gap-1.5 mt-2">
+                                                            <div className="h-1 flex-1 bg-amber-100 rounded-full overflow-hidden">
+                                                                <div
+                                                                    className="h-full bg-amber-500 rounded-full animate-pulse"
+                                                                    style={{ width: `${Math.max(20, cell.confidence * 100)}%` }}
+                                                                ></div>
+                                                            </div>
+                                                            <span className="text-[9px] font-black text-amber-600 uppercase">Review</span>
                                                         </div>
-                                                        <span className="text-[9px] font-black text-amber-600 uppercase">Review</span>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </td>
-                                    ))}
-                                </tr>
-                            ))}
+                                                    )}
+                                                </div>
+                                            </td>
+                                        ))}
+                                    </tr>
+                                ))}
 
-                            {/* Totals Row */}
-                            {rows.length > 0 && rows[0].cells && (
-                                <tr className="bg-indigo-50 border-t-2 border-indigo-600">
-                                    {rows[0].cells.map((_, cellIdx) => {
-                                        if (cellIdx === 0) {
-                                            return (
-                                                <td
-                                                    key={cellIdx}
-                                                    colSpan={2}
-                                                    className="px-6 py-4 text-sm font-black text-indigo-900 border-r border-gray-100/50 text-left"
-                                                >
-                                                    మొత్తం :
-                                                </td>
-                                            );
-                                        } else if (cellIdx === 1) {
-                                            return null;
-                                        } else {
-                                            const columnTotal = rows.reduce((sum, row) => {
-                                                const cellText = row.cells[cellIdx]?.text || '';
-                                                const numValue = parseFloat(cellText.replace(/[^0-9.-]/g, ''));
-                                                return !isNaN(numValue) ? sum + numValue : sum;
-                                            }, 0);
+                                {/* Totals Row */}
+                                {rows.length > 0 && rows[0].cells && (
+                                    <tr className="bg-indigo-50 border-t-2 border-indigo-600">
+                                        {rows[0].cells.map((_, cellIdx) => {
+                                            if (cellIdx === 0) {
+                                                return (
+                                                    <td
+                                                        key={cellIdx}
+                                                        colSpan={2}
+                                                        className="px-6 py-4 text-sm font-black text-indigo-900 border-r border-gray-100/50 text-left"
+                                                    >
+                                                        మొత్తం :
+                                                    </td>
+                                                );
+                                            } else if (cellIdx === 1) {
+                                                return null;
+                                            } else {
+                                                const columnTotal = rows.reduce((sum, row) => {
+                                                    const cellText = row.cells[cellIdx]?.text || '';
+                                                    const numValue = parseFloat(cellText.replace(/[^0-9.-]/g, ''));
+                                                    return !isNaN(numValue) ? sum + numValue : sum;
+                                                }, 0);
 
-                                            return (
-                                                <td
-                                                    key={cellIdx}
-                                                    className="px-6 py-4 text-sm font-black text-indigo-900 border-r border-gray-100/50 text-center"
-                                                >
-                                                    {columnTotal > 0 ? columnTotal.toFixed(2) : '-'}
-                                                </td>
-                                            );
-                                        }
-                                    })}
-                                </tr>
-                            )}
-                        </tbody>
-                    </table>
+                                                return (
+                                                    <td
+                                                        key={cellIdx}
+                                                        className="px-6 py-4 text-sm font-black text-indigo-900 border-r border-gray-100/50 text-center"
+                                                    >
+                                                        {columnTotal > 0 ? columnTotal.toFixed(2) : '-'}
+                                                    </td>
+                                                );
+                                            }
+                                        })}
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
 
                 {rows.length === 0 && (
@@ -345,6 +490,7 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                     </div>
                 </div>
             </div>
+
         </div>
     );
 };
