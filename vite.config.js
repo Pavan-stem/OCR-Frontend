@@ -10,6 +10,14 @@ export default defineConfig({
   ],
   server: {
     open: true,
+    host: '0.0.0.0',  // Accept connections from all network interfaces
+    port: 5173,       // Make port explicit
+    allowedHosts: [
+      'localhost',
+      '127.0.0.1',
+      '192.168.1.6',    // Your IP - add this
+      '192.168.1.*',    // Allow any 192.168.1.x
+    ],
     proxy: {
       '/api': {
         target: 'https://api.stemverse.api/OCRtest',
