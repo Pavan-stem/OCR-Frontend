@@ -75,14 +75,6 @@ const AppRoutes = () => {
                     }
                 />
 
-                <Route
-                    path="/register"
-                    element={
-                        <PublicRoute>
-                            <AuthPage />
-                        </PublicRoute>
-                    }
-                />
 
                 {/* Scanner → VO + Admin */}
                 <Route

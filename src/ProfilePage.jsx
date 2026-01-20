@@ -58,15 +58,17 @@ export default function ProfilePage({ onClose }) {
 
                 <div className="space-y-3">
 
-                  {/* Mobile Number */}
-                  <div className="bg-white p-3 rounded border border-slate-200 min-h-[56px]">
-                    <p className="text-xs text-slate-600 uppercase tracking-wide mb-1">
-                      {t('profile.mobileNumber')}
-                    </p>
-                    <p className="text-base font-semibold text-slate-900">
-                      {user?.mobile || user?.phone || ''}
-                    </p>
-                  </div>
+                  {/* Mobile Number (Admin only) */}
+                  {user?.role === 'Admin' && (
+                    <div className="bg-white p-3 rounded border border-slate-200 min-h-[56px]">
+                      <p className="text-xs text-slate-600 uppercase tracking-wide mb-1">
+                        {t('profile.mobileNumber')}
+                      </p>
+                      <p className="text-base font-semibold text-slate-900">
+                        {user?.mobile || user?.phone || ''}
+                      </p>
+                    </div>
+                  )}
 
                   {/* VO Name */}
                   <div className="bg-white p-3 rounded border border-slate-200 min-h-[56px]">

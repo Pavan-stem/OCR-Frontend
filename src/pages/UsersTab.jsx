@@ -1402,7 +1402,20 @@ const UsersTab = ({ filterProps }) => {
                         placeholder={formData.role === 'Admin - CC' ? 'e.g. Cluster Admin' : formData.role === 'Admin - APM' ? 'e.g. APM Admin' : 'e.g. Navodaya VO'}
                       />
                     </div>
-
+                    <div className="space-y-2">
+                      <label className="text-xs font-black text-gray-700 ml-1 uppercase flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-500"></div>
+                        Primary Contact / Login
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={formData.phone}
+                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                        className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
+                        placeholder="+91"
+                      />
+                    </div>
                     <div className="space-y-2">
                       <label className="text-xs font-black text-gray-700 ml-1 uppercase flex items-center gap-2">
                         <div className="w-1.5 h-1.5 rounded-full bg-indigo-500"></div>
