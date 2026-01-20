@@ -5,7 +5,7 @@ import { Lock, Phone, ArrowRight, Activity, EyeClosed, Eye } from 'lucide-react'
 import { AUTH_API_BASE } from '../utils/apiConfig';
 
 const Login = () => {
-    const [phone, setPhone] = useState('');
+    const [identifier, setIdentifier] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
@@ -17,14 +17,13 @@ const Login = () => {
         setError('');
         setLoading(true);
 
-        // Frontend validation (Strict as per requirements)
-        if (!/^\d{10}$/.test(phone)) {
-            setError('Mobile number must be exactly 10 digits and contain only numbers.');
+        // Frontend validation: 6 (User ID), 8 (Cluster ID), 10 (Admin Phone), 15 (VO ID)
+        if (!/^\d{6}$/.test(identifier) && !/^\d{8}$/.test(identifier) && !/^\d{10}$/.test(identifier) && !/^\d{15}$/.test(identifier)) {
+            setError('Please enter a valid 6-digit User ID, 8-digit Cluster ID, 10-digit Admin Number or 15-digit VO ID.');
             setLoading(false);
             return;
         }
 
-        // Password validation is now handled by the backend (checking correctness)
         if (!password) {
             setError('Please enter your password.');
             setLoading(false);
@@ -33,7 +32,7 @@ const Login = () => {
 
         try {
             const response = await axios.post(`${AUTH_API_BASE}/api/login`, {
-                phone,
+                identifier,
                 password
             });
 
@@ -79,21 +78,21 @@ const Login = () => {
 
             <form onSubmit={handleLogin} className="space-y-6 w-full">
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Mobile Number</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">VO ID / User ID / Cluster ID / Admin Number</label>
                     <div className="relative">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                             <Phone size={18} className="text-gray-400" />
                         </div>
                         <input
                             type="text"
-                            value={phone}
+                            value={identifier}
                             onChange={(e) => {
-                                // Allow only digits
+                                // Allow only digits, max 15
                                 const val = e.target.value.replace(/\D/g, '');
-                                if (val.length <= 10) setPhone(val);
+                                if (val.length <= 15) setIdentifier(val);
                             }}
                             className="pl-10 block w-full border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm py-3 border"
-                            placeholder="Enter 10-digit mobile number"
+                            placeholder="Enter 6, 8, 10, or 15 digit ID"
                             required
                         />
                     </div>

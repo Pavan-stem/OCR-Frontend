@@ -85,11 +85,16 @@ const UsersTab = ({ filterProps }) => {
     phone: '',
     password: '',
     role: 'VO',
+    isDeveloper: false,
     district: '',
     mandal: '',
     village: '',
     voID: '',
-    voaName: ''
+    voaName: '',
+    clusterID: '',
+    clusterName: '',
+    userID: '',
+    userName: ''
   });
 
   // Modal-specific location states to avoid overriding global filters
@@ -375,7 +380,13 @@ const UsersTab = ({ filterProps }) => {
       const data = await res.json();
       if (data.success) {
         setShowAddModal(false);
-        setFormData({ voName: '', phone: '', password: '', role: 'VO', district: '', mandal: '', village: '', voID: '', voaName: '' });
+        setFormData({
+          voName: '', phone: '', password: '', role: 'VO', isDeveloper: false,
+          district: '', mandal: '', village: '',
+          voID: '', voaName: '',
+          clusterID: '', clusterName: '',
+          userID: '', userName: ''
+        });
         fetchUsers();
       } else {
         alert(data.error || 'Failed to create user');
@@ -454,7 +465,11 @@ const UsersTab = ({ filterProps }) => {
       mandal: user.mandal || '',
       village: user.village || '',
       voID: user.voID || '',
-      voaName: user.voaName || ''
+      voaName: user.voaName || '',
+      clusterID: user.clusterID || '',
+      clusterName: user.clusterName || '',
+      userID: user.userID || '',
+      userName: user.userName || ''
     });
     setShowEditModal(true);
   };
@@ -470,7 +485,11 @@ const UsersTab = ({ filterProps }) => {
       mandal: selectedMandal !== 'all' ? selectedMandal : '',
       village: selectedVillage !== 'all' ? selectedVillage : '',
       voID: '',
-      voaName: ''
+      voaName: '',
+      clusterID: '',
+      clusterName: '',
+      userID: '',
+      userName: ''
     });
     setShowAddModal(true);
   };
@@ -655,15 +674,30 @@ const UsersTab = ({ filterProps }) => {
             Managing <span className="text-indigo-600 font-black">{userCounts.vo}</span> VOs across <span className="text-indigo-600 font-black">{totalPages}</span> pages
           </p>
         </div>
-        <button
-          onClick={openAddModal}
-          className="w-full sm:w-auto bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-3.5 rounded-2xl hover:shadow-xl hover:scale-105 active:scale-95 flex items-center justify-center gap-3 transition-all font-black shadow-lg"
-        >
-          <div className="bg-white/20 p-1 rounded-lg">
-            <Plus className="w-5 h-5" />
-          </div>
-          Create User
-        </button>
+        {(() => {
+          try {
+            const userData = JSON.parse(localStorage.getItem('user'));
+            const role = (userData?.role || '').toLowerCase();
+            // Restrict "Add User" to Admin, APM, and Developer roles. Specifically HIDDEN from CC and VO.
+            const allowedRoles = ['admin', 'admin - apm', 'admin - developer'];
+            if (allowedRoles.includes(role)) {
+              return (
+                <button
+                  onClick={openAddModal}
+                  className="w-full sm:w-auto bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-3.5 rounded-2xl hover:shadow-xl hover:scale-105 active:scale-95 flex items-center justify-center gap-3 transition-all font-black shadow-lg"
+                >
+                  <div className="bg-white/20 p-1 rounded-lg">
+                    <Plus className="w-5 h-5" />
+                  </div>
+                  Add User
+                </button>
+              );
+            }
+          } catch (e) {
+            console.error('Error checking user role', e);
+          }
+          return null;
+        })()}
       </div>
 
       {/* Maintenance Controls - Admin/Dev Only */}
@@ -1341,8 +1375,8 @@ const UsersTab = ({ filterProps }) => {
                     {showAddModal ? <Plus className="w-6 h-6" /> : <Edit className="w-6 h-6" />}
                   </div>
                   <div>
-                    <h3 className="text-xl font-black text-gray-900 leading-tight">{showAddModal ? 'Register New User' : 'Update User Account'}</h3>
-                    <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">{showAddModal ? 'System Onboarding' : 'Modify Credentials'}</p>
+                    <h3 className="text-xl font-black text-gray-900 leading-tight">{showAddModal ? 'Add New User' : 'Update User Account'}</h3>
+                    <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">{showAddModal ? 'Create Account' : 'Modify Credentials'}</p>
                   </div>
                 </div>
                 <button onClick={() => { setShowAddModal(false); setShowEditModal(false); }} className="p-2 sm:p-2.5 bg-white text-gray-400 hover:text-red-500 hover:shadow-md rounded-xl transition-all border border-gray-100">
@@ -1357,7 +1391,7 @@ const UsersTab = ({ filterProps }) => {
                     <div className="space-y-2">
                       <label className="text-xs font-black text-gray-700 ml-1 uppercase flex items-center gap-2">
                         <div className="w-1.5 h-1.5 rounded-full bg-indigo-500"></div>
-                        {formData.role === 'VO' ? 'Village Org Name' : 'Administrator Name'}
+                        {formData.role === 'Admin - CC' ? 'Cluster Administrator Name' : formData.role === 'Admin - APM' ? 'APM Administrator Name' : formData.role === 'VO' ? 'VO Name' : 'Administrator Name'}
                       </label>
                       <input
                         type="text"
@@ -1365,7 +1399,7 @@ const UsersTab = ({ filterProps }) => {
                         value={formData.voName}
                         onChange={(e) => setFormData({ ...formData, voName: e.target.value })}
                         className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
-                        placeholder="e.g. Navodaya VO"
+                        placeholder={formData.role === 'Admin - CC' ? 'e.g. Cluster Admin' : formData.role === 'Admin - APM' ? 'e.g. APM Admin' : 'e.g. Navodaya VO'}
                       />
                     </div>
                     <div className="space-y-2">
@@ -1407,9 +1441,9 @@ const UsersTab = ({ filterProps }) => {
                         className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
                       >
                         <option value="VO">Village Organization (VO)</option>
-                        <option value="ADMIN">Administrator</option>
-                        <option value="Admin CC">Admin CC</option>
-                        <option value="Admin APM">Admin APM</option>
+                        <option value="Admin">Admin</option>
+                        <option value="Admin - CC">Admin - CC</option>
+                        <option value="Admin - APM">Admin - APM</option>
                       </select>
 
                       {isLoggedInDev && (
@@ -1454,7 +1488,7 @@ const UsersTab = ({ filterProps }) => {
                           required
                           onChange={(e) => setFormData({ ...formData, mandal: e.target.value, village: '' })}
                           disabled={!formData.district}
-                          className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all disabled:opacity-50"
+                          className={`w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all disabled:opacity-50 ${formData.role === 'Admin - CC' || formData.role === 'Admin - APM' ? 'col-span-2' : ''}`}
                         >
                           <option value="">Select Mandal</option>
                           {modalMandals.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
@@ -1464,31 +1498,37 @@ const UsersTab = ({ filterProps }) => {
                         <label className="text-xs font-black text-gray-700 ml-1 uppercase">Village</label>
                         <select
                           value={formData.village}
-                          required
+                          required={formData.role === 'VO'}
                           onChange={(e) => setFormData({ ...formData, village: e.target.value })}
-                          disabled={!formData.mandal}
+                          disabled={!formData.mandal || (formData.role !== 'VO')}
                           className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all disabled:opacity-50"
                         >
-                          <option value="">Select Village</option>
+                          <option value="">{formData.role === 'VO' ? 'Select Village' : 'No Village Required'}</option>
                           {modalVillages.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
                         </select>
                       </div>
                     </div>
 
-                    {formData.role === 'VO' && (
+                    {/* Role Specific ID/Name Details */}
+                    {formData.role === 'VO' ? (
                       <div className="bg-indigo-50/50 p-6 rounded-[24px] border border-indigo-100 space-y-6">
                         <div className="space-y-2">
                           <label className="text-xs font-black text-gray-700 ml-1 uppercase flex items-center gap-2">
                             <CheckCircle className="w-3.5 h-3.5 text-indigo-600" />
-                            Official VO ID
+                            Official VO ID (15 Digits)
                           </label>
                           <input
                             type="text"
                             required
+                            maxLength={15}
+                            minLength={15}
                             value={formData.voID}
-                            onChange={(e) => setFormData({ ...formData, voID: e.target.value })}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/\D/g, '');
+                              setFormData({ ...formData, voID: val });
+                            }}
                             className="w-full bg-white border-2 border-indigo-100 rounded-xl px-5 py-3 text-sm font-black focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:outline-none transition-all"
-                            placeholder="Unique VO Identifier"
+                            placeholder="15-digit VO ID"
                           />
                         </div>
                         <div className="space-y-2">
@@ -1502,11 +1542,83 @@ const UsersTab = ({ filterProps }) => {
                             value={formData.voaName}
                             onChange={(e) => setFormData({ ...formData, voaName: e.target.value })}
                             className="w-full bg-white border-2 border-indigo-100 rounded-xl px-5 py-3 text-sm font-black focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:outline-none transition-all"
-                            placeholder="Full Name"
+                            placeholder="Representative Full Name"
                           />
                         </div>
                       </div>
-                    )}
+                    ) : formData.role === 'Admin - CC' ? (
+                      <div className="bg-amber-50/50 p-6 rounded-[24px] border border-amber-100 space-y-6">
+                        <div className="space-y-2">
+                          <label className="text-xs font-black text-gray-700 ml-1 uppercase flex items-center gap-2">
+                            <CheckCircle className="w-3.5 h-3.5 text-amber-600" />
+                            Cluster ID (8 Digits)
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            maxLength={8}
+                            minLength={8}
+                            value={formData.clusterID}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/\D/g, '');
+                              setFormData({ ...formData, clusterID: val });
+                            }}
+                            className="w-full bg-white border-2 border-amber-100 rounded-xl px-5 py-3 text-sm font-black focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 focus:outline-none transition-all"
+                            placeholder="8-digit Cluster ID"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-black text-gray-700 ml-1 uppercase flex items-center gap-2">
+                            <User className="w-3.5 h-3.5 text-amber-600" />
+                            Cluster Name
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={formData.clusterName}
+                            onChange={(e) => setFormData({ ...formData, clusterName: e.target.value })}
+                            className="w-full bg-white border-2 border-amber-100 rounded-xl px-5 py-3 text-sm font-black focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 focus:outline-none transition-all"
+                            placeholder="Full Cluster Name"
+                          />
+                        </div>
+                      </div>
+                    ) : (formData.role === 'Admin - APM') ? (
+                      <div className="bg-purple-50/50 p-6 rounded-[24px] border border-purple-100 space-y-6">
+                        <div className="space-y-2">
+                          <label className="text-xs font-black text-gray-700 ml-1 uppercase flex items-center gap-2">
+                            <CheckCircle className="w-3.5 h-3.5 text-purple-600" />
+                            User ID (6 Digits)
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            maxLength={6}
+                            minLength={6}
+                            value={formData.userID}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/\D/g, '');
+                              setFormData({ ...formData, userID: val });
+                            }}
+                            className="w-full bg-white border-2 border-purple-100 rounded-xl px-5 py-3 text-sm font-black focus:ring-4 focus:ring-purple-500/10 focus:border-purple-500 focus:outline-none transition-all"
+                            placeholder="6-digit User ID"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-xs font-black text-gray-700 ml-1 uppercase flex items-center gap-2">
+                            <User className="w-3.5 h-3.5 text-purple-600" />
+                            User Name
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            value={formData.userName}
+                            onChange={(e) => setFormData({ ...formData, userName: e.target.value })}
+                            className="w-full bg-white border-2 border-purple-100 rounded-xl px-5 py-3 text-sm font-black focus:ring-4 focus:ring-purple-500/10 focus:border-purple-500 focus:outline-none transition-all"
+                            placeholder="Full User Name"
+                          />
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
 
@@ -1524,7 +1636,7 @@ const UsersTab = ({ filterProps }) => {
                     className="flex-[2] px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-2xl font-black min-h-[56px] transition-all flex items-center justify-center gap-3 shadow-xl shadow-indigo-100 disabled:opacity-70 disabled:grayscale"
                   >
                     {isSaving ? <Loader2 className="w-6 h-6 animate-spin" /> : (showAddModal ? <Plus className="w-6 h-6" /> : <CheckCircle className="w-6 h-6" />)}
-                    {showAddModal ? 'Initialize User' : 'Update Credentials'}
+                    {showAddModal ? 'Add User' : 'Save Changes'}
                   </button>
                 </div>
               </form>

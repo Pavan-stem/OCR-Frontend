@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, LogOut, BarChart, Users, CheckCircle, Activity, Loader2, Settings, X, Shield, AlertCircle, AlertTriangle, Wrench, ChevronDown } from 'lucide-react';
+import { FileText, LogOut, BarChart, Users, CheckCircle, Activity, Loader2, Settings, X, Shield, AlertCircle, AlertTriangle, Wrench, ChevronDown, Trash2 } from 'lucide-react';
 import { API_BASE } from '../utils/apiConfig';
 import DashboardTab from './DashboardTab';
 import UsersTab from './UsersTab';
@@ -325,8 +325,8 @@ const AdminDashboard = () => {
                     ) : (
                       <div
                         className={`w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full ${serverStatus.active
-                            ? 'bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.6)]'
-                            : 'bg-red-400 shadow-[0_0_6px_rgba(248,113,113,0.6)]'
+                          ? 'bg-green-400 shadow-[0_0_6px_rgba(74,222,128,0.6)]'
+                          : 'bg-red-400 shadow-[0_0_6px_rgba(248,113,113,0.6)]'
                           }`}
                       />
                     )}
@@ -349,8 +349,8 @@ const AdminDashboard = () => {
                         : handleStartIntegrityCheck()
                     }
                     className={`flex items-center gap-2 px-3 py-1.5 rounded-lg sm:rounded-xl text-[9px] sm:text-[10px] font-black transition-all border shadow-sm ${isIntegrityChecking
-                        ? 'bg-amber-100 text-amber-600 border-amber-200 animate-pulse'
-                        : 'bg-white/10 text-white border-white/20 hover:bg-white/20'
+                      ? 'bg-amber-100 text-amber-600 border-amber-200 animate-pulse'
+                      : 'bg-white/10 text-white border-white/20 hover:bg-white/20'
                       }`}
                     title={
                       isIntegrityChecking
@@ -414,8 +414,8 @@ const AdminDashboard = () => {
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id)}
                         className={`py-3 sm:py-4 px-2 sm:px-4 font-bold text-[10px] sm:text-sm whitespace-nowrap flex flex-col sm:flex-row items-center gap-1 sm:gap-2 transition-all relative flex-1 sm:flex-none ${activeTab === tab.id
-                            ? 'text-indigo-600'
-                            : 'text-gray-500 hover:text-gray-900'
+                          ? 'text-indigo-600'
+                          : 'text-gray-500 hover:text-gray-900'
                           }`}
                       >
                         <tab.icon
@@ -443,163 +443,180 @@ const AdminDashboard = () => {
       {/* Integrity Check Results Modal */}
       {showIntegrityResults && integrityTask && (
         <div className="fixed inset-0 bg-indigo-950/60 backdrop-blur-md flex items-center justify-center z-[60] p-4 animate-in fade-in duration-300">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full p-8 animate-in zoom-in-95 duration-200 border border-white/20 relative">
-            <button
-              onClick={() => setShowIntegrityResults(false)}
-              className="absolute top-6 right-6 p-2 hover:bg-gray-100 rounded-xl transition-all"
-            >
-              <X className="w-5 h-5 text-gray-400" />
-            </button>
+          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-200 border border-white/20 relative">
+            {/* Header - Fixed */}
+            <div className="p-6 pb-4 border-b border-gray-100 shrink-0">
+              <button
+                onClick={() => setShowIntegrityResults(false)}
+                className="absolute top-6 right-6 p-2 hover:bg-gray-100 rounded-xl transition-all"
+              >
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
 
-            <div className="flex items-center gap-4 mb-4">
-              <div className={`p-3 rounded-2xl ${integrityTask.status === 'completed' ? 'bg-emerald-100 text-emerald-600' : integrityTask.status === 'failed' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
-                {integrityTask.status === 'completed' ? <CheckCircle size={32} /> : integrityTask.status === 'failed' ? <AlertTriangle size={32} /> : <Activity size={32} className="animate-pulse" />}
-              </div>
-              <div>
-                <h3 className="text-2xl font-black text-gray-900">Integrity Check Result</h3>
-                <p className="text-sm text-gray-500 font-bold uppercase tracking-wider">
-                  Period: {integrityTask.month}/{integrityTask.year} • Status: {integrityTask.status}
-                </p>
+              <div className="flex items-center gap-4">
+                <div className={`p-3 rounded-2xl ${integrityTask.status === 'completed' ? 'bg-emerald-100 text-emerald-600' : integrityTask.status === 'failed' ? 'bg-red-100 text-red-600' : 'bg-amber-100 text-amber-600'}`}>
+                  {integrityTask.status === 'completed' ? <CheckCircle size={32} /> : integrityTask.status === 'failed' ? <AlertTriangle size={32} /> : <Activity size={32} className="animate-pulse" />}
+                </div>
+                <div>
+                  <h3 className="text-2xl font-black text-gray-900">Integrity Check Result</h3>
+                  <p className="text-sm text-gray-500 font-bold uppercase tracking-wider">
+                    Period: {integrityTask.month}/{integrityTask.year} • Status: {integrityTask.status}
+                  </p>
+                </div>
               </div>
             </div>
 
-            {isIntegrityChecking && (
-              <div className="flex items-center gap-3 bg-amber-50 text-amber-700 p-3 rounded-xl border border-amber-100 mb-6 animate-pulse">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span className="text-xs font-black uppercase tracking-wider">Scan in Progress (Detection Phase)</span>
-              </div>
-            )}
+            {/* Scrollable Content */}
+            <div className="flex-1 overflow-y-auto p-6 sm:p-8 custom-scrollbar">
 
-            {integrityTask.results ? (
-              <div className="space-y-6">
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                  {[
-                    { label: 'Scanned', val: integrityTask.results.scanned_uploads, color: 'text-gray-900' },
-                    { label: 'Broken', val: integrityTask.results.broken_metadata, color: 'text-red-600' },
-                    { label: 'Corrupted', val: integrityTask.results.stats_corruption, color: 'text-purple-600' },
-                    { label: 'Missing', val: integrityTask.results.missing_shgs, color: 'text-amber-600' },
-                    { label: 'Wrong VO', val: integrityTask.results.wrong_assignments, color: 'text-orange-600' }
-                  ].map((res, i) => (
-                    <div key={i} className="bg-gray-50 p-3 rounded-2xl border border-gray-100 text-center">
-                      <div className={`text-lg font-black ${res.color}`}>{res.val}</div>
-                      <div className="text-[9px] font-bold text-gray-400 uppercase tracking-widest leading-tight">{res.label}</div>
-                    </div>
-                  ))}
+              {isIntegrityChecking && (
+                <div className="flex items-center gap-3 bg-amber-50 text-amber-700 p-3 rounded-xl border border-amber-100 mb-6 animate-pulse">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="text-xs font-black uppercase tracking-wider">Scan in Progress (Detection Phase)</span>
                 </div>
+              )}
 
-                {(integrityTask.results.wrong_assignments > 0 || integrityTask.results.stats_corruption > 0) && (
-                  <div className="p-4 bg-indigo-50 rounded-2xl border border-indigo-100 space-y-4">
-                    <div className="flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-3">
-                        <Wrench className="w-5 h-5 text-indigo-600 shrink-0" />
-                        <div>
-                          <span className="text-sm font-bold text-indigo-800 block">Repairable Issues Detected</span>
-                          <span className="text-[10px] text-indigo-600 font-medium">VO assignments and negative pending stats can be auto-fixed.</span>
-                        </div>
+              {integrityTask.results ? (
+                <div className="space-y-6">
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                    {[
+                      { label: 'Scanned', val: integrityTask.results.scanned_uploads, color: 'text-gray-900' },
+                      { label: 'Broken', val: integrityTask.results.broken_metadata, color: 'text-red-600' },
+                      { label: 'Corrupted', val: integrityTask.results.stats_corruption, color: 'text-purple-600' },
+                      { label: 'Missing', val: integrityTask.results.missing_shgs, color: 'text-amber-600' },
+                      { label: 'Wrong VO', val: integrityTask.results.wrong_assignments, color: 'text-orange-600' },
+                      { label: 'Deletions', val: integrityTask.proposed_fixes?.deletions?.length || 0, color: 'text-rose-600' }
+                    ].map((res, i) => (
+                      <div key={i} className="bg-gray-50 p-3 rounded-2xl border border-gray-100 text-center">
+                        <div className={`text-lg font-black ${res.color}`}>{res.val}</div>
+                        <div className="text-[9px] font-bold text-gray-400 uppercase tracking-widest leading-tight">{res.label}</div>
                       </div>
+                    ))}
+                  </div>
+
+                  {(integrityTask.results.wrong_assignments > 0 || integrityTask.results.stats_corruption > 0 || (integrityTask.proposed_fixes?.deletions?.length > 0)) && (
+                    <div className="p-4 bg-indigo-50 rounded-2xl border border-indigo-100 space-y-4">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                          <Wrench className="w-5 h-5 text-indigo-600 shrink-0" />
+                          <div>
+                            <span className="text-sm font-bold text-indigo-800 block">Repairable Issues Detected</span>
+                            <span className="text-[10px] text-indigo-600 font-medium">VO assignments and negative pending stats can be auto-fixed.</span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={handleApplyFixes}
+                          disabled={isFixing || integrityTask.status !== 'completed'}
+                          className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white text-[10px] font-black rounded-xl transition-all shadow-md shrink-0 uppercase tracking-widest"
+                        >
+                          {isFixing ? (
+                            <div className="flex items-center gap-2">
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              <span>Fixing...</span>
+                            </div>
+                          ) : 'Apply Auto-Fixes'}
+                        </button>
+                      </div>
+
+                      {fixTask && (
+                        <div className="space-y-2 pt-2 border-t border-indigo-100">
+                          <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-indigo-500">
+                            <span className="animate-pulse">{fixTask.message}</span>
+                            <span>{fixTask.progress}%</span>
+                          </div>
+                          <div className="h-1.5 w-full bg-indigo-200 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full bg-indigo-600 transition-all duration-500 ${fixTask.status === 'running' ? 'progress-shimmer' : ''}`}
+                              style={{ width: `${fixTask.progress}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Shield className="w-5 h-5 text-emerald-600" />
+                      <span className="text-sm font-bold text-emerald-800">Fixed Issues</span>
+                    </div>
+                    <span className="text-lg font-black text-emerald-600">{integrityTask.results.fixed_issues}</span>
+                  </div>
+
+                  {integrityTask.proposed_fixes && (integrityTask.proposed_fixes.vo_assignments.length > 0 || integrityTask.proposed_fixes.progress_stats.length > 0 || integrityTask.proposed_fixes.deletions?.length > 0) && (
+                    <div className="space-y-4">
                       <button
-                        onClick={handleApplyFixes}
-                        disabled={isFixing || integrityTask.status !== 'completed'}
-                        className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 text-white text-[10px] font-black rounded-xl transition-all shadow-md shrink-0 uppercase tracking-widest"
+                        onClick={() => setShowActionPlan(!showActionPlan)}
+                        className="flex items-center justify-between w-full px-4 py-3 bg-gray-50 hover:bg-gray-100 rounded-2xl border border-gray-100 transition-all group"
                       >
-                        {isFixing ? (
-                          <div className="flex items-center gap-2">
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                            <span>Fixing...</span>
-                          </div>
-                        ) : 'Apply Auto-Fixes'}
+                        <div className="flex items-center gap-3 text-gray-700">
+                          <Wrench className="w-4 h-4 text-indigo-500" />
+                          <span className="text-xs font-black uppercase tracking-widest">Proposed Action Plan (Transparency View)</span>
+                        </div>
+                        <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-300 ${showActionPlan ? 'rotate-180' : ''}`} />
                       </button>
+
+                      {showActionPlan && (
+                        <div className="max-h-64 overflow-y-auto custom-scrollbar space-y-2 animate-in slide-in-from-top-2 duration-300">
+                          {integrityTask.proposed_fixes.vo_assignments.map((fix, i) => (
+                            <div key={`vo-${i}`} className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100 text-[11px] font-medium text-indigo-900 leading-relaxed shadow-sm">
+                              <div className="flex items-center gap-2 mb-1">
+                                <Shield size={12} className="text-indigo-600" />
+                                <span className="font-black uppercase text-[9px] tracking-tight">VO Assignment Fix</span>
+                              </div>
+                              {fix.details}
+                            </div>
+                          ))}
+                          {integrityTask.proposed_fixes.progress_stats.map((fix, i) => (
+                            <div key={`stat-${i}`} className="bg-purple-50/50 p-3 rounded-xl border border-purple-100 text-[11px] font-medium text-purple-900 leading-relaxed shadow-sm">
+                              <div className="flex items-center gap-2 mb-1">
+                                <BarChart size={12} className="text-purple-600" />
+                                <span className="font-black uppercase text-[9px] tracking-tight">Stats Repair (Legacy)</span>
+                              </div>
+                              {fix.details}
+                            </div>
+                          ))}
+                          {integrityTask.proposed_fixes.deletions?.map((fix, i) => (
+                            <div key={`del-${i}`} className="bg-rose-50/50 p-3 rounded-xl border border-rose-100 text-[11px] font-medium text-rose-900 leading-relaxed shadow-sm">
+                              <div className="flex items-center gap-2 mb-1">
+                                <Trash2 size={12} className="text-rose-600" />
+                                <span className="font-black uppercase text-[9px] tracking-tight">Deletion (Corrupt Data)</span>
+                              </div>
+                              {fix.details}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
+                  )}
 
-                    {fixTask && (
-                      <div className="space-y-2 pt-2 border-t border-indigo-100">
-                        <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-indigo-500">
-                          <span className="animate-pulse">{fixTask.message}</span>
-                          <span>{fixTask.progress}%</span>
-                        </div>
-                        <div className="h-1.5 w-full bg-indigo-200 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full bg-indigo-600 transition-all duration-500 ${fixTask.status === 'running' ? 'progress-shimmer' : ''}`}
-                            style={{ width: `${fixTask.progress}%` }}
-                          ></div>
-                        </div>
+                  {integrityTask.results.errors?.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-black text-gray-700 uppercase tracking-widest ml-1">Error Logs</h4>
+                      <div className="max-h-48 overflow-y-auto custom-scrollbar bg-gray-50 rounded-2xl p-4 border border-gray-100 space-y-2">
+                        {integrityTask.results.errors.map((err, i) => (
+                          <div key={i} className="text-[11px] text-gray-600 font-medium flex items-start gap-2 bg-white p-2 rounded-lg border border-gray-100/50">
+                            <AlertCircle className="w-3 h-3 text-red-400 shrink-0 mt-0.5" />
+                            <span>{err}</span>
+                          </div>
+                        ))}
                       </div>
-                    )}
-                  </div>
-                )}
-
-                <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Shield className="w-5 h-5 text-emerald-600" />
-                    <span className="text-sm font-bold text-emerald-800">Fixed Issues</span>
-                  </div>
-                  <span className="text-lg font-black text-emerald-600">{integrityTask.results.fixed_issues}</span>
+                    </div>
+                  )}
                 </div>
+              ) : (
+                <div className="p-12 text-center">
+                  <p className="text-gray-500 font-bold">{integrityTask.message || 'Processing results...'}</p>
+                </div>
+              )}
 
-                {integrityTask.proposed_fixes && (integrityTask.proposed_fixes.vo_assignments.length > 0 || integrityTask.proposed_fixes.progress_stats.length > 0) && (
-                  <div className="space-y-4">
-                    <button
-                      onClick={() => setShowActionPlan(!showActionPlan)}
-                      className="flex items-center justify-between w-full px-4 py-3 bg-gray-50 hover:bg-gray-100 rounded-2xl border border-gray-100 transition-all group"
-                    >
-                      <div className="flex items-center gap-3 text-gray-700">
-                        <Wrench className="w-4 h-4 text-indigo-500" />
-                        <span className="text-xs font-black uppercase tracking-widest">Proposed Action Plan (Transparency View)</span>
-                      </div>
-                      <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-300 ${showActionPlan ? 'rotate-180' : ''}`} />
-                    </button>
-
-                    {showActionPlan && (
-                      <div className="max-h-64 overflow-y-auto custom-scrollbar space-y-2 animate-in slide-in-from-top-2 duration-300">
-                        {integrityTask.proposed_fixes.vo_assignments.map((fix, i) => (
-                          <div key={`vo-${i}`} className="bg-indigo-50/50 p-3 rounded-xl border border-indigo-100 text-[11px] font-medium text-indigo-900 leading-relaxed shadow-sm">
-                            <div className="flex items-center gap-2 mb-1">
-                              <Shield size={12} className="text-indigo-600" />
-                              <span className="font-black uppercase text-[9px] tracking-tight">VO Assignment Fix</span>
-                            </div>
-                            {fix.details}
-                          </div>
-                        ))}
-                        {integrityTask.proposed_fixes.progress_stats.map((fix, i) => (
-                          <div key={`stat-${i}`} className="bg-purple-50/50 p-3 rounded-xl border border-purple-100 text-[11px] font-medium text-purple-900 leading-relaxed shadow-sm">
-                            <div className="flex items-center gap-2 mb-1">
-                              <BarChart size={12} className="text-purple-600" />
-                              <span className="font-black uppercase text-[9px] tracking-tight">Stats Repair (Legacy)</span>
-                            </div>
-                            {fix.details}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {integrityTask.results.errors?.length > 0 && (
-                  <div className="space-y-2">
-                    <h4 className="text-xs font-black text-gray-700 uppercase tracking-widest ml-1">Error Logs</h4>
-                    <div className="max-h-48 overflow-y-auto custom-scrollbar bg-gray-50 rounded-2xl p-4 border border-gray-100 space-y-2">
-                      {integrityTask.results.errors.map((err, i) => (
-                        <div key={i} className="text-[11px] text-gray-600 font-medium flex items-start gap-2 bg-white p-2 rounded-lg border border-gray-100/50">
-                          <AlertCircle className="w-3 h-3 text-red-400 shrink-0 mt-0.5" />
-                          <span>{err}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="p-12 text-center">
-                <p className="text-gray-500 font-bold">{integrityTask.message || 'Processing results...'}</p>
-              </div>
-            )}
-
-            <button
-              onClick={() => setShowIntegrityResults(false)}
-              className="w-full mt-8 px-6 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black transition-all shadow-lg shadow-indigo-200"
-            >
-              Close Results
-            </button>
+              <button
+                onClick={() => setShowIntegrityResults(false)}
+                className="w-full mt-4 px-6 py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-black transition-all shadow-lg shadow-indigo-200"
+              >
+                Close Results
+              </button>
+            </div>
           </div>
         </div>
       )}
