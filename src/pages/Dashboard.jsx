@@ -404,7 +404,6 @@ const AdminDashboard = () => {
                   {[
                     { id: 'dashboard', label: 'Dashboard', icon: BarChart },
                     { id: 'users', label: 'Users', icon: Users },
-                    { id: 'hierarchy', label: 'Hierarchy', icon: Shield },
                     { id: 'validation', label: 'OCR Validation', icon: CheckCircle, developerOnly: true },
                     { id: 'reports', label: 'Reports', icon: FileText, developerOnly: true }
                   ]
