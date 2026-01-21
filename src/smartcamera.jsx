@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Camera, X, AlertTriangle, CheckCircle, Loader, RotateCw, Crop, RefreshCw, Image as ImageIcon, ChevronDown, ChevronUp } from "lucide-react";
-import { scanDocument, canvasToFile, rotateCanvas, cropCanvas, warpPerspective } from "./utils/documentScanner";
+import { Camera, X, AlertTriangle, CheckCircle, Loader, RotateCw, Crop, RefreshCw, Image as ImageIcon, ChevronDown, ChevronUp, Wand } from "lucide-react";
+import { scanDocument, canvasToFile, rotateCanvas, cropCanvas, warpPerspective, enhanceImage } from "./utils/documentScanner";
 
 const SmartCamera = ({ open, onClose, onCapture }) => {
     const videoRef = useRef(null);
@@ -24,7 +24,7 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
         br: { x: 80, y: 80 }
     });
 
-    const [draggingCorner, setDraggingCorner] = useState(null);
+    const [dragState, setDragState] = useState(null);
     const imageContainerRef = useRef(null);
     const [expandedSection, setExpandedSection] = useState("overview");
     const [cameraError, setCameraError] = useState(null);
@@ -86,34 +86,73 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
         }
     }, [showCropEditor]);
 
-    const handleTouchStart = (corner, e) => {
+    const handleTouchStart = (handle, e) => {
         e.preventDefault();
-        setDraggingCorner(corner);
-    };
+        e.stopPropagation();
 
-    const handleTouchMove = (e) => {
-        if (!draggingCorner || !imageContainerRef.current) return;
-        e.preventDefault();
-
-        const rect = imageContainerRef.current.getBoundingClientRect();
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
 
-        // Calculate 0-100 coordinate
-        let x = ((clientX - rect.left) / rect.width) * 100;
-        let y = ((clientY - rect.top) / rect.height) * 100;
+        setDragState({
+            handle,
+            startX: clientX,
+            startY: clientY,
+            initialCropPoints: { ...cropPoints }
+        });
+    };
 
-        x = Math.max(0, Math.min(100, x));
-        y = Math.max(0, Math.min(100, y));
+    const handleTouchMove = (e) => {
+        if (!dragState || !imageContainerRef.current) return;
+        e.preventDefault();
+        e.stopPropagation();
 
-        setCropPoints(prev => ({
-            ...prev,
-            [draggingCorner]: { x, y }
-        }));
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+        const rect = imageContainerRef.current.getBoundingClientRect();
+
+        // Calculate Delta in Percentage
+        const deltaX = ((clientX - dragState.startX) / rect.width) * 100;
+        const deltaY = ((clientY - dragState.startY) / rect.height) * 100;
+
+        const newPoints = { ...dragState.initialCropPoints };
+        const { handle } = dragState;
+
+        // Helper to update a point
+        const updatePoint = (key, dx, dy) => {
+            newPoints[key] = {
+                x: Math.max(0, Math.min(100, newPoints[key].x + dx)),
+                y: Math.max(0, Math.min(100, newPoints[key].y + dy))
+            };
+        };
+
+        // Apply delta based on handle type (corner or edge)
+        if (handle === 'tl') updatePoint('tl', deltaX, deltaY);
+        else if (handle === 'tr') updatePoint('tr', deltaX, deltaY);
+        else if (handle === 'bl') updatePoint('bl', deltaX, deltaY);
+        else if (handle === 'br') updatePoint('br', deltaX, deltaY);
+        else if (handle === 'top') {
+            updatePoint('tl', deltaX, deltaY);
+            updatePoint('tr', deltaX, deltaY);
+        }
+        else if (handle === 'right') {
+            updatePoint('tr', deltaX, deltaY);
+            updatePoint('br', deltaX, deltaY);
+        }
+        else if (handle === 'bottom') {
+            updatePoint('bl', deltaX, deltaY);
+            updatePoint('br', deltaX, deltaY);
+        }
+        else if (handle === 'left') {
+            updatePoint('tl', deltaX, deltaY);
+            updatePoint('bl', deltaX, deltaY);
+        }
+
+        setCropPoints(newPoints);
     };
 
     const handleTouchEnd = () => {
-        setDraggingCorner(null);
+        setDragState(null);
     };
 
     const handleApplyPerspectiveCrop = async () => {
@@ -172,6 +211,33 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
         }
     };
 
+    // New Flip Function
+    const handleFlip = async () => {
+        if (!capturedImageData) return;
+        setIsCapturing(true);
+        try {
+            const image = new Image();
+            image.src = capturedImageData;
+            await new Promise(r => image.onload = r);
+
+            const canvas = document.createElement('canvas');
+            canvas.width = image.width;
+            canvas.height = image.height;
+            const ctx = canvas.getContext('2d');
+
+            // Flip Horizontal
+            ctx.translate(canvas.width, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(image, 0, 0);
+
+            setCapturedImageData(canvas.toDataURL('image/jpeg'));
+        } catch (e) {
+            console.error("Flip error:", e);
+        } finally {
+            setIsCapturing(false);
+        }
+    };
+
     const handleCameraCapture = async () => {
         if (!videoRef.current || !canvasRef.current) return;
         setIsCapturing(true);
@@ -210,7 +276,7 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
 
             setIsCapturing(false);
         } catch (err) {
-            alert(`Error processing image: ${err.message}`);
+            alert(`Error processing image: ${err.message} `);
             setIsCapturing(false);
         }
     };
@@ -245,6 +311,9 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
         onClose();
     };
 
+    // Helper for Edge Midpoints
+    const getMid = (p1, p2) => ({ x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 });
+
     if (!open) return null;
 
     return createPortal(
@@ -265,6 +334,7 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
                                     src={capturedImageData}
                                     className="max-w-full max-h-[70vh] w-auto h-auto object-contain pointer-events-none shadow-xl border border-white/10"
                                     alt="To Crop"
+                                    style={{ touchAction: 'none' }}
                                 />
 
                                 {/* SVG Perspective Overlay */}
@@ -274,7 +344,7 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
                                             <mask id="cropMask">
                                                 <rect width="100" height="100" fill="white" />
                                                 <polygon
-                                                    points={`${cropPoints.tl.x} ${cropPoints.tl.y}, ${cropPoints.tr.x} ${cropPoints.tr.y}, ${cropPoints.br.x} ${cropPoints.br.y}, ${cropPoints.bl.x} ${cropPoints.bl.y}`}
+                                                    points={`${cropPoints.tl.x} ${cropPoints.tl.y}, ${cropPoints.tr.x} ${cropPoints.tr.y}, ${cropPoints.br.x} ${cropPoints.br.y}, ${cropPoints.bl.x} ${cropPoints.bl.y} `}
                                                     fill="black"
                                                 />
                                             </mask>
@@ -285,7 +355,7 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
 
                                         {/* Connector Lines */}
                                         <polygon
-                                            points={`${cropPoints.tl.x} ${cropPoints.tl.y}, ${cropPoints.tr.x} ${cropPoints.tr.y}, ${cropPoints.br.x} ${cropPoints.br.y}, ${cropPoints.bl.x} ${cropPoints.bl.y}`}
+                                            points={`${cropPoints.tl.x} ${cropPoints.tl.y}, ${cropPoints.tr.x} ${cropPoints.tr.y}, ${cropPoints.br.x} ${cropPoints.br.y}, ${cropPoints.bl.x} ${cropPoints.bl.y} `}
                                             fill="none"
                                             stroke="#3b82f6"
                                             strokeWidth="0.8"
@@ -294,16 +364,33 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
                                     </svg>
                                 </div>
 
-                                {/* Drag Handles */}
+                                {/* Drag Handles - Corners */}
                                 {['tl', 'tr', 'bl', 'br'].map(corner => (
                                     <div
                                         key={corner}
-                                        className="absolute w-10 h-10 -ml-5 -mt-5 bg-blue-600 border-2 border-white rounded-full shadow-lg z-30"
-                                        style={{ left: `${cropPoints[corner].x}%`, top: `${cropPoints[corner].y}%` }}
+                                        className="absolute w-8 h-8 -ml-4 -mt-4 bg-blue-600 border-2 border-white rounded-full shadow-lg z-30 flex items-center justify-center"
+                                        style={{ left: `${cropPoints[corner].x}% `, top: `${cropPoints[corner].y}% `, cursor: 'move' }}
                                         onMouseDown={e => handleTouchStart(corner, e)}
                                         onTouchStart={e => handleTouchStart(corner, e)}
                                     />
                                 ))}
+
+                                {/* Drag Handles - Edges */}
+                                {[
+                                    { id: 'top', pos: getMid(cropPoints.tl, cropPoints.tr) },
+                                    { id: 'right', pos: getMid(cropPoints.tr, cropPoints.br) },
+                                    { id: 'bottom', pos: getMid(cropPoints.bl, cropPoints.br) },
+                                    { id: 'left', pos: getMid(cropPoints.tl, cropPoints.bl) }
+                                ].map(edge => (
+                                    <div
+                                        key={edge.id}
+                                        className="absolute w-6 h-6 -ml-3 -mt-3 bg-white/90 border border-blue-600 rounded-full shadow-md z-20"
+                                        style={{ left: `${edge.pos.x}% `, top: `${edge.pos.y}% `, cursor: 'move' }}
+                                        onMouseDown={e => handleTouchStart(edge.id, e)}
+                                        onTouchStart={e => handleTouchStart(edge.id, e)}
+                                    />
+                                ))}
+
                             </div>
                         ) : (
                             <div className="relative w-full h-full flex items-center justify-center">
@@ -352,6 +439,10 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
                                         <div className="p-4 bg-gray-700 rounded-2xl"><RotateCw size={24} /></div>
                                         <span className="text-xs font-semibold">Rotate</span>
                                     </button>
+                                    <button onClick={handleFlip} className="flex flex-col items-center gap-2 text-gray-400 hover:text-white transition">
+                                        <div className="p-4 bg-gray-700 rounded-2xl"><RefreshCw size={24} className="rotate-90" /></div>
+                                        <span className="text-xs font-semibold">Flip</span>
+                                    </button>
                                     <button onClick={() => { setCapturedImageData(null); setShowValidationModal(false); }} className="flex flex-col items-center gap-2 text-gray-400 hover:text-white transition">
                                         <div className="p-4 bg-gray-700 rounded-2xl"><RefreshCw size={24} /></div>
                                         <span className="text-xs font-semibold">Retake</span>
@@ -360,8 +451,8 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
                                 <button
                                     onClick={handleUploadDocument}
                                     disabled={!validationResult?.isValid || isCapturing}
-                                    className={`w-full py-4 rounded-2xl font-bold text-lg shadow-lg active:scale-[0.98] transition-all ${validationResult?.isValid ? 'bg-gradient-to-r from-emerald-500 to-green-600 text-white' : 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                                        }`}
+                                    className={`w - full py - 4 rounded - 2xl font - bold text - lg shadow - lg active: scale - [0.98] transition - all ${validationResult?.isValid ? 'bg-gradient-to-r from-emerald-500 to-green-600 text-white' : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                                        } `}
                                 >
                                     {validationResult?.isValid ? 'Confirm & Upload' : 'Fix Issues to Upload'}
                                 </button>

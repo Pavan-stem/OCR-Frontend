@@ -86,8 +86,8 @@ const detectEdgesOpenCV = (src) => {
 
             sortedPts[0] = pts[sum.indexOf(Math.min(...sum))]; // TL
             sortedPts[2] = pts[sum.indexOf(Math.max(...sum))]; // BR
-            sortedPts[1] = pts[diff.indexOf(Math.min(...diff))]; // TR
-            sortedPts[3] = pts[diff.indexOf(Math.max(...diff))]; // BL
+            sortedPts[1] = pts[diff.indexOf(Math.max(...diff))]; // TR (Max diff: High X - Low Y)
+            sortedPts[3] = pts[diff.indexOf(Math.min(...diff))]; // BL (Min diff: Low X - High Y)
 
             const rect = window.cv.boundingRect(approx);
             documentBounds = {
@@ -127,6 +127,181 @@ const detectEdgesOpenCV = (src) => {
 };
 
 /**
+ * Detect Artificial Borders (Black Padding)
+ */
+const detectArtificialBorders = (src) => {
+    const data = src.data;
+    let darkCount = 0;
+    const step = 10;
+    let sampledTotal = 0;
+
+    for (let i = 0; i < data.length; i += step * 4) {
+        sampledTotal++;
+        // Use threshold for "near black" to handle compression
+        if (data[i] < 20 && data[i + 1] < 20 && data[i + 2] < 20) {
+            darkCount++;
+        }
+    }
+
+    const darkRatio = darkCount / sampledTotal;
+    return darkRatio > 0.20; // 20% dark pixels is common in screenshots
+};
+
+/**
+ * Detect Mobile UI Patterns
+ */
+const detectUIPatterns = (src) => {
+    const rows = src.rows;
+    const cols = src.cols;
+
+    // Mobile screenshots often have very specific aspect ratios (e.g., 9:19.5, 9:20)
+    const aspectRatio = rows / cols;
+    if (aspectRatio > 2.0 || aspectRatio < 0.5) {
+        // Very tall or very wide images are often screenshots
+        return true;
+    }
+
+    const regions = [
+        src.roi(new window.cv.Rect(0, 0, cols, Math.floor(rows * 0.1))),
+        src.roi(new window.cv.Rect(0, rows - Math.floor(rows * 0.1), cols, Math.floor(rows * 0.1)))
+    ];
+
+    let isUI = false;
+    regions.forEach(region => {
+        const gray = new window.cv.Mat();
+        window.cv.cvtColor(region, gray, window.cv.COLOR_RGBA2GRAY);
+        const edges = new window.cv.Mat();
+        window.cv.Sobel(gray, edges, window.cv.CV_8U, 0, 1, 3);
+        const mean = window.cv.mean(edges)[0];
+        gray.delete();
+        edges.delete();
+        if (mean > 30) isUI = true;
+    });
+
+    regions[0].delete();
+    regions[1].delete();
+    return isUI;
+};
+
+/**
+ * Detect Recursive Nesting
+ */
+const detectRecursiveNesting = (src) => {
+    const gray = new window.cv.Mat();
+    const blurred = new window.cv.Mat();
+    const edges = new window.cv.Mat();
+    const contours = new window.cv.MatVector();
+    const hierarchy = new window.cv.Mat();
+
+    window.cv.cvtColor(src, gray, window.cv.COLOR_RGBA2GRAY, 0);
+    window.cv.GaussianBlur(gray, blurred, new window.cv.Size(5, 5), 0);
+    window.cv.Canny(blurred, edges, 50, 150);
+    window.cv.findContours(edges, contours, hierarchy, window.cv.RETR_TREE, window.cv.CHAIN_APPROX_SIMPLE);
+
+    let rectAreas = [];
+    const imgArea = src.rows * src.cols;
+
+    for (let i = 0; i < contours.size(); ++i) {
+        const contour = contours.get(i);
+        const area = window.cv.contourArea(contour);
+        if (area > imgArea * 0.02) { // Even smaller nested rects
+            const peri = window.cv.arcLength(contour, true);
+            const approx = new window.cv.Mat();
+            window.cv.approxPolyDP(contour, approx, 0.02 * peri, true);
+            if (approx.rows === 4) {
+                rectAreas.push(area);
+            }
+            approx.delete();
+        }
+    }
+
+    gray.delete();
+    blurred.delete();
+    edges.delete();
+    contours.delete();
+    hierarchy.delete();
+
+    // If we have several large-ish rectangles, it's likely a UI frame
+    return rectAreas.length >= 4;
+};
+
+/**
+ * Detect Lighting Conditions (Brightness & Contrast)
+ */
+const detectLightingOpenCV = (src) => {
+    const gray = new window.cv.Mat();
+    window.cv.cvtColor(src, gray, window.cv.COLOR_RGBA2GRAY, 0);
+
+    const meanStdDev = new window.cv.Mat();
+    const stdDev = new window.cv.Mat();
+    window.cv.meanStdDev(gray, meanStdDev, stdDev);
+
+    const brightness = meanStdDev.data64F[0];
+    const contrast = stdDev.data64F[0];
+
+    gray.delete();
+    meanStdDev.delete();
+    stdDev.delete();
+
+    let status = 'good';
+    const issues = [];
+
+    if (brightness < 60) {
+        status = 'poor';
+        issues.push("Lighting is too dark. Please add more light.");
+    } else if (brightness > 200) {
+        status = 'poor';
+        issues.push("Lighting is too bright/glaring.");
+    }
+
+    if (contrast < 30) {
+        status = 'poor';
+        issues.push("Low contrast. Ensure document stands out from background.");
+    }
+
+    return { status, brightness, contrast, issues };
+};
+
+/**
+ * Check for Partial Capture (Edges touching boundaries)
+ */
+const detectPartialScan = (contourPoints, width, height) => {
+    const margin = 5; // Pixels
+    const touching = contourPoints.some(p =>
+        p.x < margin || p.x > width - margin ||
+        p.y < margin || p.y > height - margin
+    );
+    return touching;
+};
+
+/**
+ * Image Enhancement (Auto Contrast + Denoise)
+ */
+export const enhanceImage = (canvas) => {
+    if (!cvReady()) return canvas;
+
+    const src = window.cv.imread(canvas);
+    const dst = new window.cv.Mat();
+
+    // Convert to gray
+    window.cv.cvtColor(src, src, window.cv.COLOR_RGBA2GRAY, 0);
+
+    // Denoise
+    window.cv.GaussianBlur(src, src, new window.cv.Size(3, 3), 0);
+
+    // Adaptive Threshold (Scanned Look)
+    window.cv.adaptiveThreshold(src, dst, 255, window.cv.ADAPTIVE_THRESH_GAUSSIAN_C, window.cv.THRESH_BINARY, 11, 2);
+
+    // Output
+    window.cv.imshow(outputCanvas, dst);
+
+    src.delete();
+    dst.delete();
+    return canvas;
+};
+
+
+/**
  * Main Scan Function (Hybrid: JS fallback if OpenCV not loaded)
  */
 export const scanDocument = async (file) => {
@@ -160,21 +335,41 @@ export const scanDocument = async (file) => {
                 let cropResult = null;
                 let isBlurry = false;
                 let tableDetected = false;
+                let lightingRes = { status: 'unknown' };
+                let isPartial = false;
+                let invalidObject = false;
+                let isScreenshot = false;
 
                 // --- OpenCV Processing ---
                 if (cvReady()) {
                     console.log("🧠 OpenCV is ready. Starting analysis...");
                     const src = window.cv.imread(canvas);
 
-                    // 1. Blur Detection
+                    // 1. Screenshot & UI Detection (High Sensitivity)
+                    const uiDetected = detectUIPatterns(src);
+                    const nestedDetected = detectRecursiveNesting(src);
+                    const artificialBorders = detectArtificialBorders(src);
+
+                    if (uiDetected || nestedDetected || artificialBorders) {
+                        isScreenshot = true;
+                        issues.push("Capture error: This looks like a screenshot. Please capture a live photo of the paper document.");
+                    }
+
+                    // 2. Blur Detection
                     const blurVar = detectBlurOpenCV(src);
                     console.log("Blur Variance:", blurVar);
-                    if (blurVar < 100) { // Threshold
-                        issues.push("Image is blurry (Score: " + Math.round(blurVar) + "). Please hold steady.");
+                    if (blurVar < 70) {
+                        issues.push("Image is blurry. Please hold steady.");
                         isBlurry = true;
                     }
 
-                    // 2. Edge/Table Detection
+                    // 3. Lighting Detection
+                    lightingRes = detectLightingOpenCV(src);
+                    if (lightingRes.status === 'poor') {
+                        issues.push(...lightingRes.issues);
+                    }
+
+                    // 4. Edge/Table Detection
                     const edgeRes = detectEdgesOpenCV(src);
 
                     if (edgeRes.detected) {
@@ -183,13 +378,29 @@ export const scanDocument = async (file) => {
                             originalDimensions: { width, height }
                         };
                         tableDetected = true; // Assuming the largest rect is the table/document
+
+                        // 5. Partial Capture Detection
+                        isPartial = detectPartialScan(edgeRes.bounds.contourPoints, width, height);
+                        if (isPartial) {
+                            issues.push("Document edges are cut off. Please backup.");
+                        }
+
+                        // 6. Wrong Object / Geometry Check
+                        // Aspect ratio check (Documents usually 0.5 to 2.0)
+                        const ar = edgeRes.bounds.width / edgeRes.bounds.height;
+                        if (ar < 0.2 || ar > 5.0) {
+                            issues.push("Invalid document shape detected.");
+                            invalidObject = true;
+                            tableDetected = false;
+                        }
+
                     } else {
-                        issues.push("No document/table detected. Please capture the full page.");
+                        issues.push("No document detected. Scan a full page.");
                     }
 
                     // table/document detection logic
-                    if (edgeRes.maxArea < (width * height * 0.2)) {
-                        issues.push("Object too small. Please move closer.");
+                    if (edgeRes.maxArea < (width * height * 0.15)) {
+                        issues.push("Document too small. Please move closer.");
                         tableDetected = false;
                     }
 
@@ -197,7 +408,7 @@ export const scanDocument = async (file) => {
                 } else {
                     console.warn("⚠️ OpenCV not loaded. Falling back to basic JS checks.");
                     // Fallback to basic checks (simplified for brevity as we prioritize OpenCV)
-                    if (width < 500 || height < 500) issues.push("Image resolution too low.");
+                    if (width < 500 || height < 500) issues.push("Resolution too low.");
                 }
 
                 // Return Result
@@ -205,10 +416,11 @@ export const scanDocument = async (file) => {
                     isValid: issues.length === 0, // strict validation: 0 issues allowed
                     issues: issues,
                     validations: {
-                        blur: { isBlurry },
-                        lighting: { quality: 'good' }, // Placeholder
-                        edges: { detected: !!cropResult },
+                        blur: { isBlurry, score: 0 }, // Score todo
+                        lighting: lightingRes,
+                        edges: { detected: !!cropResult, isPartial },
                         table: { detected: tableDetected },
+                        object: { valid: !invalidObject, isScreenshot },
                         text: { textPresent: true }
                     },
                     crop: cropResult,
@@ -216,7 +428,8 @@ export const scanDocument = async (file) => {
                     summary: {
                         totalIssues: issues.length,
                         documentDetected: !!cropResult,
-                        tableDetected: tableDetected
+                        tableDetected: tableDetected,
+                        isScreenshot
                     }
                 });
 
