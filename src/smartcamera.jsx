@@ -37,10 +37,30 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
         const initCamera = async () => {
             try {
                 stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } }
+                    video: {
+                        facingMode: { ideal: "environment" },
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    }
                 });
+
                 if (videoRef.current) {
                     videoRef.current.srcObject = stream;
+
+                    // Attempt to play and handle any auto-play restrictions
+                    try {
+                        await videoRef.current.play();
+                        setIsCameraActive(true);
+                        setCameraError(null);
+                    } catch (playError) {
+                        console.warn("Auto-play blocked or failed, waiting for metadata:", playError);
+                        videoRef.current.onloadedmetadata = () => {
+                            setIsCameraActive(true);
+                            setCameraError(null);
+                        };
+                    }
+                } else {
+                    // Fallback
                     setIsCameraActive(true);
                     setCameraError(null);
                 }
@@ -308,6 +328,8 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
         setShowValidationModal(false);
         setShowCropEditor(false);
         setIsCapturing(false);
+        setIsCameraActive(false);
+        setCameraError(null);
         onClose();
     };
 
@@ -464,16 +486,27 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
                 <>
                     <div className="flex-1 relative bg-black flex flex-col">
                         <div className="flex-1 relative overflow-hidden">
-                            {isCameraActive ? (
-                                <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-contain" />
-                            ) : (
+                            <video
+                                ref={videoRef}
+                                autoPlay
+                                playsInline
+                                muted
+                                className={`absolute inset-0 w-full h-full object-contain ${!isCameraActive ? 'hidden' : ''}`}
+                            />
+
+                            {!isCameraActive && (
                                 <div className="flex items-center justify-center h-full text-white/50">
                                     {cameraError ? (
                                         <div className="text-center p-8">
                                             <AlertTriangle size={64} className="mx-auto mb-4 text-red-500" />
                                             <p className="text-lg font-medium">{cameraError}</p>
                                         </div>
-                                    ) : <Loader className="animate-spin" size={48} />}
+                                    ) : (
+                                        <div className="flex flex-col items-center gap-4">
+                                            <Loader className="animate-spin" size={48} />
+                                            <p className="text-sm font-medium animate-pulse">Initializing Camera...</p>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
