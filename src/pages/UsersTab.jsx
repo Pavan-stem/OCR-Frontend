@@ -108,6 +108,17 @@ const UsersTab = ({ filterProps }) => {
   const [isConnected, setIsConnected] = useState(true);
   const [updatingMaintenance, setUpdatingMaintenance] = useState(false);
   const [isMaintenanceCollapsed, setIsMaintenanceCollapsed] = useState(true);
+  const [expandedRows, setExpandedRows] = useState(new Set());
+
+  const toggleRow = (userId) => {
+    const newExpanded = new Set(expandedRows);
+    if (newExpanded.has(userId)) {
+      newExpanded.delete(userId);
+    } else {
+      newExpanded.add(userId);
+    }
+    setExpandedRows(newExpanded);
+  };
 
   // Check if logged in user is a developer
   const [isLoggedInDev, setIsLoggedInDev] = useState(false);
@@ -1068,115 +1079,138 @@ const UsersTab = ({ filterProps }) => {
                     const isDev = roleLower.includes('developer');
                     const isAdmin = roleLower.includes('admin') && !isDev;
                     const isVO = roleLower.startsWith('vo') || roleLower === 'none' || !user.role;
+                    const isExpanded = expandedRows.has(user._id);
 
-                    return (
-                      <tr key={user._id} className="hover:bg-indigo-50/30 transition-all group">
-                        <td className="px-4 sm:px-8 py-5 whitespace-nowrap">
-                          <div className="flex items-center gap-3 sm:gap-4">
-                            <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg transition-transform group-hover:scale-110 ${isDev
-                              ? 'bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-amber-100'
-                              : isAdmin
-                                ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-indigo-100'
-                                : 'bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-blue-100'
-                              }`}>
-                              {isDev ? <Lock className="w-5 h-5 sm:w-6 sm:h-6" /> : isAdmin ? <Shield className="w-5 h-5 sm:w-6 sm:h-6" /> : <User className="w-5 h-5 sm:w-6 sm:h-6" />}
-                            </div>
-                            <div>
-                              <div
-                                className="text-sm font-black text-gray-900 leading-tight cursor-pointer hover:underline flex items-center gap-2"
-                                onClick={() => isVO && handleViewUserUploads(user)}
-                              >
-                                {user.voName}
-                                {user.isOnline && (
-                                  <span className="flex h-2 w-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse" title="Online"></span>
-                                )}
+                    const renderUserRow = (u, isNested = false) => {
+                      const uRoleLower = (u.role || '').toLowerCase();
+                      const uIsDev = uRoleLower.includes('developer');
+                      const uIsAdmin = uRoleLower.includes('admin') && !uIsDev;
+                      const uIsVO = uRoleLower.startsWith('vo') || uRoleLower === 'none' || !u.role;
+
+                      return (
+                        <tr key={u._id} className={`hover:bg-indigo-50/30 transition-all group ${isNested ? 'bg-gray-50/50' : ''}`}>
+                          <td className="px-4 sm:px-8 py-5 whitespace-nowrap">
+                            <div className="flex items-center gap-3 sm:gap-4">
+                              {u.isHierarchical && (
+                                <button
+                                  onClick={() => toggleRow(u._id)}
+                                  className="p-1.5 hover:bg-indigo-100 rounded-xl transition-all text-indigo-600"
+                                >
+                                  <ChevronRight className={`w-5 h-5 transition-transform duration-300 ${isExpanded ? 'rotate-90' : ''}`} />
+                                </button>
+                              )}
+                              {isNested && <div className="ml-8 w-px h-10 bg-indigo-100 hidden sm:block"></div>}
+                              <div className={`${isNested ? 'w-8 h-8 sm:w-10 sm:h-10' : 'w-10 h-10 sm:w-12 sm:h-12'} rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg transition-transform group-hover:scale-110 ${uIsDev
+                                ? 'bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-amber-100'
+                                : uIsAdmin
+                                  ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-indigo-100'
+                                  : 'bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-blue-100'
+                                }`}>
+                                {uIsDev ? <Lock className={isNested ? "w-4 h-4" : "w-5 h-5 sm:w-6 sm:h-6"} /> : uIsAdmin ? <Shield className={isNested ? "w-4 h-4" : "w-5 h-5 sm:w-6 sm:h-6"} /> : <User className={isNested ? "w-4 h-4" : "w-5 h-5 sm:w-6 sm:h-6"} />}
                               </div>
-                              <div className="flex flex-col mt-0.5">
-                                {isVO && user.voID && (
-                                  <span className="text-[10px] font-black text-indigo-600 uppercase tracking-tighter">ID: {user.voID}</span>
-                                )}
-                                <div className="flex items-center gap-1 mt-0.5">
-                                  <Clock className="w-2.5 h-2.5 text-gray-400" />
-                                  <span className="text-[9px] font-bold text-gray-400 uppercase">Active: {formatLastActive(user.lastActiveAt)}</span>
+                              <div>
+                                <div
+                                  className={`${isNested ? 'text-xs' : 'text-sm'} font-black text-gray-900 leading-tight cursor-pointer hover:underline flex items-center gap-2`}
+                                  onClick={() => uIsVO && handleViewUserUploads(u)}
+                                >
+                                  {u.voName}
+                                  {u.isOnline && (
+                                    <span className="flex h-2 w-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse" title="Online"></span>
+                                  )}
+                                </div>
+                                <div className="flex flex-col mt-0.5">
+                                  {uIsVO && u.voID && (
+                                    <span className="text-[10px] font-black text-indigo-600 uppercase tracking-tighter">ID: {u.voID}</span>
+                                  )}
+                                  <div className="flex items-center gap-1 mt-0.5">
+                                    <Clock className="w-2.5 h-2.5 text-gray-400" />
+                                    <span className="text-[9px] font-bold text-gray-400 uppercase">Active: {formatLastActive(u.lastActiveAt)}</span>
+                                  </div>
                                 </div>
                               </div>
                             </div>
-                          </div>
-                        </td>
-                        <td className="px-4 sm:px-8 py-5 whitespace-nowrap">
-                          <span className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider shadow-sm ${isDev
-                            ? 'bg-amber-100 text-amber-700 border border-amber-200'
-                            : isAdmin
-                              ? 'bg-purple-100 text-purple-700 border border-purple-200'
-                              : 'bg-blue-100 text-blue-700 border border-blue-200'
-                            }`}>
-                            {user.role}
-                          </span>
-                        </td>
-                        <td className="px-4 sm:px-8 py-5">
-                          <div className="flex items-start gap-3">
-                            <div className="bg-gray-100 p-1.5 rounded-lg mt-0.5">
-                              <MapPin className="w-3.5 h-3.5 text-gray-500" />
-                            </div>
-                            <div className="text-xs">
-                              {user.village && <div className="font-black text-gray-800 uppercase tracking-tight">{user.village}</div>}
-                              <div className="text-gray-500 font-bold">{user.mandal}, {user.district}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 sm:px-8 py-5 text-center">
-                          {!isVO || isDev || isAdmin ? (
-                            <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest italic">Administrative Access</span>
-                          ) : (
-                            <div className="flex justify-center gap-6">
-                              <div className="text-center group/metric">
-                                <div className="text-base sm:text-lg font-black text-green-600 leading-none group-hover/metric:scale-110 transition-transform">{user.uploadedFiles || 0}</div>
-                                <div className="text-[9px] font-black text-gray-400 uppercase mt-1">Uploaded</div>
+                          </td>
+                          <td className="px-4 sm:px-8 py-5 whitespace-nowrap">
+                            <span className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider shadow-sm ${uIsDev
+                              ? 'bg-amber-100 text-amber-700 border border-amber-200'
+                              : uIsAdmin
+                                ? 'bg-purple-100 text-purple-700 border border-purple-200'
+                                : 'bg-blue-100 text-blue-700 border border-blue-200'
+                              }`}>
+                              {u.role}
+                            </span>
+                          </td>
+                          <td className="px-4 sm:px-8 py-5">
+                            <div className="flex items-start gap-3">
+                              <div className="bg-gray-100 p-1.5 rounded-lg mt-0.5">
+                                <MapPin className="w-3.5 h-3.5 text-gray-500" />
                               </div>
-                              <div className="text-center group/metric">
-                                <div className="text-base sm:text-lg font-black text-orange-600 leading-none group-hover/metric:scale-110 transition-transform">{user.pendingFiles || 0}</div>
-                                <div className="text-[8px] sm:text-[9px] font-black text-gray-400 uppercase mt-1">Pending</div>
-                              </div>
-                              <div className="text-center group/metric border-l border-gray-100 pl-4 sm:pl-6">
-                                <div className="text-base sm:text-lg font-black text-gray-900 leading-none group-hover/metric:scale-110 transition-transform">{user.totalFiles || 0}</div>
-                                <div className="text-[8px] sm:text-[9px] font-black text-gray-400 uppercase mt-1">Total</div>
+                              <div className="text-xs">
+                                {u.village && <div className="font-black text-gray-800 uppercase tracking-tight">{u.village}</div>}
+                                <div className="text-gray-500 font-bold">{u.mandal}, {u.district}</div>
                               </div>
                             </div>
-                          )}
-                        </td>
-                        <td className="px-4 sm:px-8 py-5 whitespace-nowrap text-right">
-                          <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button
-                              onClick={() => {
-                                setSelectedUserId(user._id);
-                                setSelectedUserName(user.voName);
-                                setActiveTab('conversion');
-                              }}
-                              className="p-2.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-xl transition-all shadow-sm"
-                              title="View Converted SHGs"
-                            >
-                              <Eye className="w-4.5 h-4.5" />
-                            </button>
-                            <button
-                              onClick={() => openEditModal(user)}
-
-                              className="p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all shadow-sm"
-                              title="Edit User"
-                            >
-                              <Edit className="w-4.5 h-4.5" />
-                            </button>
-                            {(!isDev || isLoggedInDev) && (
-                              <button
-                                onClick={() => handleDeleteUser(user._id)}
-                                className="p-2.5 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white rounded-xl transition-all shadow-sm"
-                                title="Delete User"
-                              >
-                                <Trash2 className="w-4.5 h-4.5" />
-                              </button>
+                          </td>
+                          <td className="px-4 sm:px-8 py-5 text-center">
+                            {!uIsVO || uIsDev || uIsAdmin ? (
+                              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest italic">Administrative Access</span>
+                            ) : (
+                              <div className="flex justify-center gap-6">
+                                <div className="text-center group/metric">
+                                  <div className="text-base sm:text-lg font-black text-green-600 leading-none group-hover/metric:scale-110 transition-transform">{u.uploadedFiles || 0}</div>
+                                  <div className="text-[9px] font-black text-gray-400 uppercase mt-1">Uploaded</div>
+                                </div>
+                                <div className="text-center group/metric">
+                                  <div className="text-base sm:text-lg font-black text-orange-600 leading-none group-hover/metric:scale-110 transition-transform">{u.pendingFiles || 0}</div>
+                                  <div className="text-[8px] sm:text-[9px] font-black text-gray-400 uppercase mt-1">Pending</div>
+                                </div>
+                                <div className="text-center group/metric border-l border-gray-100 pl-4 sm:pl-6">
+                                  <div className="text-base sm:text-lg font-black text-gray-900 leading-none group-hover/metric:scale-110 transition-transform">{u.totalFiles || 0}</div>
+                                  <div className="text-[8px] sm:text-[9px] font-black text-gray-400 uppercase mt-1">Total</div>
+                                </div>
+                              </div>
                             )}
-                          </div>
-                        </td>
-                      </tr>
+                          </td>
+                          <td className="px-4 sm:px-8 py-5 whitespace-nowrap text-right">
+                            <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => {
+                                  setSelectedUserId(u._id);
+                                  setSelectedUserName(u.voName);
+                                  setActiveTab('conversion');
+                                }}
+                                className="p-2.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-xl transition-all shadow-sm"
+                                title="View Converted SHGs"
+                              >
+                                <Eye className="w-4.5 h-4.5" />
+                              </button>
+                              <button
+                                onClick={() => openEditModal(u)}
+                                className="p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all shadow-sm"
+                                title="Edit User"
+                              >
+                                <Edit className="w-4.5 h-4.5" />
+                              </button>
+                              {(!uIsDev || isLoggedInDev) && (
+                                <button
+                                  onClick={() => handleDeleteUser(u._id)}
+                                  className="p-2.5 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white rounded-xl transition-all shadow-sm"
+                                  title="Delete User"
+                                >
+                                  <Trash2 className="w-4.5 h-4.5" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    };
+
+                    return (
+                      <React.Fragment key={user._id}>
+                        {renderUserRow(user)}
+                        {isExpanded && user.vos && user.vos.length > 0 && user.vos.map(vo => renderUserRow(vo, true))}
+                      </React.Fragment>
                     );
                   })}
                 </tbody>
@@ -1190,118 +1224,118 @@ const UsersTab = ({ filterProps }) => {
                 const isDev = roleLower.includes('developer');
                 const isAdmin = roleLower.includes('admin') && !isDev;
                 const isVO = roleLower.startsWith('vo') || roleLower === 'none' || !user.role;
+                const isExpanded = expandedRows.has(user._id);
 
-                return (
-                  <div key={user._id} className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden animate-slide-in">
-                    <div className="p-5 space-y-4">
-                      {/* Header Info */}
-                      <div className="flex items-center gap-3">
-                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-md shrink-0 ${isDev
-                          ? 'bg-gradient-to-br from-amber-500 to-orange-600 text-white'
-                          : isAdmin
-                            ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white'
-                            : 'bg-gradient-to-br from-blue-500 to-blue-600 text-white'
-                          }`}>
-                          {isDev ? <Lock className="w-6 h-6" /> : isAdmin ? <Shield className="w-6 h-6" /> : <User className="w-6 h-6" />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div
-                            className="text-base font-black text-gray-900 leading-tight flex items-center gap-2"
-                            onClick={() => isVO && handleViewUserUploads(user)}
-                          >
-                            {user.voName}
-                            {user.isOnline && (
-                              <span className="flex h-2 w-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse shrink-0" title="Online"></span>
-                            )}
+                const renderUserCard = (u, isNested = false) => {
+                  const uRoleLower = (u.role || '').toLowerCase();
+                  const uIsDev = uRoleLower.includes('developer');
+                  const uIsAdmin = uRoleLower.includes('admin') && !uIsDev;
+                  const uIsVO = uRoleLower.startsWith('vo') || uRoleLower === 'none' || !u.role;
+
+                  return (
+                    <div key={u._id} className={`${isNested ? 'bg-gray-50/80 mt-2' : 'bg-white'} rounded-3xl border border-gray-100 shadow-sm overflow-hidden`}>
+                      <div className="p-5 space-y-4">
+                        <div className="flex items-center gap-3">
+                          <div className={`${isNested ? 'w-10 h-10' : 'w-12 h-12'} rounded-2xl flex items-center justify-center shadow-md grow-0 shrink-0 ${uIsDev
+                            ? 'bg-gradient-to-br from-amber-500 to-orange-600 text-white'
+                            : uIsAdmin
+                              ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white'
+                              : 'bg-gradient-to-br from-blue-500 to-blue-600 text-white'
+                            }`}>
+                            {uIsDev ? <Lock className="w-5 h-5" /> : uIsAdmin ? <Shield className="w-5 h-5" /> : <User className="w-5 h-5" />}
                           </div>
-                          <div className="flex flex-wrap items-center gap-2 mt-1">
-                            <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider ${isDev
-                              ? 'bg-amber-100 text-amber-700'
-                              : isAdmin
-                                ? 'bg-purple-100 text-purple-700'
-                                : 'bg-blue-100 text-blue-700'
-                              }`}>
-                              {user.role}
-                            </span>
-                            {isVO && user.voID && (
-                              <span className="text-[10px] font-black text-gray-400 uppercase">ID: {user.voID}</span>
-                            )}
-                            <div className="flex items-center gap-1">
-                              <Clock className="w-3 h-3 text-gray-400" />
-                              <span className="text-[10px] font-bold text-gray-400 uppercase">Active: {formatLastActive(user.lastActiveAt)}</span>
+                          <div className="flex-1 min-w-0">
+                            <div
+                              className="text-base font-black text-gray-900 leading-tight flex items-center gap-2"
+                              onClick={() => uIsVO && handleViewUserUploads(u)}
+                            >
+                              {u.voName}
+                              {u.isOnline && (
+                                <span className="flex h-2 w-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse shrink-0" title="Online"></span>
+                              )}
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 mt-1">
+                              <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider ${uIsDev
+                                ? 'bg-amber-100 text-amber-700'
+                                : uIsAdmin
+                                  ? 'bg-purple-100 text-purple-700'
+                                  : 'bg-blue-100 text-blue-700'
+                                }`}>
+                                {u.role}
+                              </span>
+                              {uIsVO && u.voID && (
+                                <span className="text-[10px] font-black text-gray-400 uppercase">ID: {u.voID}</span>
+                              )}
                             </div>
                           </div>
+                          {u.isHierarchical && (
+                            <button
+                              onClick={() => toggleRow(u._id)}
+                              className="p-2 bg-indigo-50 text-indigo-600 rounded-xl transition-all"
+                            >
+                              <ChevronRight className={`w-5 h-5 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                            </button>
+                          )}
                         </div>
-                      </div>
 
-                      {/* Location */}
-                      <div className="bg-gray-50 rounded-2xl p-3 flex items-start gap-2">
-                        <MapPin className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" />
-                        <div className="text-[11px] font-bold text-gray-600">
-                          {user.village && <span className="text-gray-900 font-black">{user.village}, </span>}
-                          {user.mandal}, {user.district}
-                        </div>
-                      </div>
-
-                      {/* Metrics */}
-                      {isVO && !isDev && !isAdmin && (
-                        <div className="grid grid-cols-3 gap-2 pt-2">
-                          <div className="bg-green-50 rounded-2xl p-2.5 text-center">
-                            <div className="text-lg font-black text-green-600 leading-none">{user.uploadedFiles || 0}</div>
-                            <div className="text-[8px] font-black text-green-700/50 uppercase mt-1 tracking-tighter">Uploaded</div>
+                        {uIsVO && (
+                          <div className="grid grid-cols-3 gap-2 pt-2">
+                            <div className="bg-green-50 rounded-2xl p-2.5 text-center">
+                              <div className="text-lg font-black text-green-600 leading-none">{u.uploadedFiles || 0}</div>
+                              <div className="text-[8px] font-black text-green-700/50 uppercase mt-1 tracking-tighter">Uploaded</div>
+                            </div>
+                            <div className="bg-orange-50 rounded-2xl p-2.5 text-center">
+                              <div className="text-lg font-black text-orange-600 leading-none">{u.pendingFiles || 0}</div>
+                              <div className="text-[8px] font-black text-orange-700/50 uppercase mt-1 tracking-tighter">Pending</div>
+                            </div>
+                            <div className="bg-indigo-50 rounded-2xl p-2.5 text-center">
+                              <div className="text-lg font-black text-gray-900 leading-none">{u.totalFiles || 0}</div>
+                              <div className="text-[8px] font-black text-indigo-700/50 uppercase mt-1 tracking-tighter">Total</div>
+                            </div>
                           </div>
-                          <div className="bg-orange-50 rounded-2xl p-2.5 text-center">
-                            <div className="text-lg font-black text-orange-600 leading-none">{user.pendingFiles || 0}</div>
-                            <div className="text-[8px] font-black text-orange-700/50 uppercase mt-1 tracking-tighter">Pending</div>
-                          </div>
-                          <div className="bg-indigo-50 rounded-2xl p-2.5 text-center">
-                            <div className="text-lg font-black text-gray-900 leading-none">{user.totalFiles || 0}</div>
-                            <div className="text-[8px] font-black text-indigo-700/50 uppercase mt-1 tracking-tighter">Total</div>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Action Buttons */}
-                      <div className="flex flex-wrap gap-2 pt-2">
-                        <button
-                          onClick={() => {
-                            setSelectedUserId(user._id);
-                            setSelectedUserName(user.voName);
-                            setActiveTab('conversion');
-                          }}
-                          className="flex-1 p-2.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-xl transition-all shadow-sm flex items-center justify-center gap-2"
-                          title="View Converted SHGs"
-                        >
-                          <Eye className="w-4.5 h-4.5" />
-                          <span className="text-xs font-black">Converted</span>
-                        </button>
-                        <button
-                          onClick={() => openEditModal(user)}
-                          className="flex-1 p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all shadow-sm flex items-center justify-center gap-2"
-                          title="Edit User"
-                        >
-                          <Edit className="w-4.5 h-4.5" />
-                          <span className="text-xs font-black">Edit</span>
-                        </button>
-                        {(!isDev || isLoggedInDev) && (
-                          <button
-                            onClick={() => handleDeleteUser(user._id)}
-                            className="flex-1 p-2.5 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white rounded-xl transition-all shadow-sm flex items-center justify-center gap-2"
-                            title="Delete User"
-                          >
-                            <Trash2 className="w-4.5 h-4.5" />
-                            <span className="text-xs font-black">Delete</span>
-                          </button>
                         )}
+
+                        <div className="flex flex-wrap gap-2 pt-2">
+                          <button
+                            onClick={() => {
+                              setSelectedUserId(u._id);
+                              setSelectedUserName(u.voName);
+                              setActiveTab('conversion');
+                            }}
+                            className="flex-1 p-2.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-xl transition-all shadow-sm flex items-center justify-center gap-2"
+                          >
+                            <Eye className="w-4 h-4" />
+                            <span className="text-[10px] font-black uppercase">View</span>
+                          </button>
+                          <button
+                            onClick={() => openEditModal(u)}
+                            className="flex-1 p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all shadow-sm flex items-center justify-center gap-2"
+                          >
+                            <Edit className="w-4 h-4" />
+                            <span className="text-[10px] font-black uppercase">Edit</span>
+                          </button>
+                          {(!uIsDev || isLoggedInDev) && (
+                            <button
+                              onClick={() => handleDeleteUser(u._id)}
+                              className="flex-1 p-2.5 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white rounded-xl transition-all shadow-sm flex items-center justify-center gap-2"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              <span className="text-[10px] font-black uppercase">Delete</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
-                    {isVO && !isDev && !isAdmin && (
-                      <button
-                        onClick={() => handleViewUserUploads(user)}
-                        className="w-full py-3 bg-indigo-50 text-indigo-700 text-xs font-black uppercase tracking-widest hover:bg-indigo-100 transition-colors"
-                      >
-                        View All Uploads
-                      </button>
+                  );
+                };
+
+                return (
+                  <div key={user._id} className="space-y-2">
+                    {renderUserCard(user)}
+                    {isExpanded && user.vos && user.vos.length > 0 && (
+                      <div className="pl-6 border-l-2 border-indigo-100 space-y-2 my-2">
+                        {user.vos.map(vo => renderUserCard(vo, true))}
+                      </div>
                     )}
                   </div>
                 );
