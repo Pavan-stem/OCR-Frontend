@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Eye, Filter, Loader2, X, Shield, User, MapPin, Phone, Lock, CheckCircle, Search, ChevronLeft, ChevronRight, FileText, Calendar, AlertCircle, AlertTriangle, Settings, Power, Clock } from 'lucide-react';
+import { Plus, Edit, Trash2, Eye, Filter, Loader2, X, Shield, User, MapPin, Phone, Lock, CheckCircle, Search, ChevronLeft, ChevronRight, FileText, Calendar, AlertCircle, AlertTriangle, Settings, Power, Clock, Download } from 'lucide-react';
 import { API_BASE } from '../utils/apiConfig';
 const REJECTION_REASONS = [
   "Follow guidelines",
@@ -27,6 +27,27 @@ const UsersTab = ({ filterProps }) => {
     } catch (e) {
       return 'Unknown';
     }
+  };
+
+  const currentUserRole = (() => {
+    try {
+      const userData = JSON.parse(localStorage.getItem('user'));
+      return (userData?.role || '').toLowerCase();
+    } catch (e) {
+      return '';
+    }
+  })();
+
+  const downloadImage = (url, filename) => {
+    if (!url) return;
+    // We now rely on the backend setting Content-Disposition for the presigned URL
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.download = filename || 'download.jpg';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
   const { selectedDistrict, setSelectedDistrict, selectedMandal, setSelectedMandal, selectedVillage, setSelectedVillage, serverStatus, setSelectedUserId, setSelectedUserName, setActiveTab } = filterProps;
 
@@ -1714,10 +1735,10 @@ const UsersTab = ({ filterProps }) => {
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                           {userUploads.filter(u => u.status === 'pending').map(upload => (
-                            <div key={upload._id} className="relative border-2 border-orange-300 bg-orange-50 rounded-2xl p-4 transition-all hover:shadow-lg hover:border-orange-400">
+                            <div key={upload._id} className="relative border-2 border-orange-300 bg-orange-50 rounded-2xl p-4 transition-all hover:shadow-lg hover:border-orange-400 flex flex-col">
                               {/* Thumbnail */}
                               {upload.s3Url && (
-                                <div className="h-32 -mx-4 -mt-4 mb-3 overflow-hidden rounded-t-2xl border-b border-orange-200 bg-black/5">
+                                <div className="h-48 -mx-4 -mt-4 mb-3 overflow-hidden rounded-t-2xl border-b border-orange-200 bg-black/5">
                                   <img src={upload.s3Url} alt="" className="w-full h-full object-contain" />
                                 </div>
                               )}
@@ -1727,81 +1748,52 @@ const UsersTab = ({ filterProps }) => {
                                   <h4 className="font-bold text-sm text-gray-900 truncate">{upload.shgName}</h4>
                                   <p className="text-xs text-gray-600">SHG ID: {upload.shgID}</p>
                                 </div>
-                                <span className="px-2 py-1 rounded-lg text-[10px] font-black uppercase bg-orange-200 text-orange-800">
-                                  Pending
-                                </span>
+                                {currentUserRole !== 'admin - apm' && (
+                                  <span className="px-2 py-1 rounded-lg text-[10px] font-black uppercase bg-orange-200 text-orange-800">
+                                    Pending
+                                  </span>
+                                )}
                               </div>
 
-                              <div className="space-y-2 text-xs mb-3">
+                              <div className="space-y-2 text-xs mb-3 flex-1 overflow-hidden">
                                 <div className="flex items-center gap-2 text-gray-600">
                                   <Calendar className="w-3 h-3" />
                                   <span>{formatDateTime(upload.uploadTimestamp)}</span>
                                 </div>
-                                <div className="text-gray-600 truncate" title={upload.originalFilename}>
+                                <div className="text-gray-400 truncate" title={upload.originalFilename}>
                                   {upload.originalFilename}
                                 </div>
                               </div>
 
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => handleQuickStatusUpdate(upload, 'validated')}
-                                  disabled={uploading}
-                                  className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1"
-                                >
-                                  <CheckCircle size={14} /> Validate
-                                </button>
-                                <button
-                                  onClick={() => openStatusModal(upload)}
-                                  disabled={uploading}
-                                  className="flex-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1"
-                                >
-                                  <X size={14} /> Reject
-                                </button>
+                              <div className="flex gap-2 mt-auto">
+                                {(currentUserRole === 'admin' || currentUserRole === 'admin - developer' || currentUserRole === 'admin - apm') && (
+                                  <button
+                                    onClick={() => downloadImage(upload.s3Url, `${upload.shgName}_${upload.shgID}.jpg`)}
+                                    className={`px-3 py-2 ${currentUserRole === 'admin - apm' ? 'flex-1 bg-blue-600 text-white' : 'bg-blue-50 text-blue-600'} hover:bg-blue-600 hover:text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1`}
+                                    title="Download Image"
+                                  >
+                                    <Download size={14} /> {currentUserRole === 'admin - apm' ? 'Download' : ''}
+                                  </button>
+                                )}
+                                {currentUserRole !== 'admin - apm' && (
+                                  <>
+                                    <button
+                                      onClick={() => handleQuickStatusUpdate(upload, 'validated')}
+                                      disabled={uploading}
+                                      className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1"
+                                    >
+                                      <CheckCircle size={14} /> Validate
+                                    </button>
+                                    <button
+                                      onClick={() => openStatusModal(upload)}
+                                      disabled={uploading}
+                                      className="flex-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1"
+                                    >
+                                      <X size={14} /> Reject
+                                    </button>
+                                  </>
+                                )}
                               </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Validated Section */}
-                    {userUploads.filter(u => u.status === 'validated').length > 0 && (
-                      <div>
-                        <div className="flex items-center gap-2 mb-4 bg-white rounded-xl p-3 border-2 border-green-300 shadow-sm">
-                          <CheckCircle className="text-green-500" size={24} />
-                          <h4 className="text-lg font-black text-gray-900">
-                            Validated Uploads
-                            <span className="ml-2 text-sm font-normal text-gray-500">({userUploads.filter(u => u.status === 'validated').length})</span>
-                          </h4>
-                        </div>
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                          {userUploads.filter(u => u.status === 'validated').map(upload => (
-                            <div key={upload._id} className="relative border-2 border-green-300 bg-green-50 rounded-2xl p-3 transition-all hover:shadow-lg hover:border-green-400">
-                              {/* Thumbnail */}
-                              {upload.s3Url && (
-                                <div className="h-24 -mx-3 -mt-3 mb-2 overflow-hidden rounded-t-2xl border-b border-green-200 bg-black/5">
-                                  <img src={upload.s3Url} alt="" className="w-full h-full object-contain" />
-                                </div>
-                              )}
-
-                              <div className="mb-2">
-                                <h4 className="font-bold text-xs text-gray-900 truncate">{upload.shgName}</h4>
-                                <p className="text-[10px] text-gray-600">SHG ID: {upload.shgID}</p>
-                              </div>
-
-                              <div className="space-y-1 text-[10px] mb-2">
-                                <div className="flex items-center gap-1 text-gray-600">
-                                  <Calendar className="w-2.5 h-2.5" />
-                                  <span>{formatDateTime(upload.uploadTimestamp)}</span>
-                                </div>
-                              </div>
-
-                              <button
-                                onClick={() => openStatusModal(upload)}
-                                className="w-full px-2 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold text-[10px] transition-all"
-                              >
-                                Details
-                              </button>
                             </div>
                           ))}
                         </div>
@@ -1820,10 +1812,10 @@ const UsersTab = ({ filterProps }) => {
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                           {userUploads.filter(u => u.status === 'rejected').map(upload => (
-                            <div key={upload._id} className="relative border-2 border-red-300 bg-red-50 rounded-2xl p-4 transition-all hover:shadow-lg hover:border-red-400">
+                            <div key={upload._id} className="relative border-2 border-red-300 bg-red-50 rounded-2xl p-4 transition-all hover:shadow-lg hover:border-red-400 flex flex-col">
                               {/* Thumbnail */}
                               {upload.s3Url && (
-                                <div className="h-32 -mx-4 -mt-4 mb-3 overflow-hidden rounded-t-2xl border-b border-red-200 bg-black/5">
+                                <div className="h-48 -mx-4 -mt-4 mb-3 overflow-hidden rounded-t-2xl border-b border-red-200 bg-black/5">
                                   <img src={upload.s3Url} alt="" className="w-full h-full object-contain" />
                                 </div>
                               )}
@@ -1838,7 +1830,7 @@ const UsersTab = ({ filterProps }) => {
                                 </span>
                               </div>
 
-                              <div className="space-y-2 text-xs mb-3">
+                              <div className="space-y-2 text-xs mb-3 flex-1 overflow-hidden">
                                 <div className="flex items-center gap-2 text-gray-600">
                                   <Calendar className="w-3 h-3" />
                                   <span>{formatDateTime(upload.uploadTimestamp)}</span>
@@ -1846,17 +1838,96 @@ const UsersTab = ({ filterProps }) => {
                                 {upload.rejectionReason && (
                                   <div className="bg-white rounded-lg p-2 border-l-4 border-red-500">
                                     <p className="text-[10px] font-bold text-red-600 mb-1">Reason:</p>
-                                    <p className="text-xs text-gray-800">{upload.rejectionReason}</p>
+                                    <p className="text-xs text-gray-800 line-clamp-2">{upload.rejectionReason}</p>
                                   </div>
                                 )}
+                                <div className="text-gray-400 truncate" title={upload.originalFilename}>
+                                  {upload.originalFilename}
+                                </div>
                               </div>
 
-                              <button
-                                onClick={() => openStatusModal(upload)}
-                                className="w-full px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs transition-all shadow-sm"
-                              >
-                                Update Status
-                              </button>
+                              <div className="flex gap-2 mt-auto">
+                                {(currentUserRole === 'admin' || currentUserRole === 'admin - developer' || currentUserRole === 'admin - apm') && (
+                                  <button
+                                    onClick={() => downloadImage(upload.s3Url, `${upload.shgName}_${upload.shgID}.jpg`)}
+                                    className={`px-3 py-2 ${currentUserRole === 'admin - apm' ? 'flex-1 bg-blue-600 text-white' : 'bg-blue-50 text-blue-600'} hover:bg-blue-600 hover:text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1`}
+                                    title="Download Image"
+                                  >
+                                    <Download size={14} /> {currentUserRole === 'admin - apm' ? 'Download' : ''}
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => openStatusModal(upload)}
+                                  className="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs transition-all shadow-sm"
+                                >
+                                  Update Status
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Validated Section */}
+                    {userUploads.filter(u => u.status === 'validated').length > 0 && (
+                      <div>
+                        <div className="flex items-center gap-2 mb-4 bg-white rounded-xl p-3 border-2 border-green-300 shadow-sm">
+                          <CheckCircle className="text-green-500" size={24} />
+                          <h4 className="text-lg font-black text-gray-900">
+                            Validated Uploads
+                            <span className="ml-2 text-sm font-normal text-gray-500">({userUploads.filter(u => u.status === 'validated').length})</span>
+                          </h4>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {userUploads.filter(u => u.status === 'validated').map(upload => (
+                            <div key={upload._id} className="relative border-2 border-green-300 bg-green-50 rounded-2xl p-4 transition-all hover:shadow-lg hover:border-green-400 flex flex-col">
+                              {/* Thumbnail */}
+                              {upload.s3Url && (
+                                <div className="h-48 -mx-4 -mt-4 mb-3 overflow-hidden rounded-t-2xl border-b border-green-200 bg-black/5">
+                                  <img src={upload.s3Url} alt="" className="w-full h-full object-contain" />
+                                </div>
+                              )}
+
+                              <div className="flex justify-between items-start mb-3">
+                                <div className="flex-1 min-w-0">
+                                  <h4 className="font-bold text-sm text-gray-900 truncate">{upload.shgName}</h4>
+                                  <p className="text-xs text-gray-600">SHG ID: {upload.shgID}</p>
+                                </div>
+                                <span className="px-2 py-1 rounded-lg text-[10px] font-black uppercase bg-green-200 text-green-800">
+                                  Validated
+                                </span>
+                              </div>
+
+                              <div className="space-y-1 text-xs mb-3 flex-1 overflow-hidden">
+                                <div className="flex items-center gap-2 text-gray-600">
+                                  <Calendar className="w-3 h-3" />
+                                  <span>{formatDateTime(upload.uploadTimestamp)}</span>
+                                </div>
+                                <div className="text-gray-400 truncate mt-2" title={upload.originalFilename}>
+                                  {upload.originalFilename}
+                                </div>
+                              </div>
+
+                              <div className="flex gap-2 mt-auto">
+                                {(currentUserRole === 'admin' || currentUserRole === 'admin - developer' || currentUserRole === 'admin - apm') && (
+                                  <button
+                                    onClick={() => downloadImage(upload.s3Url, `${upload.shgName}_${upload.shgID}.jpg`)}
+                                    className={`px-3 py-2 ${currentUserRole === 'admin - apm' ? 'flex-1 bg-blue-600 text-white' : 'bg-blue-50 text-blue-600'} hover:bg-blue-600 hover:text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1`}
+                                    title="Download Image"
+                                  >
+                                    <Download size={14} /> {currentUserRole === 'admin - apm' ? 'Download' : ''}
+                                  </button>
+                                )}
+                                {currentUserRole !== 'admin - apm' && (
+                                  <button
+                                    onClick={() => openStatusModal(upload)}
+                                    className="flex-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-xs transition-all"
+                                  >
+                                    Details
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -1935,9 +2006,9 @@ const UsersTab = ({ filterProps }) => {
                     <p className="mt-1 text-xs text-gray-600 font-bold">
                       This will be shown to VO users. Default is "Follow guidelines".
                     </p>
-                    <p className="mt-2 text-xs text-red-600 font-bold flex items-center gap-2">
+                    <p className="mt-2 text-xs text-indigo-600 font-bold flex items-center gap-2">
                       <AlertCircle className="w-4 h-4" />
-                      Warning: File data will be permanently cleared from database when rejected
+                      Note: File will be kept in rejected history and VO will see the rejection reason.
                     </p>
                   </div>
                 )}
