@@ -40,6 +40,36 @@ const SHGUploadSection = ({
   const [openSmartCamera, setOpenSmartCamera] = useState(false);
   const [activeShgId, setActiveShgId] = useState(null);
   const [activeShgName, setActiveShgName] = useState(null);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [pendingUploadShgId, setPendingUploadShgId] = useState(null);
+  const [pendingUploadShgName, setPendingUploadShgName] = useState(null);
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
+  const [isCameraCapture, setIsCameraCapture] = useState(false);
+
+  // Detect if device is mobile/tablet
+  useEffect(() => {
+    const checkIfMobileDevice = () => {
+      const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+      // Check for mobile/tablet user agents
+      const mobileRegex = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini|mobile|tablet|pad/i;
+      const isMobile = mobileRegex.test(userAgent.toLowerCase());
+
+      // Also check for touch capability as secondary indicator
+      const hasTouch = () => {
+        return (('ontouchstart' in window) ||
+          (navigator.maxTouchPoints > 0) ||
+          (navigator.msMaxTouchPoints > 0));
+      };
+
+      // Device is mobile if it matches user agent OR has touch AND small screen
+      const isSmallScreen = window.innerWidth <= 1024;
+      setIsMobileDevice(isMobile || (hasTouch() && isSmallScreen));
+    };
+
+    checkIfMobileDevice();
+    window.addEventListener('resize', checkIfMobileDevice);
+    return () => window.removeEventListener('resize', checkIfMobileDevice);
+  }, []);
 
   const handleMaintenanceResponse = (data) => {
     if (setMaintenance) {
@@ -53,7 +83,9 @@ const SHGUploadSection = ({
     }
   };
 
-  const isDeveloper = user?.role?.toLowerCase().includes('developer')
+  const isDeveloper = user?.role?.toLowerCase().includes('developer');
+  const isTestMode = window.location.pathname.startsWith('/Test');
+  const hasAIFeatures = isTestMode && isDeveloper;
 
   // Smart Preview Logic (Handles hard rotation and cropping for modal)
   useEffect(() => {
@@ -64,18 +96,28 @@ const SHGUploadSection = ({
     }
 
     const generateSmartPreview = async () => {
+      console.log('📸 Generating smart preview for:', previewFile.fileName);
       setSmartPreviewUrl(null); // Clear old to show loader
       setIsProcessingPreview(true);
       try {
-        const processedFile = await processFileRotation(previewFile, {
-          quality: 0.9
-        });
+        // If we have rotation, process it
+        if (previewFile.rotation && previewFile.rotation % 360 !== 0) {
+          console.log('🔄 Applying rotation:', previewFile.rotation);
+          const processedFile = await processFileRotation(previewFile, {
+            quality: 0.9
+          });
 
-        const url = URL.createObjectURL(processedFile);
-        if (smartPreviewUrl) URL.revokeObjectURL(smartPreviewUrl);
-        setSmartPreviewUrl(url);
+          const url = URL.createObjectURL(processedFile);
+          if (smartPreviewUrl) URL.revokeObjectURL(smartPreviewUrl);
+          setSmartPreviewUrl(url);
+        } else {
+          // No rotation needed, just use the original preview URL
+          console.log('✅ No rotation needed, using original preview');
+          setSmartPreviewUrl(previewFile.previewUrl);
+        }
       } catch (err) {
-        console.error("Smart preview generation failed:", err);
+        console.error("❌ Smart preview generation failed:", err);
+        // Fallback to original preview URL
         setSmartPreviewUrl(previewFile.previewUrl);
       } finally {
         setIsProcessingPreview(false);
@@ -83,7 +125,7 @@ const SHGUploadSection = ({
     };
 
     generateSmartPreview();
-  }, [previewFile?.id, previewRotation]); // Track analysis state per SHG
+  }, [previewFile, previewRotation]); // Re-run when preview file or rotation changes
 
 
   // Load SHG data from Excel on component mount or when user/month/year changes
@@ -112,9 +154,32 @@ const SHGUploadSection = ({
     const loadFailedUploads = async () => {
       try {
         const token = localStorage.getItem('token');
+
+        if (!token) {
+          console.warn('⚠️ No token available for loading failed uploads');
+          return;
+        }
+
         const res = await fetch(`${API_BASE}/api/vo/uploads/failed`, {
-          headers: { 'Authorization': `Bearer ${token}` }
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
         });
+
+        if (res.status === 401) {
+          console.error('❌ 401 UNAUTHORIZED when loading failed uploads');
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          return;
+        }
+
+        if (!res.ok) {
+          console.warn(`⚠️ Failed to load rejected uploads: ${res.status}`);
+          return;
+        }
+
         const data = await res.json();
         if (data.success) {
           setFailedUploads(data.failed || []);
@@ -175,14 +240,30 @@ const SHGUploadSection = ({
 
     try {
       const token = localStorage.getItem('token');
+      if (!token) {
+        console.error('❌ No token found in localStorage!');
+        window.location.href = '#/login';
+        return;
+      }
+
       const response = await fetch(
         `${API_BASE}/api/upload-progress?month=${selectedMonth}&year=${selectedYear}`,
         {
+          method: 'GET',
           headers: {
-            'Authorization': `Bearer ${token}`
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
           }
         }
       );
+
+      if (response.status === 401) {
+        console.error('❌ 401 UNAUTHORIZED - Token invalid/expired');
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '#/login';
+        return;
+      }
 
       if (response.ok) {
         const progress = await response.json();
@@ -214,6 +295,13 @@ const SHGUploadSection = ({
     setIsInitializing(true);
     try {
       const token = localStorage.getItem('token');
+      if (!token) {
+        console.error('❌ No token found in localStorage!');
+        setIsInitializing(false);
+        window.location.href = '#/login';
+        return;
+      }
+
       const response = await fetch(`${API_BASE}/api/initialize-progress`, {
         method: 'POST',
         headers: {
@@ -225,6 +313,15 @@ const SHGUploadSection = ({
           year: selectedYear,
         })
       });
+
+      if (response.status === 401) {
+        console.error('❌ 401 UNAUTHORIZED - Token invalid/expired');
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '#/login';
+        setIsInitializing(false);
+        return;
+      }
 
       if (response.ok) {
         const data = await response.json();
@@ -242,6 +339,12 @@ const SHGUploadSection = ({
 
     try {
       const token = localStorage.getItem('token');
+      if (!token) {
+        console.error('❌ No token found in localStorage!');
+        window.location.href = '#/login';
+        return;
+      }
+
       const response = await fetch(`${API_BASE}/api/upload-progress`, {
         method: 'POST',
         headers: {
@@ -254,6 +357,14 @@ const SHGUploadSection = ({
           shgId: shgId,
         })
       });
+
+      if (response.status === 401) {
+        console.error('❌ 401 UNAUTHORIZED - Token invalid/expired');
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '#/login';
+        return;
+      }
 
       if (response.ok) {
         const data = await response.json();
@@ -287,19 +398,51 @@ const SHGUploadSection = ({
       console.log(`\n=== Loading SHG Data from Backend ===`);
       console.log(`Selected: ${selectedMonth}/${selectedYear}`);
 
+      // Get token from localStorage
       const token = localStorage.getItem('token');
-      const response = await fetch(
-        `${API_BASE}/api/shg-list?month=${selectedMonth}&year=${selectedYear}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
+
+      // Debug: Log token status
+      if (!token) {
+        console.error('❌ No token found in localStorage!');
+        setError('Session expired. Please log in again.');
+        setLoading(false);
+        // Redirect to login
+        window.location.href = '#/login';
+        return;
+      }
+
+      console.log(`✓ Token found: ${token.substring(0, 20)}...`);
+      console.log(`📍 User VO ID: ${user?.voID}`);
+
+      const requestUrl = `${API_BASE}/api/shg-list?month=${selectedMonth}&year=${selectedYear}`;
+      console.log(`🔗 Request URL: ${requestUrl}`);
+
+      const response = await fetch(requestUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
         }
-      );
+      });
+
+      console.log(`Response status: ${response.status} ${response.statusText}`);
+
+      // Handle 401 specifically
+      if (response.status === 401) {
+        console.error('❌ 401 UNAUTHORIZED - Token is invalid or expired');
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        setError('Session expired. Please log in again.');
+        setLoading(false);
+        window.location.href = '#/login';
+        return;
+      }
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to load SHG data');
+        console.error('❌ Server error:', errorData);
+        throw new Error(errorData.message || `Server error: ${response.status}`);
       }
 
       const data = await response.json();
@@ -485,10 +628,12 @@ const SHGUploadSection = ({
   const handleSmartCameraCapture = async (file) => {
     if (!file || !activeShgId || !activeShgName) return;
 
+    console.log('📸 Camera captured file:', file.name);
     setAnalyzingMap(prev => ({ ...prev, [activeShgId]: true }));
 
     try {
       const analysis = await analyzeImage(file);
+      console.log('✅ Image analysis complete:', analysis);
       setAnalyzingMap(prev => ({ ...prev, [activeShgId]: false }));
 
       // Create a fake event object for compatibility with handleFileSelect
@@ -498,13 +643,14 @@ const SHGUploadSection = ({
         }
       };
 
+      // Call handleFileSelect which will open the preview modal
       handleFileSelect(activeShgId, activeShgName, fakeEvent, analysis);
 
     } catch (err) {
-      console.error("Smart camera error:", err);
+      console.error("❌ Smart camera error:", err);
       setAnalyzingMap(prev => ({ ...prev, [activeShgId]: false }));
 
-      // Fallback to normal handling
+      // Fallback to normal handling without analysis
       const fakeEvent = {
         target: {
           files: [file]
@@ -600,6 +746,20 @@ const SHGUploadSection = ({
             if (fileInputRefs.current[shgId]) {
               fileInputRefs.current[shgId].value = '';
             }
+
+            // Open preview modal to show cropping and AI options ONLY on mobile devices
+            // if (isMobileDevice) {
+            //   setPreviewFile({
+            //     ...newFile,
+            //     id: shgId
+            //   });
+            //   setPreviewRotation(newFile.rotation || 0);
+            // }
+
+            // Close modal after file is processed
+            setShowUploadModal(false);
+            setPendingUploadShgId(null);
+            setPendingUploadShgName(null);
           };
           img.src = e.target.result;
         };
@@ -634,6 +794,11 @@ const SHGUploadSection = ({
       if (fileInputRefs.current[shgId]) {
         fileInputRefs.current[shgId].value = '';
       }
+
+      // Close modal after file is processed
+      setShowUploadModal(false);
+      setPendingUploadShgId(null);
+      setPendingUploadShgName(null);
     }
   };
 
@@ -814,6 +979,72 @@ const SHGUploadSection = ({
     }
   };
 
+  // Helper: Upload file with retry logic
+  const uploadFileWithRetry = async (fileData, token, maxRetries = 2) => {
+    const formData = new FormData();
+    const fileToUpload = await processFileRotation(fileData);
+
+    formData.append('file', fileToUpload);
+    formData.append('month', selectedMonth);
+    formData.append('year', selectedYear);
+    formData.append('shgId', fileData.shgId);
+    formData.append('shgName', fileData.shgName);
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await fetch(`${API_BASE}/api/upload`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData
+        });
+
+        return { response, fileData, success: true };
+      } catch (err) {
+        if (attempt === maxRetries) {
+          return {
+            response: null,
+            fileData,
+            success: false,
+            error: err
+          };
+        }
+        // Exponential backoff: 500ms, 1000ms, etc.
+        await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+      }
+    }
+  };
+
+  // Helper: Process multiple uploads in parallel with concurrency control
+  const uploadFilesInParallel = async (filesToUpload, token, concurrency = 3) => {
+    const results = [];
+    const queue = [...filesToUpload];
+    const inProgress = [];
+
+    console.log(`📤 Starting parallel upload: ${filesToUpload.length} files with concurrency=${concurrency}`);
+
+    while (queue.length > 0 || inProgress.length > 0) {
+      // Fill up the queue to max concurrency
+      while (inProgress.length < concurrency && queue.length > 0) {
+        const fileData = queue.shift();
+        const promise = uploadFileWithRetry(fileData, token)
+          .then(result => {
+            results.push(result);
+            const idx = inProgress.indexOf(promise);
+            if (idx > -1) inProgress.splice(idx, 1);
+            return result;
+          });
+        inProgress.push(promise);
+      }
+
+      // Wait for at least one to complete before processing more
+      if (inProgress.length > 0) {
+        await Promise.race(inProgress);
+      }
+    }
+
+    return results;
+  };
+
   const formatShgLabel = (file) =>
     `${file.shgName} (${file.shgId})`;
 
@@ -866,27 +1097,20 @@ const SHGUploadSection = ({
         console.log(`Pre-upload sync: Skipping ${alreadyUploaded} already-uploaded SHG(s)`);
       }
 
+      // Process uploads in parallel instead of sequentially
+      const uploadResults = await uploadFilesInParallel(filesToUpload, token, 3);
 
-      for (const fileData of filesToUpload) {
+      // Process results
+      for (const result of uploadResults) {
+        const { response, fileData, success, error } = result;
+
+        if (!success || !response) {
+          failCount++;
+          console.error(`Upload exception for ${fileData.shgId}:`, error);
+          continue;
+        }
+
         try {
-          if (uploadStatus[fileData.shgId]?.uploaded) continue;
-
-          const formData = new FormData();
-          // Handle Rotation (including Auto-Rotate)
-          const fileToUpload = await processFileRotation(fileData);
-
-          formData.append('file', fileToUpload);
-          formData.append('month', selectedMonth);
-          formData.append('year', selectedYear);
-          formData.append('shgId', fileData.shgId);
-          formData.append('shgName', fileData.shgName);
-
-          const response = await fetch(`${API_BASE}/api/upload`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${token}` },
-            body: formData
-          });
-
           if (response.ok) {
             successCount++;
             uploadedShgs.push(formatShgLabel(fileData));
@@ -953,7 +1177,7 @@ const SHGUploadSection = ({
           }
         } catch (err) {
           failCount++;
-          console.error(`Upload exception for ${fileData.shgId}:`, err);
+          console.error(`Error processing result for ${fileData.shgId}:`, err);
         }
       }
 
@@ -1306,59 +1530,47 @@ const SHGUploadSection = ({
           ) : !isTempUploaded ? (
             /* 🟦 INITIAL STATE */
             <div>
-              <div className="flex gap-2">
-                {/* Standard Upload */}
-                <div className="flex-1 relative">
-                  <input
-                    ref={(el) => (fileInputRefs.current[shg.shgId] = el)}
-                    type="file"
-                    accept=".png,.jpg,.jpeg,.pdf,.tiff,.tif,.bmp,.webp"
-                    onChange={(e) =>
-                      handleFileSelect(shg.shgId, shg.shgName, e)
-                    }
-                    className="hidden"
-                    id={`file-input-${shg.shgId}`}
-                  />
-                  <label
-                    htmlFor={`file-input-${shg.shgId}`}
-                    className={`flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl font-semibold cursor-pointer transition-all border shadow-sm text-sm sm:text-base h-full ${analyzingMap[shg.shgId]
-                      ? 'bg-gray-100 text-gray-400 cursor-wait border-gray-200'
-                      : 'bg-blue-50 hover:bg-blue-100 text-blue-600 lg:bg-gradient-to-r lg:from-blue-500 lg:to-blue-600 lg:hover:from-blue-600 lg:hover:to-blue-700 lg:text-white border-blue-200 lg:border-transparent'
-                      }`}
+              <input
+                ref={(el) => (fileInputRefs.current[shg.shgId] = el)}
+                type="file"
+                accept=".png,.jpg,.jpeg,.pdf,.tiff,.tif,.bmp,.webp"
+                onChange={(e) =>
+                  handleFileSelect(shg.shgId, shg.shgName, e)
+                }
+                className="hidden"
+                id={`file-input-${shg.shgId}`}
+              />
+              {analyzingMap[shg.shgId] ? (
+                <button
+                  disabled
+                  className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl font-semibold cursor-wait transition-all border shadow-sm text-sm sm:text-base bg-gray-100 text-gray-400 border-gray-200"
+                >
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-indigo-500 border-t-transparent"></div>
+                  <span>{t?.('upload.analyzing') || 'Analyzing...'}</span>
+                </button>
+              ) : (
+                isMobileDevice ? (
+                  <button
+                    onClick={() => {
+                      setActiveShgId(shg.shgId);
+                      setActiveShgName(shg.shgName);
+                      setOpenSmartCamera(true);
+                    }}
+                    className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl font-semibold cursor-pointer transition-all border shadow-sm text-sm sm:text-base bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white border-transparent"
                   >
-                    {analyzingMap[shg.shgId] ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-indigo-500 border-t-transparent"></div>
-                        <span>{t?.('upload.analyzing') || 'Analyzing...'}</span>
-                      </>
-                    ) : (
-                      <>
-                        <Upload size={18} />
-                        <span className="hidden sm:inline">{t?.('upload.uploadFile') || 'Upload File'}</span>
-                        <span className="sm:hidden">Upload</span>
-                      </>
-                    )}
-                  </label>
-                </div>
-
-                {/* Smart Camera Button - Visible on Mobile/Tablet, Hidden on Desktop - DEVELOPER ONLY */}
-                {isDeveloper && (
-                  <div className="flex-1 relative lg:hidden">
-                    <button
-                      onClick={() => {
-                        setActiveShgId(shg.shgId);
-                        setActiveShgName(shg.shgName);
-                        setOpenSmartCamera(true);
-                      }}
-                      className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all shadow-md text-sm sm:text-base h-full text-white bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700"
-                    >
-                      <Camera size={18} />
-                      <span className="hidden sm:inline">Smart Camera</span>
-                      <span className="sm:hidden">Camera</span>
-                    </button>
-                  </div>
-                )}
-              </div>
+                    <Camera size={18} />
+                    <span>{t?.('upload.scan') || 'Scan Document'}</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => fileInputRefs.current[shg.shgId]?.click()}
+                    className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl font-semibold cursor-pointer transition-all border shadow-sm text-sm sm:text-base bg-blue-50 hover:bg-blue-100 text-blue-600 border-blue-200"
+                  >
+                    <Upload size={18} />
+                    <span>{t?.('upload.uploadFile') || 'Upload File'}</span>
+                  </button>
+                )
+              )}
             </div>
           ) : (
             /* 🟨 TEMP STATE (VALIDATE / VIEW / SINGLE UPLOAD / REMOVE) */
@@ -1782,7 +1994,6 @@ const SHGUploadSection = ({
           </p>
         </div>
       )}
-
       {/* Preview Modal - Use Portal to ensure full screen coverage */}
       {previewFile && createPortal(
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[9999] p-2 sm:p-4 animate-in fade-in duration-300">
@@ -1822,8 +2033,8 @@ const SHGUploadSection = ({
 
             {/* Modal Body */}
             <div className="flex-1 overflow-auto bg-gray-100 flex flex-col relative p-2 sm:p-4 min-h-[300px]">
-              {isProcessingPreview ? (
-                <div className="m-auto flex flex-col items-center gap-2">
+              {isProcessingPreview && !smartPreviewUrl ? (
+                <div className="m-auto flex flex-col items-center gap-3">
                   <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent"></div>
                   <p className="font-semibold text-gray-600 text-sm">{t?.('upload.processing') || 'Smart Processing...'}</p>
                 </div>
@@ -1832,9 +2043,25 @@ const SHGUploadSection = ({
                   src={smartPreviewUrl}
                   alt={previewFile.fileName}
                   className="max-w-full max-h-full object-contain m-auto bg-white transition-opacity duration-300"
+                  onError={() => {
+                    console.warn('⚠️ Preview image failed to load, using fallback');
+                    setSmartPreviewUrl(previewFile.previewUrl);
+                  }}
+                />
+              ) : previewFile.previewUrl ? (
+                <img
+                  src={previewFile.previewUrl}
+                  alt={previewFile.fileName}
+                  className="max-w-full max-h-full object-contain m-auto bg-white transition-opacity duration-300"
+                  onError={() => {
+                    console.error('❌ Fallback preview also failed to load');
+                  }}
                 />
               ) : (
-                <div className="m-auto text-gray-400 text-sm">Preview not available</div>
+                <div className="m-auto text-center flex flex-col gap-2 items-center">
+                  <p className="text-gray-400 text-sm">Preview not available</p>
+                  <p className="text-xs text-gray-500">File: {previewFile.fileName}</p>
+                </div>
               )}
             </div>
 
@@ -1856,8 +2083,6 @@ const SHGUploadSection = ({
         </div>,
         document.body
       )}
-
-      {/* SmartCamera Modal */}
       <SmartCamera
         open={openSmartCamera}
         onClose={() => {
@@ -1867,6 +2092,8 @@ const SHGUploadSection = ({
         }}
         onCapture={handleSmartCameraCapture}
       />
+
+
     </div>
   );
 };

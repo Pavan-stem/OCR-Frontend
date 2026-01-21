@@ -128,6 +128,12 @@ const DashboardTab = ({ filterProps }) => {
       try {
         const token = localStorage.getItem('token');
 
+        if (!token) {
+          console.warn('No token found, skipping stats load');
+          setStats(prev => ({ ...prev, loading: false }));
+          return;
+        }
+
         // Load users count with filters
         let usersUrl = `${API_BASE}/api/users/count`;
         const userParams = new URLSearchParams();
@@ -150,6 +156,14 @@ const DashboardTab = ({ filterProps }) => {
           fetch(usersUrl, { headers: { 'Authorization': `Bearer ${token}` } }),
           fetch(uploadsUrl, { headers: { 'Authorization': `Bearer ${token}` } })
         ]);
+
+        if (usersResponse.status === 401 || uploadsResponse.status === 401) {
+          console.warn('Token expired or invalid. Redirecting to login...');
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          window.location.href = '/login';
+          return;
+        }
 
         const [usersData, uploadsData] = await Promise.all([
           usersResponse.json(),
