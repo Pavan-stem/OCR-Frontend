@@ -52,16 +52,16 @@ const UsersTab = ({ filterProps }) => {
   const canEditUser = (targetUser) => {
     const targetRoleLower = (targetUser?.role || 'vo').toLowerCase();
     const targetIsVO = targetRoleLower.startsWith('vo') || targetRoleLower === 'none' || !targetUser?.role;
-    
+
     if (currentUserRole.includes('admin - cc')) {
       return false; // CC cannot edit anyone
     }
-    
+
     if (currentUserRole.includes('admin - apm')) {
       // APM can only edit VOs
       return targetIsVO;
     }
-    
+
     // Admin and Developer can edit everyone
     return true;
   };
@@ -71,28 +71,28 @@ const UsersTab = ({ filterProps }) => {
     const targetIsVO = targetRoleLower.startsWith('vo') || targetRoleLower === 'none' || !targetUser?.role;
     const targetIsDev = targetRoleLower.includes('developer');
     const isLoggedInDev = currentUserRole.includes('developer');
-    
+
     if (currentUserRole.includes('admin - cc')) {
       return false; // CC cannot delete anyone
     }
-    
+
     if (currentUserRole.includes('admin - apm')) {
       // APM can only delete VOs
       return targetIsVO;
     }
-    
+
     // Admin can delete non-developers or developers can delete developers
     if (!targetIsDev || isLoggedInDev) {
       return true;
     }
-    
+
     return false;
   };
 
   const canViewUserUploads = (targetUser) => {
     const targetRoleLower = (targetUser?.role || 'vo').toLowerCase();
     const targetIsVO = targetRoleLower.startsWith('vo') || targetRoleLower === 'none' || !targetUser?.role;
-    
+
     // Eye button only shows for VO users (since only VOs have uploads)
     // Admin - CC, Admin - APM, and Admin users can view VO uploads if needed
     return targetIsVO;
@@ -100,16 +100,16 @@ const UsersTab = ({ filterProps }) => {
 
   const canCreateUser = (roleToCreate) => {
     const roleToCreateLower = (roleToCreate || 'vo').toLowerCase();
-    
+
     if (currentUserRole.includes('admin - cc')) {
       return false; // CC cannot create anything
     }
-    
+
     if (currentUserRole.includes('admin - apm')) {
       // APM can only create VOs
       return roleToCreateLower.startsWith('vo') || roleToCreateLower === 'vo';
     }
-    
+
     // Admin and Developer can create any role
     return true;
   };
@@ -125,6 +125,58 @@ const UsersTab = ({ filterProps }) => {
     link.click();
     document.body.removeChild(link);
   };
+
+  const downloadUserData = (user) => {
+    try {
+      const roleLower = (user.role || '').toLowerCase();
+      const isCC = roleLower.includes('admin - cc');
+
+      // Prepare data rows
+      let csvContent = 'data:text/csv;charset=utf-8,';
+      csvContent += 'VO Name,VO ID,Uploaded,Pending,Total\n';
+
+      if (isCC && user.vos && user.vos.length > 0) {
+        // For CC: download all mapped VOs
+        let totalUploaded = 0;
+        let totalPending = 0;
+        let totalShgs = 0;
+
+        user.vos.forEach(vo => {
+          csvContent += `"${vo.voName}","'${vo.voID}",${vo.uploadedFiles || 0},${vo.pendingFiles || 0},${vo.totalFiles || 0}\n`;
+          totalUploaded += vo.uploadedFiles || 0;
+          totalPending += vo.pendingFiles || 0;
+          totalShgs += vo.totalFiles || 0;
+        });
+
+        // Add total row
+        csvContent += `"Total","","${totalUploaded}","${totalPending}","${totalShgs}"\n`;
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement('a');
+        link.setAttribute('href', encodedUri);
+        link.setAttribute('download', `${user.voName}_VOs_${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        // For VO: download single VO data
+        csvContent += `"${user.voName}","'${user.voID}",${user.uploadedFiles || 0},${user.pendingFiles || 0},${user.totalFiles || 0}\n`;
+        csvContent += `"Total","","${user.uploadedFiles || 0}","${user.pendingFiles || 0}","${user.totalFiles || 0}"\n`;
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement('a');
+        link.setAttribute('href', encodedUri);
+        link.setAttribute('download', `${user.voName}_${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+    } catch (err) {
+      console.error('Error downloading user data:', err);
+      alert('Failed to download user data');
+    }
+  };
+
   const { selectedDistrict, setSelectedDistrict, selectedMandal, setSelectedMandal, selectedVillage, setSelectedVillage, serverStatus, setSelectedUserId, setSelectedUserName, setActiveTab } = filterProps;
 
 
@@ -815,98 +867,98 @@ const UsersTab = ({ filterProps }) => {
               <div className={`p-2 rounded-xl ${maintenanceStatus.is_active ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'}`}>
                 <AlertTriangle className="w-5 h-5" />
               </div>
-            <div>
-              <h3 className="text-sm sm:text-base font-black text-gray-900 flex items-center gap-2">
-                System Maintenance
-                {!isConnected && (
-                  <span className="flex items-center gap-1 text-[10px] bg-red-100 text-red-600 px-2 py-0.5 rounded-full animate-pulse">
-                    <AlertCircle className="w-3 h-3" /> Offline
-                  </span>
-                )}
-              </h3>
-              <p className="text-[10px] sm:text-xs text-gray-400 font-bold uppercase tracking-wider mt-0.5">
-                {isConnected ? `Synced ${lastSynced.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : 'Connection Lost'}
-              </p>
+              <div>
+                <h3 className="text-sm sm:text-base font-black text-gray-900 flex items-center gap-2">
+                  System Maintenance
+                  {!isConnected && (
+                    <span className="flex items-center gap-1 text-[10px] bg-red-100 text-red-600 px-2 py-0.5 rounded-full animate-pulse">
+                      <AlertCircle className="w-3 h-3" /> Offline
+                    </span>
+                  )}
+                </h3>
+                <p className="text-[10px] sm:text-xs text-gray-400 font-bold uppercase tracking-wider mt-0.5">
+                  {isConnected ? `Synced ${lastSynced.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}` : 'Connection Lost'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 w-full sm:w-auto">
+              <button
+                onClick={() => setIsMaintenanceCollapsed(!isMaintenanceCollapsed)}
+                className="px-4 py-2 text-xs font-black text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all border border-indigo-100 flex items-center gap-2"
+              >
+                <Settings className="w-4 h-4" />
+                {isMaintenanceCollapsed ? 'Open Controls' : 'Close Controls'}
+              </button>
+              <button
+                onClick={() => handleUpdateMaintenance({ ...maintenanceStatus, is_active: !maintenanceStatus.is_active })}
+                disabled={updatingMaintenance}
+                className={`flex-1 sm:flex-none px-6 py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 shadow-sm ${maintenanceStatus.is_active
+                  ? 'bg-amber-50 text-amber-600 border border-amber-100 hover:bg-amber-600 hover:text-white'
+                  : 'bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-600 hover:text-white'
+                  }`}
+              >
+                <Power className="w-4 h-4" />
+                <div className="flex flex-col items-center">
+                  <span>{maintenanceStatus.is_active ? 'Stop Maintenance' : 'Start Maintenance'}</span>
+                </div>
+              </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 w-full sm:w-auto">
-            <button
-              onClick={() => setIsMaintenanceCollapsed(!isMaintenanceCollapsed)}
-              className="px-4 py-2 text-xs font-black text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all border border-indigo-100 flex items-center gap-2"
-            >
-              <Settings className="w-4 h-4" />
-              {isMaintenanceCollapsed ? 'Open Controls' : 'Close Controls'}
-            </button>
-            <button
-              onClick={() => handleUpdateMaintenance({ ...maintenanceStatus, is_active: !maintenanceStatus.is_active })}
-              disabled={updatingMaintenance}
-              className={`flex-1 sm:flex-none px-6 py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 shadow-sm ${maintenanceStatus.is_active
-                ? 'bg-amber-50 text-amber-600 border border-amber-100 hover:bg-amber-600 hover:text-white'
-                : 'bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-600 hover:text-white'
-                }`}
-            >
-              <Power className="w-4 h-4" />
-              <div className="flex flex-col items-center">
-                <span>{maintenanceStatus.is_active ? 'Stop Maintenance' : 'Start Maintenance'}</span>
-              </div>
-            </button>
-          </div>
-        </div>
-
-        {!isMaintenanceCollapsed && (
-          <div className="mt-6 pt-6 border-t border-gray-100 space-y-6 animate-in fade-in slide-in-from-top-4 duration-300">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-gray-500 ml-1 uppercase tracking-widest">Maintenance Message</label>
-                <div className="relative">
-                  <FileText className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    type="text"
-                    value={maintenanceStatus.message}
-                    onChange={(e) => setMaintenanceStatus({ ...maintenanceStatus, message: e.target.value })}
-                    placeholder="server is under maintenance"
-                    className="w-full pl-11 pr-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-2xl text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-gray-500 ml-1 uppercase tracking-widest">Estimated End Time / Timer (Optional)</label>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Clock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          {!isMaintenanceCollapsed && (
+            <div className="mt-6 pt-6 border-t border-gray-100 space-y-6 animate-in fade-in slide-in-from-top-4 duration-300">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-gray-500 ml-1 uppercase tracking-widest">Maintenance Message</label>
+                  <div className="relative">
+                    <FileText className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                     <input
-                      type="datetime-local"
-                      value={maintenanceStatus.end_time ?
-                        (() => {
-                          const d = new Date(maintenanceStatus.end_time);
-                          // Format to YYYY-MM-DDTHH:mm in local time
-                          return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-                        })() : ''
-                      }
-                      onChange={(e) => setMaintenanceStatus({ ...maintenanceStatus, end_time: e.target.value })}
+                      type="text"
+                      value={maintenanceStatus.message}
+                      onChange={(e) => setMaintenanceStatus({ ...maintenanceStatus, message: e.target.value })}
+                      placeholder="server is under maintenance"
                       className="w-full pl-11 pr-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-2xl text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
                     />
                   </div>
-                  <button
-                    onClick={() => handleUpdateMaintenance(maintenanceStatus)}
-                    disabled={updatingMaintenance}
-                    className="px-6 py-3 bg-indigo-600 text-white font-black text-xs rounded-2xl shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95 transition-all"
-                  >
-                    Save Changes
-                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-gray-500 ml-1 uppercase tracking-widest">Estimated End Time / Timer (Optional)</label>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Clock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="datetime-local"
+                        value={maintenanceStatus.end_time ?
+                          (() => {
+                            const d = new Date(maintenanceStatus.end_time);
+                            // Format to YYYY-MM-DDTHH:mm in local time
+                            return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+                          })() : ''
+                        }
+                        onChange={(e) => setMaintenanceStatus({ ...maintenanceStatus, end_time: e.target.value })}
+                        className="w-full pl-11 pr-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-2xl text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
+                      />
+                    </div>
+                    <button
+                      onClick={() => handleUpdateMaintenance(maintenanceStatus)}
+                      disabled={updatingMaintenance}
+                      className="px-6 py-3 bg-indigo-600 text-white font-black text-xs rounded-2xl shadow-lg hover:shadow-xl hover:scale-[1.02] active:scale-95 transition-all"
+                    >
+                      Save Changes
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="flex items-center gap-2 p-3 bg-amber-50 text-amber-700 rounded-2xl border border-amber-100 text-[10px] font-bold">
-              <Shield className="w-4 h-4 shrink-0" />
-              Note: System maintenance will log out all non-admin users and block new logins.
+              <div className="flex items-center gap-2 p-3 bg-amber-50 text-amber-700 rounded-2xl border border-amber-100 text-[10px] font-bold">
+                <Shield className="w-4 h-4 shrink-0" />
+                Note: System maintenance will log out all non-admin users and block new logins.
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -1218,7 +1270,7 @@ const UsersTab = ({ filterProps }) => {
                                 </div>
                                 <div className="flex flex-col mt-0.5">
                                   {uIsVO && u.voID && (
-                                    <span className="text-[10px] font-black text-indigo-600 uppercase tracking-tighter">ID: {u.voID}</span>
+                                    <span className="text-[10px] font-black text-indigo-600 uppercase tracking-tighter">ID: '{u.voID}</span>
                                   )}
                                   <div className="flex items-center gap-1 mt-0.5">
                                     <Clock className="w-2.5 h-2.5 text-gray-400" />
@@ -1250,9 +1302,9 @@ const UsersTab = ({ filterProps }) => {
                             </div>
                           </td>
                           <td className="px-4 sm:px-8 py-5 text-center">
-                            {!uIsVO || uIsDev || uIsAdmin ? (
-                              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest italic">Administrative Access</span>
-                            ) : (
+                            {uIsDev ? (
+                              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest italic">Developer Access</span>
+                            ) : (uIsVO || (uIsAdmin && u.uploadedFiles !== undefined)) ? (
                               <div className="flex justify-center gap-6">
                                 <div className="text-center group/metric">
                                   <div className="text-base sm:text-lg font-black text-green-600 leading-none group-hover/metric:scale-110 transition-transform">{u.uploadedFiles || 0}</div>
@@ -1267,6 +1319,8 @@ const UsersTab = ({ filterProps }) => {
                                   <div className="text-[8px] sm:text-[9px] font-black text-gray-400 uppercase mt-1">Total</div>
                                 </div>
                               </div>
+                            ) : (
+                              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest italic">N/A</span>
                             )}
                           </td>
                           <td className="px-4 sm:px-8 py-5 whitespace-nowrap text-right">
@@ -1282,6 +1336,24 @@ const UsersTab = ({ filterProps }) => {
                                   title="View Converted SHGs"
                                 >
                                   <Eye className="w-4.5 h-4.5" />
+                                </button>
+                              )}
+                              {(currentUserRole.includes('admin - apm') && (u.role || '').toLowerCase().includes('admin - cc')) && (
+                                <button
+                                  onClick={() => downloadUserData(u)}
+                                  className="p-2.5 bg-cyan-50 text-cyan-600 hover:bg-cyan-600 hover:text-white rounded-xl transition-all shadow-sm"
+                                  title="Download CC Data"
+                                >
+                                  <Download className="w-4.5 h-4.5" />
+                                </button>
+                              )}
+                              {!currentUserRole.includes('admin - cc') && !currentUserRole.includes('admin - apm') && canViewUserUploads(u) && (
+                                <button
+                                  onClick={() => downloadUserData(u)}
+                                  className="p-2.5 bg-cyan-50 text-cyan-600 hover:bg-cyan-600 hover:text-white rounded-xl transition-all shadow-sm"
+                                  title="Download VO Data"
+                                >
+                                  <Download className="w-4.5 h-4.5" />
                                 </button>
                               )}
                               {canEditUser(u) && (
@@ -1366,7 +1438,7 @@ const UsersTab = ({ filterProps }) => {
                                 {u.role}
                               </span>
                               {uIsVO && u.voID && (
-                                <span className="text-[10px] font-black text-gray-400 uppercase">ID: {u.voID}</span>
+                                <span className="text-[10px] font-black text-gray-400 uppercase">ID: '{u.voID}</span>
                               )}
                             </div>
                           </div>
@@ -1380,7 +1452,7 @@ const UsersTab = ({ filterProps }) => {
                           )}
                         </div>
 
-                        {uIsVO && (
+                        {(uIsVO || (uIsAdmin && u.uploadedFiles !== undefined)) && (
                           <div className="grid grid-cols-3 gap-2 pt-2">
                             <div className="bg-green-50 rounded-2xl p-2.5 text-center">
                               <div className="text-lg font-black text-green-600 leading-none">{u.uploadedFiles || 0}</div>
@@ -1409,6 +1481,24 @@ const UsersTab = ({ filterProps }) => {
                             >
                               <Eye className="w-4 h-4" />
                               <span className="text-[10px] font-black uppercase">View</span>
+                            </button>
+                          )}
+                          {(currentUserRole.includes('admin - apm') && (u.role || '').toLowerCase().includes('admin - cc')) && (
+                            <button
+                              onClick={() => downloadUserData(u)}
+                              className="flex-1 p-2.5 bg-cyan-50 text-cyan-600 hover:bg-cyan-600 hover:text-white rounded-xl transition-all shadow-sm flex items-center justify-center gap-2"
+                            >
+                              <Download className="w-4 h-4" />
+                              <span className="text-[10px] font-black uppercase">Download</span>
+                            </button>
+                          )}
+                          {!currentUserRole.includes('admin - cc') && !currentUserRole.includes('admin - apm') && canViewUserUploads(u) && (
+                            <button
+                              onClick={() => downloadUserData(u)}
+                              className="flex-1 p-2.5 bg-cyan-50 text-cyan-600 hover:bg-cyan-600 hover:text-white rounded-xl transition-all shadow-sm flex items-center justify-center gap-2"
+                            >
+                              <Download className="w-4 h-4" />
+                              <span className="text-[10px] font-black uppercase">Download</span>
                             </button>
                           )}
                           {canEditUser(u) && (
@@ -1869,7 +1959,7 @@ const UsersTab = ({ filterProps }) => {
                               <div className="flex justify-between items-start mb-3">
                                 <div className="flex-1 min-w-0">
                                   <h4 className="font-bold text-sm text-gray-900 truncate">{upload.shgName}</h4>
-                                  <p className="text-xs text-gray-600">SHG ID: {upload.shgID}</p>
+                                  <p className="text-xs text-gray-600">SHG ID: '{upload.shgID}</p>
                                 </div>
                                 {currentUserRole !== 'admin - apm' && (
                                   <span className="px-2 py-1 rounded-lg text-[10px] font-black uppercase bg-orange-200 text-orange-800">
@@ -1946,7 +2036,7 @@ const UsersTab = ({ filterProps }) => {
                               <div className="flex justify-between items-start mb-3">
                                 <div className="flex-1 min-w-0">
                                   <h4 className="font-bold text-sm text-gray-900 truncate">{upload.shgName}</h4>
-                                  <p className="text-xs text-gray-600">SHG ID: {upload.shgID}</p>
+                                  <p className="text-xs text-gray-600">SHG ID: '{upload.shgID}</p>
                                 </div>
                                 <span className="px-2 py-1 rounded-lg text-[10px] font-black uppercase bg-red-200 text-red-800">
                                   Rejected
@@ -2015,7 +2105,7 @@ const UsersTab = ({ filterProps }) => {
                               <div className="flex justify-between items-start mb-3">
                                 <div className="flex-1 min-w-0">
                                   <h4 className="font-bold text-sm text-gray-900 truncate">{upload.shgName}</h4>
-                                  <p className="text-xs text-gray-600">SHG ID: {upload.shgID}</p>
+                                  <p className="text-xs text-gray-600">SHG ID: '{upload.shgID}</p>
                                 </div>
                                 <span className="px-2 py-1 rounded-lg text-[10px] font-black uppercase bg-green-200 text-green-800">
                                   Validated
@@ -2082,7 +2172,7 @@ const UsersTab = ({ filterProps }) => {
               <div className="flex justify-between items-center mb-6">
                 <div>
                   <h3 className="text-xl font-black text-gray-900">Update Upload Status</h3>
-                  <p className="text-sm text-gray-600 mt-1">{selectedUpload.shgName} ({selectedUpload.shgID})</p>
+                  <p className="text-sm text-gray-600 mt-1">{selectedUpload.shgName} ('{selectedUpload.shgID})</p>
                 </div>
                 <button onClick={() => setShowStatusModal(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-all">
                   <X className="w-5 h-5" />
