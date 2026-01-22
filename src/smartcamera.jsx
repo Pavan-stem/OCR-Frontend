@@ -28,6 +28,9 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
     const imageContainerRef = useRef(null);
     const [expandedSection, setExpandedSection] = useState("overview");
     const [cameraError, setCameraError] = useState(null);
+    const [processingMessage, setProcessingMessage] = useState("Processing...");
+    const [showErrorModal, setShowErrorModal] = useState(false);
+    const [errorMessage, setErrorMessage] = useState("");
 
     // Initialize camera
     useEffect(() => {
@@ -37,10 +40,30 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
         const initCamera = async () => {
             try {
                 stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } }
+                    video: {
+                        facingMode: { ideal: "environment" },
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
+                    }
                 });
+
                 if (videoRef.current) {
                     videoRef.current.srcObject = stream;
+
+                    // Attempt to play and handle any auto-play restrictions
+                    try {
+                        await videoRef.current.play();
+                        setIsCameraActive(true);
+                        setCameraError(null);
+                    } catch (playError) {
+                        console.warn("Auto-play blocked or failed, waiting for metadata:", playError);
+                        videoRef.current.onloadedmetadata = () => {
+                            setIsCameraActive(true);
+                            setCameraError(null);
+                        };
+                    }
+                } else {
+                    // Fallback
                     setIsCameraActive(true);
                     setCameraError(null);
                 }
@@ -58,7 +81,7 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
                 stream.getTracks().forEach(track => track.stop());
             }
         };
-    }, [open, showValidationModal]);
+    }, [open, showValidationModal, showErrorModal]);
 
     // Initialize crop when editor opens
     useEffect(() => {
@@ -136,16 +159,16 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
             updatePoint('tr', deltaX, deltaY);
         }
         else if (handle === 'right') {
-            updatePoint('tr', deltaX, deltaY);
-            updatePoint('br', deltaX, deltaY);
+            updatePoint('tr', deltaX, 0);
+            updatePoint('br', deltaX, 0);
         }
         else if (handle === 'bottom') {
-            updatePoint('bl', deltaX, deltaY);
-            updatePoint('br', deltaX, deltaY);
+            updatePoint('br', 0, deltaY);
+            updatePoint('bl', 0, deltaY);
         }
         else if (handle === 'left') {
-            updatePoint('tl', deltaX, deltaY);
-            updatePoint('bl', deltaX, deltaY);
+            updatePoint('tl', deltaX, 0);
+            updatePoint('bl', deltaX, 0);
         }
 
         setCropPoints(newPoints);
@@ -258,11 +281,13 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
         const file = e.target.files?.[0];
         if (!file) return;
         setIsCapturing(true);
+        setShowErrorModal(false);
         await processCaughtFile(file);
     };
 
     const processCaughtFile = async (file) => {
         try {
+            setProcessingMessage("Analyzing image quality...");
             const result = await scanDocument(file);
             setValidationResult(result);
 
@@ -272,11 +297,19 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
                 setCapturedImageData(reader.result);
                 setShowValidationModal(true);
                 setShowCropEditor(false);
+                setShowErrorModal(false);
+                
+                // Check for critical errors and block upload
+                if (result.issues && result.issues.length > 0 && !result.isValid) {
+                    setErrorMessage(result.issues.join("\n"));
+                    setShowErrorModal(true);
+                }
             };
 
             setIsCapturing(false);
         } catch (err) {
-            alert(`Error processing image: ${err.message} `);
+            setErrorMessage(`Error processing image: ${err.message}`);
+            setShowErrorModal(true);
             setIsCapturing(false);
         }
     };
@@ -308,7 +341,19 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
         setShowValidationModal(false);
         setShowCropEditor(false);
         setIsCapturing(false);
+        setIsCameraActive(false);
+        setCameraError(null);
+        setShowErrorModal(false);
+        setErrorMessage("");
         onClose();
+    };
+
+    const handleRetake = () => {
+        setShowErrorModal(false);
+        setErrorMessage("");
+        setCapturedImageData(null);
+        setValidationResult(null);
+        setShowValidationModal(false);
     };
 
     // Helper for Edge Midpoints
@@ -316,8 +361,39 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
 
     if (!open) return null;
 
+    // Error Modal Component
+    const errorModal = showErrorModal && (
+        <div className="fixed inset-0 bg-black/70 z-[10001] flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl animate-in fade-in zoom-in">
+                <div className="flex items-center justify-center w-14 h-14 rounded-full bg-red-100 mx-auto mb-4">
+                    <AlertTriangle className="text-red-600" size={28} />
+                </div>
+                <h3 className="text-2xl font-bold text-center mb-3 text-gray-900">Unable to Process</h3>
+                <p className="text-gray-600 text-center text-sm mb-6 leading-relaxed whitespace-pre-line max-h-32 overflow-y-auto">
+                    {errorMessage}
+                </p>
+                <div className="space-y-3">
+                    <button
+                        onClick={handleRetake}
+                        className="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl font-bold hover:shadow-lg transition active:scale-95"
+                    >
+                        Retake Photo
+                    </button>
+                    <button
+                        onClick={handleClose}
+                        className="w-full py-3 bg-gray-200 text-gray-800 rounded-2xl font-bold hover:bg-gray-300 transition active:scale-95"
+                    >
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+
     return createPortal(
-        <div className="fixed inset-0 bg-black z-[10000] flex flex-col font-sans overflow-hidden">
+        <>
+            {errorModal}
+            <div className="fixed inset-0 bg-black z-[10000] flex flex-col font-sans overflow-hidden">
             {showValidationModal && capturedImageData ? (
                 <div className="flex flex-col h-full bg-gray-900">
                     <div className="flex justify-between items-center p-4 bg-gray-800 text-white shadow-md z-10">
@@ -414,9 +490,12 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
 
                         {isCapturing && (
                             <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] z-50 flex items-center justify-center">
-                                <div className="bg-white/10 p-4 rounded-2xl flex flex-col items-center gap-3">
-                                    <Loader className="animate-spin text-white" size={32} />
-                                    <span className="text-white text-sm font-medium">Processing...</span>
+                                <div className="bg-white/10 p-6 rounded-2xl flex flex-col items-center gap-3 border border-white/20 shadow-2xl">
+                                    <div className="relative">
+                                        <Loader className="animate-spin text-blue-400" size={40} />
+                                        <div className="absolute inset-0 bg-blue-400/20 blur-xl rounded-full animate-pulse"></div>
+                                    </div>
+                                    <span className="text-white text-base font-semibold tracking-wide">{processingMessage}</span>
                                 </div>
                             </div>
                         )}
@@ -450,11 +529,24 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
                                 </div>
                                 <button
                                     onClick={handleUploadDocument}
-                                    disabled={!validationResult?.isValid || isCapturing}
-                                    className={`w - full py - 4 rounded - 2xl font - bold text - lg shadow - lg active: scale - [0.98] transition - all ${validationResult?.isValid ? 'bg-gradient-to-r from-emerald-500 to-green-600 text-white' : 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                                        } `}
+                                    disabled={!validationResult?.isValid || isCapturing || showErrorModal}
+                                    className={`w-full py-5 px-6 rounded-2xl font-bold text-lg shadow-lg active:scale-95 transition-all duration-200 transform flex items-center justify-center gap-3 ${
+                                        validationResult?.isValid && !showErrorModal
+                                            ? 'bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 text-white border-b-4 border-indigo-800 shadow-indigo-500/40 hover:shadow-indigo-500/60'
+                                            : 'bg-gray-700 text-gray-400 cursor-not-allowed opacity-60'
+                                    }`}
                                 >
-                                    {validationResult?.isValid ? 'Confirm & Upload' : 'Fix Issues to Upload'}
+                                    {validationResult?.isValid && !showErrorModal ? (
+                                        <>
+                                            <CheckCircle size={22} />
+                                            <span>Confirm & Upload Document</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <AlertTriangle size={22} />
+                                            <span>Fix Issues to Upload</span>
+                                        </>
+                                    )}
                                 </button>
                             </>
                         )}
@@ -464,16 +556,27 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
                 <>
                     <div className="flex-1 relative bg-black flex flex-col">
                         <div className="flex-1 relative overflow-hidden">
-                            {isCameraActive ? (
-                                <video ref={videoRef} autoPlay playsInline muted className="absolute inset-0 w-full h-full object-contain" />
-                            ) : (
+                            <video
+                                ref={videoRef}
+                                autoPlay
+                                playsInline
+                                muted
+                                className={`absolute inset-0 w-full h-full object-contain ${!isCameraActive ? 'hidden' : ''}`}
+                            />
+
+                            {!isCameraActive && (
                                 <div className="flex items-center justify-center h-full text-white/50">
                                     {cameraError ? (
                                         <div className="text-center p-8">
                                             <AlertTriangle size={64} className="mx-auto mb-4 text-red-500" />
                                             <p className="text-lg font-medium">{cameraError}</p>
                                         </div>
-                                    ) : <Loader className="animate-spin" size={48} />}
+                                    ) : (
+                                        <div className="flex flex-col items-center gap-4">
+                                            <Loader className="animate-spin" size={48} />
+                                            <p className="text-sm font-medium animate-pulse">Initializing Camera...</p>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
@@ -512,7 +615,8 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
                     <canvas ref={canvasRef} className="hidden" />
                 </>
             )}
-        </div>,
+            </div>
+        </>,
         document.body
     );
 };

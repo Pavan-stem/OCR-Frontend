@@ -249,9 +249,11 @@ const detectLightingOpenCV = (src) => {
     if (brightness < 60) {
         status = 'poor';
         issues.push("Lighting is too dark. Please add more light.");
-    } else if (brightness > 200) {
+    } else if (brightness > 230) {
+        // Only flag as too bright if it's extremely bright (scanned documents are naturally brighter)
+        // Increase threshold from 200 to 230 to accommodate document scanners
         status = 'poor';
-        issues.push("Lighting is too bright/glaring.");
+        issues.push("Image is overexposed. Please reduce lighting.");
     }
 
     if (contrast < 30) {
@@ -386,20 +388,23 @@ export const scanDocument = async (file) => {
                         }
 
                         // 6. Wrong Object / Geometry Check
-                        // Aspect ratio check (Documents usually 0.5 to 2.0)
+                        // Aspect ratio check (Documents usually 0.3 to 3.0 to handle various page sizes)
                         const ar = edgeRes.bounds.width / edgeRes.bounds.height;
-                        if (ar < 0.2 || ar > 5.0) {
+                        if (ar < 0.25 || ar > 4.0) {
                             issues.push("Invalid document shape detected.");
                             invalidObject = true;
                             tableDetected = false;
                         }
 
                     } else {
-                        issues.push("No document detected. Scan a full page.");
+                        // Only mark as no document if area is too small
+                        if (!edgeRes.maxArea || edgeRes.maxArea < (width * height * 0.05)) {
+                            issues.push("No document detected. Position the document fully in frame.");
+                        }
                     }
 
-                    // table/document detection logic
-                    if (edgeRes.maxArea < (width * height * 0.15)) {
+                    // table/document detection logic - adjusted thresholds for better near/far detection
+                    if (edgeRes.maxArea && edgeRes.maxArea < (width * height * 0.08)) {
                         issues.push("Document too small. Please move closer.");
                         tableDetected = false;
                     }
