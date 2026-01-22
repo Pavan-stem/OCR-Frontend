@@ -38,6 +38,82 @@ const UsersTab = ({ filterProps }) => {
     }
   })();
 
+  const isDeveloperUser = (() => {
+    try {
+      const userData = JSON.parse(localStorage.getItem('user'));
+      const role = (userData?.role || '').toLowerCase();
+      return role.includes('developer');
+    } catch (e) {
+      return false;
+    }
+  })();
+
+  // Check if user can edit/delete another user based on permissions
+  const canEditUser = (targetUser) => {
+    const targetRoleLower = (targetUser?.role || 'vo').toLowerCase();
+    const targetIsVO = targetRoleLower.startsWith('vo') || targetRoleLower === 'none' || !targetUser?.role;
+    
+    if (currentUserRole.includes('admin - cc')) {
+      return false; // CC cannot edit anyone
+    }
+    
+    if (currentUserRole.includes('admin - apm')) {
+      // APM can only edit VOs
+      return targetIsVO;
+    }
+    
+    // Admin and Developer can edit everyone
+    return true;
+  };
+
+  const canDeleteUser = (targetUser) => {
+    const targetRoleLower = (targetUser?.role || 'vo').toLowerCase();
+    const targetIsVO = targetRoleLower.startsWith('vo') || targetRoleLower === 'none' || !targetUser?.role;
+    const targetIsDev = targetRoleLower.includes('developer');
+    const isLoggedInDev = currentUserRole.includes('developer');
+    
+    if (currentUserRole.includes('admin - cc')) {
+      return false; // CC cannot delete anyone
+    }
+    
+    if (currentUserRole.includes('admin - apm')) {
+      // APM can only delete VOs
+      return targetIsVO;
+    }
+    
+    // Admin can delete non-developers or developers can delete developers
+    if (!targetIsDev || isLoggedInDev) {
+      return true;
+    }
+    
+    return false;
+  };
+
+  const canViewUserUploads = (targetUser) => {
+    const targetRoleLower = (targetUser?.role || 'vo').toLowerCase();
+    const targetIsVO = targetRoleLower.startsWith('vo') || targetRoleLower === 'none' || !targetUser?.role;
+    
+    // Eye button only shows for VO users (since only VOs have uploads)
+    // Admin - CC, Admin - APM, and Admin users can view VO uploads if needed
+    return targetIsVO;
+  };
+
+  const canCreateUser = (roleToCreate) => {
+    const roleToCreateLower = (roleToCreate || 'vo').toLowerCase();
+    
+    if (currentUserRole.includes('admin - cc')) {
+      return false; // CC cannot create anything
+    }
+    
+    if (currentUserRole.includes('admin - apm')) {
+      // APM can only create VOs
+      return roleToCreateLower.startsWith('vo') || roleToCreateLower === 'vo';
+    }
+    
+    // Admin and Developer can create any role
+    return true;
+  };
+
   const downloadImage = (url, filename) => {
     if (!url) return;
     // We now rely on the backend setting Content-Disposition for the presigned URL
@@ -710,9 +786,8 @@ const UsersTab = ({ filterProps }) => {
           try {
             const userData = JSON.parse(localStorage.getItem('user'));
             const role = (userData?.role || '').toLowerCase();
-            // Restrict "Add User" to Admin, APM, and Developer roles. Specifically HIDDEN from CC and VO.
-            const allowedRoles = ['admin', 'admin - apm', 'admin - developer'];
-            if (allowedRoles.includes(role)) {
+            // Check if user can add new users (anyone except CC)
+            if (!role.includes('admin - cc')) {
               return (
                 <button
                   onClick={openAddModal}
@@ -733,12 +808,13 @@ const UsersTab = ({ filterProps }) => {
       </div>
 
       {/* Maintenance Controls - Admin/Dev Only */}
-      <div className="bg-white rounded-3xl p-4 sm:p-6 shadow-md border border-gray-100">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-xl ${maintenanceStatus.is_active ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'}`}>
-              <AlertTriangle className="w-5 h-5" />
-            </div>
+      {isDeveloperUser && (
+        <div className="bg-white rounded-3xl p-4 sm:p-6 shadow-md border border-gray-100">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-xl ${maintenanceStatus.is_active ? 'bg-amber-100 text-amber-600' : 'bg-emerald-100 text-emerald-600'}`}>
+                <AlertTriangle className="w-5 h-5" />
+              </div>
             <div>
               <h3 className="text-sm sm:text-base font-black text-gray-900 flex items-center gap-2">
                 System Maintenance
@@ -831,6 +907,7 @@ const UsersTab = ({ filterProps }) => {
           </div>
         )}
       </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {[
@@ -1194,25 +1271,29 @@ const UsersTab = ({ filterProps }) => {
                           </td>
                           <td className="px-4 sm:px-8 py-5 whitespace-nowrap text-right">
                             <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button
-                                onClick={() => {
-                                  setSelectedUserId(u._id);
-                                  setSelectedUserName(u.voName);
-                                  setActiveTab('conversion');
-                                }}
-                                className="p-2.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-xl transition-all shadow-sm"
-                                title="View Converted SHGs"
-                              >
-                                <Eye className="w-4.5 h-4.5" />
-                              </button>
-                              <button
-                                onClick={() => openEditModal(u)}
-                                className="p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all shadow-sm"
-                                title="Edit User"
-                              >
-                                <Edit className="w-4.5 h-4.5" />
-                              </button>
-                              {(!uIsDev || isLoggedInDev) && (
+                              {canViewUserUploads(u) && (
+                                <button
+                                  onClick={() => {
+                                    setSelectedUserId(u._id);
+                                    setSelectedUserName(u.voName);
+                                    setActiveTab('conversion');
+                                  }}
+                                  className="p-2.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-xl transition-all shadow-sm"
+                                  title="View Converted SHGs"
+                                >
+                                  <Eye className="w-4.5 h-4.5" />
+                                </button>
+                              )}
+                              {canEditUser(u) && (
+                                <button
+                                  onClick={() => openEditModal(u)}
+                                  className="p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all shadow-sm"
+                                  title="Edit User"
+                                >
+                                  <Edit className="w-4.5 h-4.5" />
+                                </button>
+                              )}
+                              {canDeleteUser(u) && (
                                 <button
                                   onClick={() => handleDeleteUser(u._id)}
                                   className="p-2.5 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white rounded-xl transition-all shadow-sm"
@@ -1317,25 +1398,29 @@ const UsersTab = ({ filterProps }) => {
                         )}
 
                         <div className="flex flex-wrap gap-2 pt-2">
-                          <button
-                            onClick={() => {
-                              setSelectedUserId(u._id);
-                              setSelectedUserName(u.voName);
-                              setActiveTab('conversion');
-                            }}
-                            className="flex-1 p-2.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-xl transition-all shadow-sm flex items-center justify-center gap-2"
-                          >
-                            <Eye className="w-4 h-4" />
-                            <span className="text-[10px] font-black uppercase">View</span>
-                          </button>
-                          <button
-                            onClick={() => openEditModal(u)}
-                            className="flex-1 p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all shadow-sm flex items-center justify-center gap-2"
-                          >
-                            <Edit className="w-4 h-4" />
-                            <span className="text-[10px] font-black uppercase">Edit</span>
-                          </button>
-                          {(!uIsDev || isLoggedInDev) && (
+                          {canViewUserUploads(u) && (
+                            <button
+                              onClick={() => {
+                                setSelectedUserId(u._id);
+                                setSelectedUserName(u.voName);
+                                setActiveTab('conversion');
+                              }}
+                              className="flex-1 p-2.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-xl transition-all shadow-sm flex items-center justify-center gap-2"
+                            >
+                              <Eye className="w-4 h-4" />
+                              <span className="text-[10px] font-black uppercase">View</span>
+                            </button>
+                          )}
+                          {canEditUser(u) && (
+                            <button
+                              onClick={() => openEditModal(u)}
+                              className="flex-1 p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all shadow-sm flex items-center justify-center gap-2"
+                            >
+                              <Edit className="w-4 h-4" />
+                              <span className="text-[10px] font-black uppercase">Edit</span>
+                            </button>
+                          )}
+                          {canDeleteUser(u) && (
                             <button
                               onClick={() => handleDeleteUser(u._id)}
                               className="flex-1 p-2.5 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white rounded-xl transition-all shadow-sm flex items-center justify-center gap-2"
@@ -1496,9 +1581,13 @@ const UsersTab = ({ filterProps }) => {
                         className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
                       >
                         <option value="VO">Village Organization (VO)</option>
-                        <option value="Admin">Admin</option>
-                        <option value="Admin - CC">Admin - CC</option>
-                        <option value="Admin - APM">Admin - APM</option>
+                        {!currentUserRole.includes('admin - apm') && (
+                          <>
+                            <option value="Admin">Admin</option>
+                            <option value="Admin - CC">Admin - CC</option>
+                            <option value="Admin - APM">Admin - APM</option>
+                          </>
+                        )}
                       </select>
 
                       {isLoggedInDev && (
