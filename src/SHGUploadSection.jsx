@@ -1444,24 +1444,24 @@ const SHGUploadSection = ({
                     className="flex items-center justify-center gap-2 w-full px-3 py-2 rounded-lg font-semibold bg-gradient-to-r from-indigo-500 to-purple-600 text-white text-xs sm:text-sm shadow-md active:scale-95 transition-all"
                   >
                     <Activity size={14} />
-                    <span>{t?.('upload.smartScan') || 'Smart Scan'}</span>
+                    <span>{t?.('Upload Files') || 'Smart Scan'}</span>
                   </button>
 
-                  <button
+                  {/* <button
                     onClick={() => nativeCameraInputRefs.current[shg.shgId]?.click()}
                     className="flex items-center justify-center gap-2 w-full px-3 py-2 rounded-lg font-semibold bg-gradient-to-r from-emerald-500 to-teal-600 text-white text-xs sm:text-sm shadow-md active:scale-95 transition-all"
                   >
                     <Camera size={14} />
                     <span>{t?.('upload.camera') || 'Direct Camera'}</span>
-                  </button>
+                  </button> */}
 
-                  <button
+                  {/* <button
                     onClick={() => fileInputRefs.current[shg.shgId]?.click()}
                     className="flex items-center justify-center gap-2 w-full px-3 py-2 rounded-lg font-semibold bg-blue-50 text-blue-600 border border-blue-200 text-xs sm:text-sm shadow-sm active:scale-95 transition-all"
                   >
                     <Upload size={14} />
                     <span>{t?.('upload.gallery') || 'Gallery Upload'}</span>
-                  </button>
+                  </button> */}
                 </div>
               </div>
             ) : (
@@ -1601,26 +1601,26 @@ const SHGUploadSection = ({
                     className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-semibold cursor-pointer transition-all border shadow-sm text-xs sm:text-sm bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white border-transparent"
                   >
                     <Activity size={16} />
-                    <span>{t?.('upload.smartScan') || 'Smart Scan'}</span>
+                    <span>{t?.('Upload Files') || 'Smart Scan'}</span>
                   </button>
 
                   {/* Direct Camera - System Native */}
-                  <button
+                  {/* <button
                     onClick={() => nativeCameraInputRefs.current[shg.shgId]?.click()}
                     className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-semibold cursor-pointer transition-all border shadow-sm text-xs sm:text-sm bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white border-transparent"
                   >
                     <Camera size={16} />
                     <span>{t?.('upload.camera') || 'Direct Camera'}</span>
-                  </button>
+                  </button> */}
 
                   {/* Gallery/Upload */}
-                  <button
+                  {/* <button
                     onClick={() => fileInputRefs.current[shg.shgId]?.click()}
                     className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-semibold cursor-pointer transition-all border shadow-sm text-xs sm:text-sm bg-blue-50 hover:bg-blue-100 text-blue-600 border-blue-200"
                   >
                     <Upload size={16} />
                     <span>{t?.('upload.gallery') || 'Upload from Gallery'}</span>
-                  </button>
+                  </button> */}
                 </div>
               )}
             </div>
