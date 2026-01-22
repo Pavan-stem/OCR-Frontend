@@ -238,16 +238,6 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
 
                 {/* ACTION BUTTONS */}
                 <div className="flex flex-wrap items-center gap-3">
-                    {s3Url && (
-                        <button
-                            onClick={() => setShowImage(!showImage)}
-                            className={`p-3 sm:p-4 rounded-xl sm:rounded-2xl transition-all shadow-md border ${showImage ? 'bg-indigo-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-200'}`}
-                            title="Toggle Original Image"
-                        >
-                            <ImageIcon className="w-5 h-5 sm:w-6 sm:h-6" />
-                        </button>
-                    )}
-
                     {!isEditing ? (
                         <>
                             <button
@@ -290,8 +280,8 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
 
             </div>
 
-            {/* Main Table Vessel */}
-            <div className="bg-white rounded-[32px] shadow-lg border border-gray-200 overflow-hidden">
+            {/* Main Table Vessel with Image Overlay */}
+            <div className="bg-white rounded-[32px] shadow-lg border border-gray-200 overflow-hidden relative z-0">
                 <div className="bg-indigo-600 px-8 py-5 flex items-center justify-between">
                     <div className="flex items-center gap-4">
                         <div className="p-2.5 bg-white/20 rounded-xl">
@@ -302,10 +292,11 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                             <p className="text-[10px] text-indigo-200 font-bold uppercase tracking-widest mt-0.5">SHG Digitally Converted Table</p>
                         </div>
                     </div>
-                    <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-4">
+                        {/* Image Visibility Control */}
                         {showImage && s3Url && (
                             <div className="hidden lg:flex items-center gap-3 px-4 py-2 bg-white/10 rounded-full border border-white/10">
-                                <span className="text-[10px] text-white font-black uppercase tracking-widest">Adjust Visibility</span>
+                                <span className="text-[10px] text-white font-black uppercase tracking-widest">Visibility:</span>
                                 <input
                                     type="range"
                                     min="0"
@@ -314,8 +305,22 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                                     onChange={(e) => setOpacity(e.target.value / 100)}
                                     className="w-24 h-1.5 bg-white/20 rounded-full appearance-none cursor-pointer accent-white"
                                 />
+                                <span className="text-[10px] text-white font-bold">{Math.round(opacity * 100)}%</span>
                             </div>
                         )}
+
+                        {/* View Image Button */}
+                        {s3Url && (
+                            <button
+                                onClick={() => setShowImage(!showImage)}
+                                className={`px-4 sm:px-6 py-3 sm:py-4 rounded-xl sm:rounded-2xl transition-all shadow-md border font-semibold text-sm flex items-center gap-2 ${showImage ? 'bg-white text-indigo-600' : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-200'}`}
+                                title={showImage ? "Hide Original Image" : "View Original Image"}
+                            >
+                                <ImageIcon className="w-5 h-5 sm:w-6 sm:h-6" />
+                                <span className="hidden sm:inline">View Image</span>
+                            </button>
+                        )}
+
                         <div className="hidden sm:flex items-center gap-2 px-4 py-2 bg-white/10 rounded-full border border-white/10">
                             <ShieldCheck className="text-indigo-200" size={16} />
                             <span className="text-[10px] text-white font-black uppercase tracking-tight">Digital Validate</span>
@@ -323,40 +328,44 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                     </div>
                 </div>
 
+                {/* Image Overlay Container */}
+                {showImage && s3Url && (
+                    <div className="absolute inset-0 top-20 left-0 right-0 bottom-0 z-40 flex items-center justify-center overflow-hidden">
+                        {/* Image */}
+                        <div className="relative w-full h-full">
+                            <img
+                                src={s3Url}
+                                alt="Original Record"
+                                className="w-full h-full transition-opacity duration-300"
+                                style={{ opacity: opacity }}
+                            />
+                        </div>
+                    </div>
+                )}
+
+                {/* Mobile Opacity Control */}
+                {showImage && s3Url && (
+                    <div className="lg:hidden bg-gray-50 px-6 py-4 border-b border-gray-200 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                            <Eye size={18} className="text-indigo-600" />
+                            <span className="text-xs font-black text-gray-700 uppercase tracking-widest">Visibility:</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="range"
+                                min="0"
+                                max="100"
+                                value={opacity * 100}
+                                onChange={(e) => setOpacity(e.target.value / 100)}
+                                className="w-24 h-2 bg-gray-200 rounded-full appearance-none cursor-pointer accent-indigo-600"
+                            />
+                            <span className="text-xs font-bold text-gray-500 w-8 text-right">{Math.round(opacity * 100)}%</span>
+                        </div>
+                    </div>
+                )}
+
                 <div className="overflow-x-auto custom-scrollbar">
                     <div className="inline-block min-w-full align-top">
-                        {/* Inline Image Container - Moved inside scrollable div for width alignment */}
-                        {showImage && s3Url && (
-                            <div className="border-b border-gray-200 bg-gray-50/50 flex flex-col animate-in slide-in-from-top-4 duration-500">
-                                <div className="w-full relative rounded-2xl overflow-hidden shadow-inner border border-gray-200 bg-gray-100 max-h-[600px] overflow-y-auto custom-scrollbar">
-                                    <img
-                                        src={s3Url}
-                                        alt="Original Record"
-                                        className="w-full h-auto transition-opacity duration-300 block"
-                                        style={{ opacity: opacity }}
-                                    />
-                                    {/* Overlay Controls for Mobile/Small views */}
-                                    <div className="absolute top-4 right-4 lg:hidden">
-                                        <div className="bg-black/60 backdrop-blur-md p-3 rounded-2xl border border-white/20 flex items-center gap-3">
-                                            <Eye size={16} className="text-white" />
-                                            <input
-                                                type="range"
-                                                min="10"
-                                                max="100"
-                                                value={opacity * 100}
-                                                onChange={(e) => setOpacity(e.target.value / 100)}
-                                                className="w-20 h-1 bg-white/20 rounded-full appearance-none cursor-pointer accent-white"
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="mt-3 flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                                    <AlertCircle size={14} className="text-indigo-400" />
-                                    Use the image above to verify the digital entries below
-                                </div>
-                            </div>
-                        )}
-
                         <table className="w-full border-collapse">
                             <thead>
                                 {/* Complex Headers from backend */}
