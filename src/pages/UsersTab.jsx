@@ -457,6 +457,26 @@ const UsersTab = ({ filterProps }) => {
     fetchUserCounts();
   }, [page, limit, debouncedSearchTerm, selectedDistrict, selectedMandal, selectedVillage, sortBy, sortOrders, filterMonth, filterYear]);
 
+  // Handle auto-fill for restricted roles
+  useEffect(() => {
+    try {
+      const userData = JSON.parse(localStorage.getItem('user'));
+      const role = (userData?.role || '').toLowerCase();
+      const isRestricted = role.includes('admin - apm') || role.includes('admin - cc');
+
+      if (isRestricted) {
+        if (userData.district && (!selectedDistrict || selectedDistrict === 'all')) {
+          setSelectedDistrict(userData.district);
+        }
+        if (userData.mandal && (!selectedMandal || selectedMandal === 'all')) {
+          setSelectedMandal(userData.mandal);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to parse user for auto-fill', e);
+    }
+  }, [selectedDistrict, selectedMandal, setSelectedDistrict, setSelectedMandal]);
+
   // Dedicated Maintenance Polling for Admin
   useEffect(() => {
     fetchMaintenanceStatus();
@@ -635,14 +655,28 @@ const UsersTab = ({ filterProps }) => {
   };
 
   const openAddModal = () => {
+    let initialDistrict = selectedDistrict !== 'all' ? selectedDistrict : '';
+    let initialMandal = selectedMandal !== 'all' ? selectedMandal : '';
+
+    try {
+      const userData = JSON.parse(localStorage.getItem('user'));
+      const role = (userData?.role || '').toLowerCase();
+      if (role.includes('admin - apm') || role.includes('admin - cc')) {
+        initialDistrict = userData.district || initialDistrict;
+        initialMandal = userData.mandal || initialMandal;
+      }
+    } catch (e) {
+      console.error('Failed to pre-fill modal location', e);
+    }
+
     setFormData({
       voName: '',
       phone: '',
       password: '',
       role: 'VO',
       isDeveloper: false,
-      district: selectedDistrict !== 'all' ? selectedDistrict : '',
-      mandal: selectedMandal !== 'all' ? selectedMandal : '',
+      district: initialDistrict,
+      mandal: initialMandal,
       village: selectedVillage !== 'all' ? selectedVillage : '',
       voID: '',
       voaName: '',
@@ -1150,29 +1184,33 @@ const UsersTab = ({ filterProps }) => {
                 <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">Location Filters</h3>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="space-y-2">
-                  <label className="text-xs font-black text-gray-500 ml-1 uppercase">District</label>
-                  <select
-                    value={selectedDistrict}
-                    onChange={(e) => setSelectedDistrict(e.target.value)}
-                    className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 hover:bg-white"
-                  >
-                    <option value="all">All Districts</option>
-                    {districts.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs font-black text-gray-500 ml-1 uppercase">Mandal</label>
-                  <select
-                    value={selectedMandal}
-                    onChange={(e) => setSelectedMandal(e.target.value)}
-                    disabled={selectedDistrict === 'all'}
-                    className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <option value="all">All Mandals</option>
-                    {mandals.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
-                  </select>
-                </div>
+                {!(currentUserRole.includes('admin - apm') || currentUserRole.includes('admin - cc')) && (
+                  <>
+                    <div className="space-y-2">
+                      <label className="text-xs font-black text-gray-500 ml-1 uppercase">District</label>
+                      <select
+                        value={selectedDistrict}
+                        onChange={(e) => setSelectedDistrict(e.target.value)}
+                        className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 hover:bg-white"
+                      >
+                        <option value="all">All Districts</option>
+                        {districts.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-black text-gray-500 ml-1 uppercase">Mandal</label>
+                      <select
+                        value={selectedMandal}
+                        onChange={(e) => setSelectedMandal(e.target.value)}
+                        disabled={selectedDistrict === 'all'}
+                        className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <option value="all">All Mandals</option>
+                        {mandals.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                      </select>
+                    </div>
+                  </>
+                )}
                 <div className="space-y-2">
                   <label className="text-xs font-black text-gray-500 ml-1 uppercase">Village</label>
                   <select
@@ -1271,6 +1309,12 @@ const UsersTab = ({ filterProps }) => {
                                 <div className="flex flex-col mt-0.5">
                                   {uIsVO && u.voID && (
                                     <span className="text-[10px] font-black text-indigo-600 uppercase tracking-tighter">ID: '{u.voID}</span>
+                                  )}
+                                  {uRoleLower.includes('admin - apm') && u.userID && (
+                                    <span className="text-[10px] font-black text-indigo-600 uppercase tracking-tighter">ID: '{u.userID}</span>
+                                  )}
+                                  {uRoleLower.includes('admin - cc') && u.clusterID && (
+                                    <span className="text-[10px] font-black text-indigo-600 uppercase tracking-tighter">ID: '{u.clusterID}</span>
                                   )}
                                   <div className="flex items-center gap-1 mt-0.5">
                                     <Clock className="w-2.5 h-2.5 text-gray-400" />
@@ -1439,6 +1483,12 @@ const UsersTab = ({ filterProps }) => {
                               </span>
                               {uIsVO && u.voID && (
                                 <span className="text-[10px] font-black text-gray-400 uppercase">ID: '{u.voID}</span>
+                              )}
+                              {uRoleLower.includes('admin - apm') && u.userID && (
+                                <span className="text-[10px] font-black text-gray-400 uppercase">ID: '{u.userID}</span>
+                              )}
+                              {uRoleLower.includes('admin - cc') && u.clusterID && (
+                                <span className="text-[10px] font-black text-gray-400 uppercase">ID: '{u.clusterID}</span>
                               )}
                             </div>
                           </div>
@@ -1699,36 +1749,40 @@ const UsersTab = ({ filterProps }) => {
 
                   {/* Location & VO Details */}
                   <div className="space-y-6">
-                    <div className="space-y-2">
-                      <label className="text-xs font-black text-gray-700 ml-1 uppercase flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full bg-purple-500"></div>
-                        District Jurisdiction
-                      </label>
-                      <select
-                        value={formData.district}
-                        required
-                        onChange={(e) => setFormData({ ...formData, district: e.target.value })}
-                        className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
-                      >
-                        <option value="">Select District</option>
-                        {districts.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
-                      </select>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    {!(currentUserRole.includes('admin - apm') || currentUserRole.includes('admin - cc')) && (
                       <div className="space-y-2">
-                        <label className="text-xs font-black text-gray-700 ml-1 uppercase">Mandal</label>
+                        <label className="text-xs font-black text-gray-700 ml-1 uppercase flex items-center gap-2">
+                          <div className="w-1.5 h-1.5 rounded-full bg-purple-500"></div>
+                          District Jurisdiction
+                        </label>
                         <select
-                          value={formData.mandal}
+                          value={formData.district}
                           required
-                          onChange={(e) => setFormData({ ...formData, mandal: e.target.value, village: '' })}
-                          disabled={!formData.district}
-                          className={`w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all disabled:opacity-50 ${formData.role === 'Admin - CC' || formData.role === 'Admin - APM' ? 'col-span-2' : ''}`}
+                          onChange={(e) => setFormData({ ...formData, district: e.target.value })}
+                          className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
                         >
-                          <option value="">Select Mandal</option>
-                          {modalMandals.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                          <option value="">Select District</option>
+                          {districts.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
                         </select>
                       </div>
-                      <div className="space-y-2">
+                    )}
+                    <div className="grid grid-cols-2 gap-4">
+                      {!(currentUserRole.includes('admin - apm') || currentUserRole.includes('admin - cc')) && (
+                        <div className="space-y-2">
+                          <label className="text-xs font-black text-gray-700 ml-1 uppercase">Mandal</label>
+                          <select
+                            value={formData.mandal}
+                            required
+                            onChange={(e) => setFormData({ ...formData, mandal: e.target.value, village: '' })}
+                            disabled={!formData.district}
+                            className={`w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all disabled:opacity-50 ${formData.role === 'Admin - CC' || formData.role === 'Admin - APM' ? 'col-span-2' : ''}`}
+                          >
+                            <option value="">Select Mandal</option>
+                            {modalMandals.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                          </select>
+                        </div>
+                      )}
+                      <div className={`space-y-2 ${(currentUserRole.includes('admin - apm') || currentUserRole.includes('admin - cc')) ? 'col-span-2' : ''}`}>
                         <label className="text-xs font-black text-gray-700 ml-1 uppercase">Village</label>
                         <select
                           value={formData.village}

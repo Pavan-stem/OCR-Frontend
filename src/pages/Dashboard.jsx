@@ -35,6 +35,23 @@ const AdminDashboard = () => {
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [selectedUserName, setSelectedUserName] = useState('');
 
+  // Initial location setup based on role
+  useEffect(() => {
+    try {
+      const storedUser = localStorage.getItem('user');
+      if (storedUser) {
+        const user = JSON.parse(storedUser);
+        const role = (user?.role || '').toLowerCase();
+        if (role.includes('admin - apm') || role.includes('admin - cc')) {
+          if (user.district) setSelectedDistrict(user.district);
+          if (user.mandal) setSelectedMandal(user.mandal);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to initialize location filters', e);
+    }
+  }, []);
+
   // Server status state
   const [serverStatus, setServerStatus] = useState({
     active: false,
@@ -112,7 +129,8 @@ const AdminDashboard = () => {
     serverStatus,
     setSelectedUserId,
     setSelectedUserName,
-    setActiveTab
+    setActiveTab,
+    userRole
   };
 
 

@@ -22,6 +22,29 @@ const DashboardTab = ({ filterProps }) => {
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
 
+  // Handle auto-fill for restricted roles
+  useEffect(() => {
+    try {
+      const storedUser = localStorage.getItem('user');
+      if (storedUser) {
+        const userData = JSON.parse(storedUser);
+        const role = (userData?.role || '').toLowerCase();
+        const isRestricted = role.includes('admin - apm') || role.includes('admin - cc');
+
+        if (isRestricted) {
+          if (userData.district && (!selectedDistrict || selectedDistrict === 'all')) {
+            setSelectedDistrict(userData.district);
+          }
+          if (userData.mandal && (!selectedMandal || selectedMandal === 'all')) {
+            setSelectedMandal(userData.mandal);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Failed to auto-fill dashboard location', e);
+    }
+  }, [selectedDistrict, selectedMandal, setSelectedDistrict, setSelectedMandal]);
+
   // Load districts
   useEffect(() => {
     const loadDistricts = async () => {
