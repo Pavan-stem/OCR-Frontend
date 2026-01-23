@@ -134,13 +134,11 @@ const detectLightingOpenCV = (src) => {
     const issues = [];
 
     // Relaxed Lighting Checks
-    if (brightness < 40) issues.push("Image too dark");
+    if (brightness < 30) issues.push("Image too dark");
 
-    // Only flag overexposed if it's almost pure white with NO contrast (blank page)
-    // Common white paper is around 230-250 brightness.
-    if (brightness > 252 && contrast < 10) issues.push("Image overexposed");
+    if (brightness > 252 && contrast < 8) issues.push("Image overexposed");
 
-    if (contrast < 15) issues.push("Low contrast");
+    if (contrast < 10) issues.push("Low contrast");
 
     return { issues, brightness, contrast };
 };
@@ -215,9 +213,19 @@ const detectTableOpenCV = (src) => {
     }
 
     // Heuristic for cut-off: 
-    // If the table grid boundaries are too close to the image edges, it's incomplete.
-    const margin = 15;
-    const isTableCutOff = found && (minX <= margin || minY <= margin || maxX >= bw.cols - margin || maxY >= bw.rows - margin);
+    // If table grid is very small and touches edge, it's likely cut off.
+    // If table grid is huge (fills the frame), it's a valid full-page capture.
+    const tableWidth = maxX - minX;
+    const tableHeight = maxY - minY;
+    const isFullFrame = (tableWidth > bw.cols * 0.85) || (tableHeight > bw.rows * 0.85);
+
+    const margin = 2;
+    let isTableCutOff = false;
+    if (found && !isFullFrame) {
+        if (minX <= margin || minY <= margin || maxX >= bw.cols - margin || maxY >= bw.rows - margin) {
+            isTableCutOff = true;
+        }
+    }
 
     // Cleanup
     gray.delete(); bw.delete(); horizontal.delete(); vertical.delete();
@@ -226,7 +234,8 @@ const detectTableOpenCV = (src) => {
 
     return {
         hasTable: intersectionCount > 3,
-        isTableCutOff
+        isTableCutOff,
+        isFullFrame
     };
 };
 
@@ -347,7 +356,7 @@ export const scanDocument = async (file) => {
                 const scale = Math.min(1500 / img.width, 1500 / img.height, 1);
                 canvas.width = img.width * scale;
                 canvas.height = img.height * scale;
-                canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+                canvas.getContext("2d", { willReadFrequently: true }).drawImage(img, 0, 0, canvas.width, canvas.height);
 
                 const issues = [];
                 let crop = null;
@@ -359,7 +368,7 @@ export const scanDocument = async (file) => {
 
                     // 1. Blur Check
                     const blurScore = detectBlurOpenCV(src);
-                    const isBlurry = blurScore < 80;
+                    const isBlurry = blurScore < 40; // Extremely lenient for mobile (was 60)
 
                     // 2. Lighting/Shadow Check
                     const light = detectLightingOpenCV(src);
@@ -367,7 +376,8 @@ export const scanDocument = async (file) => {
 
                     // 3. Document/Object Check (Saturation)
                     const colorStats = detectColorStats(src);
-                    const isDocument = colorStats.saturation < 100;
+                    // Very relaxed saturation check (some documents have colorful stamps/logos)
+                    const isDocument = colorStats.saturation < 140;
 
                     // 4. Cut-off Check (Edge Detection)
                     const edges = detectEdgesOpenCV(src);
@@ -375,7 +385,8 @@ export const scanDocument = async (file) => {
 
                     if (edges.detected) {
                         const b = edges.bounds;
-                        const margin = 20; // Increased margin to avoid false positives on slightly tight crops
+                        // For doc edges, require it to be very close to the edge to flag as cut-off
+                        const margin = 2;
                         if (b.x <= margin || b.y <= margin || (b.x + b.width) >= (width - margin) || (b.y + b.height) >= (height - margin)) {
                             isCutOff = true;
                         }
@@ -397,7 +408,7 @@ export const scanDocument = async (file) => {
                     const hasTable = tableAnalysis.hasTable;
 
                     // If the table analysis says it's cut off, or if we have a table but no detected doc edges, flag as cut off.
-                    if (tableAnalysis.isTableCutOff || (hasTable && !edges.detected)) {
+                    if (tableAnalysis.isTableCutOff) {
                         isCutOff = true;
                     }
 
@@ -423,8 +434,12 @@ export const scanDocument = async (file) => {
                     if (colorStats.saturation < 40) suspicionScore += 1; // Grayscale digital?
 
                     // THRESHOLD: 
-                    // If score >= 3, it's almost certainly digital.
-                    const isScreenshot = suspicionScore >= 3;
+                    // Set to 6 for higher confidence. 
+                    // IMPORTANT: If a clear table is detected, we further reduce screenshot sensitivity.
+                    let isScreenshot = suspicionScore >= 6;
+                    if (hasTable && suspicionScore < 7) isScreenshot = false;
+
+                    if (isScreenshot) console.log("Screenshot detected with score:", suspicionScore);
 
                     // CONSTRUCT VALIDATION RESULT
 
@@ -449,54 +464,63 @@ export const scanDocument = async (file) => {
                     // 2. If it HAS A TABLE, we trust it more. Ignore Saturation check and lenient on CutOff.
                     // 3. If it DOES NOT HAVE A TABLE, we are strict about saturation and cut-off.
 
+                    // DETERMINE STATUS AND MESSAGE
+                    let status = "valid";
+                    let message = "Complete and clear table detected";
+
                     if (isScreenshot) {
-                        // Priority 1: Screenshot (Universal Reject)
-                        analysis.reason = "Digital PDF/Screenshot detected (Physical scan required)";
-                    } else if (hasTable) {
-                        // Priority 2: Table exists -> Check quality AND Cut-off
-                        if (isBlurry) analysis.reason = "INCOMPLETE_TABLE: Table text is unreadable/blurry";
-                        else if (hasHeavyShadow) analysis.reason = "INCOMPLETE_TABLE: Shadows affecting table visibility";
-                        else if (isCutOff) analysis.reason = "INCOMPLETE_TABLE: Table borders or grid lines are cut off";
-                        else analysis.reason = "COMPLETE_TABLE";
-                    } else {
-                        // Priority 3: No Table -> Strict checks
-                        if (!isDocument) analysis.reason = "Non-document object detected (Too colorful, No table)";
-                        else if (isBlurry) analysis.reason = "Image is blurry";
-                        else if (hasHeavyShadow) analysis.reason = "Heavy shadows or bad lighting";
-                        else if (isCutOff) analysis.reason = "Document edges cut off & No table detected";
-                        else analysis.reason = "No table structure detected (Grid missing)";
+                        status = "error";
+                        message = "Invalid image. Please upload a clear photo of the complete table only. (Screenshots/PDFs are not allowed)";
+                    } else if (!hasTable) {
+                        status = "error";
+                        message = "Invalid image. No table detected. Please upload a clear photo of the complete table only.";
+                    } else if (isCutOff && !tableAnalysis.isFullFrame) {
+                        status = "error";
+                        message = "Invalid image. Table borders or grid lines are cut off. Please ensure the four edges are visible.";
+                    } else if (isBlurry || hasHeavyShadow || isCutOff) {
+                        // Accept minor issues without altering the image
+                        status = "fixed";
+                        message = "Image accepted with minor notes";
+                        // optimization: We do NOT modify/enhance pixels anymore per user request.
                     }
 
-                    // Final Decision
-                    // Must NOT be a screenshot.
-                    // Must have a table OR (if we allowed non-tables, but we don't).
-                    // Must not be blurry/shadowy/cut-off.
-                    const finalValid = !isScreenshot && hasTable && !analysis.isBlurry && !analysis.hasHeavyShadow && !analysis.isCutOff;
+                    // MAPPING TO STRICT OUTPUT FORMAT
+                    let finalStatus = "success";
+                    let finalMessage = "Image accepted";
+                    let finalAction = "proceed";
 
-                    if (!finalValid && !analysis.reason) {
-                        analysis.reason = "No table structure detected";
+                    if (status === "error") {
+                        finalStatus = "error";
+                        finalMessage = message;
+                        finalAction = "retry";
+                    } else if (status === "fixed") {
+                        finalStatus = "success";
+                        finalMessage = "Image accepted"; // Was "Image enhanced and accepted"
+                        finalAction = "proceed";
                     }
 
-                    if (!finalValid) {
-                        issues.push(analysis.reason);
-                        if (isBlurry && !isScreenshot) issues.push("Hold camera steady");
-                        if (hasHeavyShadow && !isScreenshot) issues.push("Move to better lighting");
-                    }
+                    const finalResult = {
+                        status: finalStatus,
+                        message: finalMessage,
+                        action: finalAction,
+                        analysis,
+                        crop,
+                        canvas,
+                        isValid: finalStatus === "success"
+                    };
 
-                    src.delete();
+                    resolve(finalResult);
+
                 } else {
-                    issues.push("OpenCV not loaded");
+                    resolve({
+                        status: "error",
+                        message: "OpenCV not loaded. Please refresh the page.",
+                        isValid: false
+                    });
                 }
 
-                resolve({
-                    isValid: issues.length === 0,
-                    issues,
-                    analysis,
-                    crop,
-                    canvas
-                });
-
             } catch (e) {
+                console.error("Scanner Error:", e);
                 reject(e);
             }
         };
@@ -509,7 +533,7 @@ export const scanDocument = async (file) => {
 export const cropCanvas = (canvas, x, y, w, h) => {
     const c = document.createElement("canvas");
     c.width = w; c.height = h;
-    c.getContext("2d").drawImage(canvas, x, y, w, h, 0, 0, w, h);
+    c.getContext("2d", { willReadFrequently: true }).drawImage(canvas, x, y, w, h, 0, 0, w, h);
     return c;
 };
 
@@ -571,23 +595,45 @@ export const warpPerspective = (canvas, points) => {
     return outputCanvas;
 };
 
-/* ===================== IMAGE ENHANCEMENT ===================== */
+/* ===================== IMAGE ENHANCEMENT (Sharpen & Brighten) ===================== */
 export const enhanceImage = (canvas) => {
     if (!cvReady()) return canvas;
 
     const src = cv.imread(canvas);
     const dst = new cv.Mat();
 
-    // Grayscale
-    cv.cvtColor(src, src, cv.COLOR_RGBA2GRAY, 0);
+    // 1. Sharpening filter
+    let kernel = cv.matFromArray(3, 3, cv.CV_32F, [
+        0, -1, 0,
+        -1, 5, -1,
+        0, -1, 0
+    ]);
+    cv.filter2D(src, dst, cv.CV_8U, kernel);
 
-    // Simple Threshold for 'Scanned' look (B&W)
-    // Using simple thresholding or adaptive
-    cv.adaptiveThreshold(src, dst, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2);
+    // 2. Adjust contrast and brightness automatically using CLAHE on L channel
+    cv.cvtColor(dst, dst, cv.COLOR_RGBA2RGB);
+    cv.cvtColor(dst, dst, cv.COLOR_RGB2Lab);
+
+    let planes = new cv.MatVector();
+    cv.split(dst, planes);
+
+    let clahe;
+    try {
+        clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
+        clahe.apply(planes.get(0), planes.get(0));
+    } catch (e) {
+        console.warn("CLAHE not available, using simple normalization");
+        cv.normalize(planes.get(0), planes.get(0), 0, 255, cv.NORM_MINMAX);
+    }
+
+    cv.merge(planes, dst);
+    cv.cvtColor(dst, dst, cv.COLOR_Lab2RGB);
+    cv.cvtColor(dst, dst, cv.COLOR_RGB2RGBA);
 
     const outputCanvas = document.createElement("canvas");
     cv.imshow(outputCanvas, dst);
 
-    src.delete(); dst.delete();
+    src.delete(); dst.delete(); kernel.delete(); planes.delete();
+    if (clahe) clahe.delete();
     return outputCanvas;
 };
