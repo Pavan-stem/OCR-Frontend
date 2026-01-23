@@ -197,3 +197,67 @@ export const rotateCanvas = (canvas, deg) => {
     ctx.drawImage(canvas, -canvas.width / 2, -canvas.height / 2);
     return c;
 };
+
+/* ===================== WARP PERSPECTIVE ===================== */
+export const warpPerspective = (canvas, points) => {
+    if (!cvReady()) return canvas;
+
+    const src = cv.imread(canvas);
+
+    // Sort points: TL, TR, BR, BL - handled by caller or basic 4-point transform
+    const srcCoords = cv.matFromArray(4, 1, cv.CV_32FC2, [
+        points[0].x, points[0].y,
+        points[1].x, points[1].y,
+        points[2].x, points[2].y,
+        points[3].x, points[3].y
+    ]);
+
+    // Calculate destination dimensions
+    const widthTop = Math.hypot(points[1].x - points[0].x, points[1].y - points[0].y);
+    const widthBottom = Math.hypot(points[2].x - points[3].x, points[2].y - points[3].y);
+    const maxWidth = Math.max(widthTop, widthBottom);
+
+    const heightLeft = Math.hypot(points[3].x - points[0].x, points[3].y - points[0].y);
+    const heightRight = Math.hypot(points[2].x - points[1].x, points[2].y - points[1].y);
+    const maxHeight = Math.max(heightLeft, heightRight);
+
+    const dstCoords = cv.matFromArray(4, 1, cv.CV_32FC2, [
+        0, 0,
+        maxWidth - 1, 0,
+        maxWidth - 1, maxHeight - 1,
+        0, maxHeight - 1
+    ]);
+
+    const M = cv.getPerspectiveTransform(srcCoords, dstCoords);
+    const dst = new cv.Mat();
+
+    cv.warpPerspective(src, dst, M, new cv.Size(maxWidth, maxHeight), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
+
+    const outputCanvas = document.createElement("canvas");
+    cv.imshow(outputCanvas, dst);
+
+    src.delete(); srcCoords.delete(); dstCoords.delete(); M.delete(); dst.delete();
+
+    return outputCanvas;
+};
+
+/* ===================== IMAGE ENHANCEMENT ===================== */
+export const enhanceImage = (canvas) => {
+    if (!cvReady()) return canvas;
+
+    const src = cv.imread(canvas);
+    const dst = new cv.Mat();
+
+    // Grayscale
+    cv.cvtColor(src, src, cv.COLOR_RGBA2GRAY, 0);
+
+    // Simple Threshold for 'Scanned' look (B&W)
+    // Using simple thresholding or adaptive
+    cv.adaptiveThreshold(src, dst, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2);
+
+    const outputCanvas = document.createElement("canvas");
+    cv.imshow(outputCanvas, dst);
+
+    src.delete(); dst.delete();
+    return outputCanvas;
+};
