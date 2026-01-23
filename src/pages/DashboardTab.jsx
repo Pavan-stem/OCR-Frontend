@@ -4,7 +4,7 @@ import { API_BASE } from '../utils/apiConfig';
 
 // DashboardTab Component with Server Status and Location Loading
 const DashboardTab = ({ filterProps }) => {
-  const { selectedDistrict, setSelectedDistrict, selectedMandal, setSelectedMandal, selectedVillage, setSelectedVillage, serverStatus } = filterProps;
+  const { selectedDistrict, setSelectedDistrict, selectedMandal, setSelectedMandal, selectedVillage, setSelectedVillage, serverStatus, userRole } = filterProps;
 
   // Location data states
   const [districts, setDistricts] = useState([]);
@@ -74,7 +74,7 @@ const DashboardTab = ({ filterProps }) => {
       setSelectedMandal('all');
       setSelectedVillage('all');
     }
-  }, [selectedDistrict]);
+  }, [selectedDistrict, setSelectedMandal, setSelectedVillage]);
 
   // Load villages when mandal changes
   useEffect(() => {
@@ -105,12 +105,12 @@ const DashboardTab = ({ filterProps }) => {
       setVillages([]);
       setSelectedVillage('all');
     }
-  }, [selectedMandal, selectedDistrict]);
+  }, [selectedMandal, selectedDistrict, setSelectedVillage]);
 
   // Stats data state
   const [stats, setStats] = useState({
     totalUsers: 0,
-    totalFiles: 0,
+    totalSHGs: 0,
     filesUploaded: 0,
     filesPending: 0,
     validated: 0,
@@ -360,80 +360,107 @@ const DashboardTab = ({ filterProps }) => {
           </div>
 
           {/* Location Filter Row */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-6 border-t border-gray-100">
-            <div className="space-y-2">
-              <label className="text-sm font-bold text-gray-700 ml-1">District</label>
-              <div className="relative group">
-                <select
-                  value={selectedDistrict}
-                  onChange={(e) => {
-                    setSelectedDistrict(e.target.value);
-                    setSelectedMandal('all');
-                    setSelectedVillage('all');
-                  }}
-                  disabled={loadingDistricts}
-                  className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 group-hover:bg-white disabled:opacity-60"
-                >
-                  <option value="all">All Districts</option>
-                  {districts.map((district) => (
-                    <option key={district.id} value={district.name}>
-                      {district.name}
-                    </option>
-                  ))}
-                </select>
-                <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-hover:text-indigo-500 transition-colors">
-                  {loadingDistricts ? <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div> : <Filter className="w-4 h-4" />}
+          {!(userRole?.toLowerCase().includes('admin - apm') || userRole?.toLowerCase().includes('admin - cc')) ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-6 border-t border-gray-100">
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-gray-700 ml-1">District</label>
+                <div className="relative group">
+                  <select
+                    value={selectedDistrict}
+                    onChange={(e) => {
+                      setSelectedDistrict(e.target.value);
+                      setSelectedMandal('all');
+                      setSelectedVillage('all');
+                    }}
+                    disabled={loadingDistricts}
+                    className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 group-hover:bg-white disabled:opacity-60"
+                  >
+                    <option value="all">All Districts</option>
+                    {districts.map((district) => (
+                      <option key={district.id} value={district.name}>
+                        {district.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-hover:text-indigo-500 transition-colors">
+                    {loadingDistricts ? <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div> : <Filter className="w-4 h-4" />}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-bold text-gray-700 ml-1">Mandal</label>
-              <div className="relative group">
-                <select
-                  value={selectedMandal}
-                  onChange={(e) => {
-                    setSelectedMandal(e.target.value);
-                    setSelectedVillage('all');
-                  }}
-                  disabled={loadingMandals || selectedDistrict === 'all' || mandals.length === 0}
-                  className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 group-hover:bg-white disabled:opacity-60"
-                >
-                  <option value="all">All Mandals</option>
-                  {mandals.map((mandal) => (
-                    <option key={mandal.id} value={mandal.name}>
-                      {mandal.name}
-                    </option>
-                  ))}
-                </select>
-                <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-hover:text-indigo-500 transition-colors">
-                  {loadingMandals ? <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div> : <Filter className="w-4 h-4" />}
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-gray-700 ml-1">Mandal</label>
+                <div className="relative group">
+                  <select
+                    value={selectedMandal}
+                    onChange={(e) => {
+                      setSelectedMandal(e.target.value);
+                      setSelectedVillage('all');
+                    }}
+                    disabled={loadingMandals || selectedDistrict === 'all' || mandals.length === 0}
+                    className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 group-hover:bg-white disabled:opacity-60"
+                  >
+                    <option value="all">All Mandals</option>
+                    {mandals.map((mandal) => (
+                      <option key={mandal.id} value={mandal.name}>
+                        {mandal.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-hover:text-indigo-500 transition-colors">
+                    {loadingMandals ? <div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div> : <Filter className="w-4 h-4" />}
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-bold text-gray-700 ml-1">Village</label>
-              <div className="relative group">
-                <select
-                  value={selectedVillage}
-                  onChange={(e) => setSelectedVillage(e.target.value)}
-                  disabled={loadingVillages || selectedMandal === 'all' || villages.length === 0}
-                  className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-xl sm:rounded-2xl px-4 sm:px-5 py-2.5 sm:py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 group-hover:bg-white disabled:opacity-60 text-sm sm:text-base"
-                >
-                  <option value="all">All Villages</option>
-                  {villages.map((village) => (
-                    <option key={village.id} value={village.name}>
-                      {village.name}
-                    </option>
-                  ))}
-                </select>
-                <div className="absolute right-4 sm:right-5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-hover:text-indigo-500 transition-colors">
-                  {loadingVillages ? <div className="w-3.5 h-3.5 sm:w-4 sm:h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div> : <Filter className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-gray-700 ml-1">Village</label>
+                <div className="relative group">
+                  <select
+                    value={selectedVillage}
+                    onChange={(e) => setSelectedVillage(e.target.value)}
+                    disabled={loadingVillages || selectedMandal === 'all' || villages.length === 0}
+                    className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-xl sm:rounded-2xl px-4 sm:px-5 py-2.5 sm:py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 group-hover:bg-white disabled:opacity-60 text-sm sm:text-base"
+                  >
+                    <option value="all">All Villages</option>
+                    {villages.map((village) => (
+                      <option key={village.id} value={village.name}>
+                        {village.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute right-4 sm:right-5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-hover:text-indigo-500 transition-colors">
+                    {loadingVillages ? <div className="w-3.5 h-3.5 sm:w-4 sm:h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div> : <Filter className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
+          ) : (
+            /* If restricted, we still want to show the Village filter if they are APM */
+            <div className="grid grid-cols-1 md:grid-cols-1 gap-6 pt-6 border-t border-gray-100">
+              <div className="space-y-2 max-w-md mx-auto w-full">
+                <label className="text-sm font-bold text-gray-700 ml-1">Refine by Village</label>
+                <div className="relative group">
+                  <select
+                    value={selectedVillage}
+                    onChange={(e) => setSelectedVillage(e.target.value)}
+                    disabled={loadingVillages || selectedMandal === 'all' || villages.length === 0}
+                    className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-xl sm:rounded-2xl px-4 sm:px-5 py-2.5 sm:py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 group-hover:bg-white disabled:opacity-60 text-sm sm:text-base"
+                  >
+                    <option value="all">All Villages</option>
+                    {villages.map((village) => (
+                      <option key={village.id} value={village.name}>
+                        {village.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute right-4 sm:right-5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-hover:text-indigo-500 transition-colors">
+                    {loadingVillages ? <div className="w-3.5 h-3.5 sm:w-4 sm:h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div> : <Filter className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -605,7 +632,6 @@ const DashboardTab = ({ filterProps }) => {
                     </svg>
                   );
                 })()}
-                {/* Tooltip moved to end of component */}
               </div>
             </div>
           )}
@@ -690,7 +716,6 @@ const DashboardTab = ({ filterProps }) => {
                           {pendingPercent > 10 && <span className="drop-shadow-sm">{district.pending}</span>}
                         </div>
                       </div>
-                      {/* Hover tooltip moved to end of component */}
                     </div>
                   );
                 })}
@@ -712,54 +737,56 @@ const DashboardTab = ({ filterProps }) => {
         </div>
       </div>
       {/* Unified Tooltip Rendering - Positioned at end to escape overflow:hidden clipping */}
-      {(hoveredPoint || hoveredDistrict !== null) && tooltipPos.x !== -1 && (
-        <div
-          className={`fixed bg-gray-900/95 backdrop-blur-md border border-white/20 text-white rounded-xl px-2.5 sm:px-3 py-2 sm:py-2.5 shadow-2xl pointer-events-none z-[10000] whitespace-nowrap animate-in fade-in zoom-in duration-200 flex flex-col min-w-[120px] sm:min-w-[140px] transition-opacity ${tooltipPos.x === -1 ? 'opacity-0' : 'opacity-100'}`}
-          style={{
-            left: tooltipPos.x,
-            top: tooltipPos.y,
-            transformOrigin: 'top left',
-            transform: `translate(${tooltipPos.x + 200 > window.innerWidth ? '-100%' : '15px'}, ${tooltipPos.y + 150 > window.innerHeight ? '-100%' : '15px'}) scale(${window.innerWidth < 640 ? 0.9 : 1})`
-          }}
-        >
-          {hoveredPoint && (
-            <>
-              <div className="font-black text-[10px] text-gray-400 uppercase tracking-widest border-b border-white/10 pb-1.5 mb-2">
-                {new Date(hoveredPoint.date).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)] animate-pulse"></div>
-                <span className="font-black text-xs uppercase tracking-tight">Uploads: <span className="text-blue-400 text-sm">{hoveredPoint.count}</span></span>
-              </div>
-            </>
-          )}
-          {hoveredDistrict !== null && districtStats[hoveredDistrict] && (
-            <>
-              <div className="font-black text-[10px] text-gray-400 uppercase tracking-widest border-b border-white/10 pb-1.5 mb-2">
-                {districtStats[hoveredDistrict].name}
-              </div>
-              <div className="space-y-1.5">
-                <div className="flex justify-between items-center gap-6">
-                  <span className="text-[9px] font-black text-gray-500 uppercase">Uploaded</span>
-                  <span className="text-green-400 font-black text-xs">{districtStats[hoveredDistrict].uploaded}</span>
+      {
+        (hoveredPoint || hoveredDistrict !== null) && tooltipPos.x !== -1 && (
+          <div
+            className={`fixed bg-gray-900/95 backdrop-blur-md border border-white/20 text-white rounded-xl px-2.5 sm:px-3 py-2 sm:py-2.5 shadow-2xl pointer-events-none z-[10000] whitespace-nowrap animate-in fade-in zoom-in duration-200 flex flex-col min-w-[120px] sm:min-w-[140px] transition-opacity ${tooltipPos.x === -1 ? 'opacity-0' : 'opacity-100'}`}
+            style={{
+              left: tooltipPos.x,
+              top: tooltipPos.y,
+              transformOrigin: 'top left',
+              transform: `translate(${tooltipPos.x + 200 > window.innerWidth ? '-100%' : '15px'}, ${tooltipPos.y + 150 > window.innerHeight ? '-100%' : '15px'}) scale(${window.innerWidth < 640 ? 0.9 : 1})`
+            }}
+          >
+            {hoveredPoint && (
+              <>
+                <div className="font-black text-[10px] text-gray-400 uppercase tracking-widest border-b border-white/10 pb-1.5 mb-2">
+                  {new Date(hoveredPoint.date).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}
                 </div>
-                <div className="flex justify-between items-center gap-6">
-                  <span className="text-[9px] font-black text-gray-500 uppercase">Pending</span>
-                  <span className="text-orange-400 font-black text-xs">{districtStats[hoveredDistrict].pending}</span>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.6)] animate-pulse"></div>
+                  <span className="font-black text-xs uppercase tracking-tight">Uploads: <span className="text-blue-400 text-sm">{hoveredPoint.count}</span></span>
                 </div>
-                <div className="border-t border-white/10 pt-1.5 mt-1 flex justify-between items-center gap-6">
-                  <span className="text-[9px] font-black text-gray-500 uppercase tracking-tighter">Completion</span>
-                  <span className="text-indigo-400 font-black text-xs">
-                    {districtStats[hoveredDistrict].total > 0
-                      ? Math.round((districtStats[hoveredDistrict].uploaded / districtStats[hoveredDistrict].total) * 100)
-                      : 0}%
-                  </span>
+              </>
+            )}
+            {hoveredDistrict !== null && districtStats[hoveredDistrict] && (
+              <>
+                <div className="font-black text-[10px] text-gray-400 uppercase tracking-widest border-b border-white/10 pb-1.5 mb-2">
+                  {districtStats[hoveredDistrict].name}
                 </div>
-              </div>
-            </>
-          )}
-        </div>
-      )}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center gap-6">
+                    <span className="text-[9px] font-black text-gray-500 uppercase">Uploaded</span>
+                    <span className="text-green-400 font-black text-xs">{districtStats[hoveredDistrict].uploaded}</span>
+                  </div>
+                  <div className="flex justify-between items-center gap-6">
+                    <span className="text-[9px] font-black text-gray-500 uppercase">Pending</span>
+                    <span className="text-orange-400 font-black text-xs">{districtStats[hoveredDistrict].pending}</span>
+                  </div>
+                  <div className="border-t border-white/10 pt-1.5 mt-1 flex justify-between items-center gap-6">
+                    <span className="text-[9px] font-black text-gray-500 uppercase tracking-tighter">Completion</span>
+                    <span className="text-indigo-400 font-black text-xs">
+                      {districtStats[hoveredDistrict].total > 0
+                        ? Math.round((districtStats[hoveredDistrict].uploaded / districtStats[hoveredDistrict].total) * 100)
+                        : 0}%
+                    </span>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )
+      }
     </div>
   );
 };
