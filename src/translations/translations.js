@@ -117,8 +117,12 @@ export const translations = {
             uploadSuccessMultiple: "{{count}} files have been uploaded successfully.",
             rejected: "Rejected",
             reupload: "Reupload",
-            rejectedReason: "Rejected Reason:"
+            rejectedReason: "Rejected Reason:",
+            gallery: "Upload from Gallery",
+            smartScan: "Smart Scan",
+            camera: "Direct Camera"
         },
+
 
         // Months
         months: {
@@ -345,7 +349,11 @@ export const translations = {
             rejected: "తిరస్కరించబడింది",
             reupload: "మళ్లీ అప్‌లోడ్ చేయండి",
             rejectedReason: "తిరస్కరణకు కారణం: ",
+            gallery: "గ్యాలరీ నుండి అప్‌లోడ్ చేయండి",
+            smartScan: "స్మార్ట్ స్కాన్",
+            camera: "డైరెక్ట్ కెమెరా"
         },
+
 
         // Months - Telugu
         months: {
