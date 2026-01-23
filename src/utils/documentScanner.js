@@ -22,6 +22,7 @@ const detectBlurOpenCV = (src) => {
     return variance;
 };
 
+
 /* ===================== DOCUMENT DETECTION ===================== */
 const detectEdgesOpenCV = (src) => {
     const gray = new cv.Mat();
@@ -119,12 +120,18 @@ const detectLightingOpenCV = (src) => {
 
     const issues = [];
 
-    if (brightness < 50) issues.push("Image too dark");
-    if (brightness > 240 && contrast < 25) issues.push("Image overexposed");
-    if (contrast < 20) issues.push("Low contrast");
+    // Relaxed Lighting Checks
+    if (brightness < 40) issues.push("Image too dark");
+
+    // Only flag overexposed if it's almost pure white with NO contrast (blank page)
+    // Common white paper is around 230-250 brightness.
+    if (brightness > 252 && contrast < 10) issues.push("Image overexposed");
+
+    if (contrast < 15) issues.push("Low contrast");
 
     return { issues, brightness, contrast };
 };
+
 
 /* ===================== MAIN SCAN ===================== */
 export const scanDocument = async (file) => {
@@ -151,8 +158,23 @@ export const scanDocument = async (file) => {
                     issues.push(...light.issues);
 
                     const edges = detectEdgesOpenCV(src);
-                    if (!edges.detected) issues.push("No document detected");
-                    else crop = edges.bounds;
+
+                    // Fallback: If no document edges found, default to full image instead of blocking
+                    if (!edges.detected) {
+                        console.warn("Document edges not clearly detected, defaulting to full crop.");
+                        crop = {
+                            x: 0, y: 0,
+                            width: canvas.width,
+                            height: canvas.height,
+                            contourPoints: [
+                                { x: 0, y: 0 }, { x: canvas.width, y: 0 },
+                                { x: canvas.width, y: canvas.height }, { x: 0, y: canvas.height }
+                            ]
+                        };
+                        // Do NOT push error for edge detection failure to let manual crop handle it
+                    } else {
+                        crop = edges.bounds;
+                    }
 
                     src.delete();
                 } else {
