@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { Camera, X, AlertTriangle, CheckCircle, Loader, RotateCw, Crop, RefreshCw, Image as ImageIcon, ChevronDown, ChevronUp, Wand } from "lucide-react";
 import { scanDocument, canvasToFile, rotateCanvas, cropCanvas, warpPerspective, enhanceImage } from "./utils/documentScanner";
+import { CameraQualityMonitor, SmartFocusGuide } from "./utils/smartCameraAI";
 
 const SmartCamera = ({ open, onClose, onCapture }) => {
     const videoRef = useRef(null);
@@ -31,6 +32,9 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
     const [processingMessage, setProcessingMessage] = useState("Processing...");
     const [showErrorModal, setShowErrorModal] = useState(false);
     const [errorMessage, setErrorMessage] = useState("");
+    const [realtimeFeedback, setRealtimeFeedback] = useState({ message: "Initializing...", color: "white" });
+    const monitorRef = useRef(null);
+    const focusRef = useRef(new SmartFocusGuide());
 
     // Initialize camera
     useEffect(() => {
@@ -50,22 +54,28 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
                 if (videoRef.current) {
                     videoRef.current.srcObject = stream;
 
-                    // Attempt to play and handle any auto-play restrictions
-                    try {
-                        await videoRef.current.play();
+                    videoRef.current.onloadedmetadata = () => {
                         setIsCameraActive(true);
                         setCameraError(null);
-                    } catch (playError) {
-                        console.warn("Auto-play blocked or failed, waiting for metadata:", playError);
-                        videoRef.current.onloadedmetadata = () => {
-                            setIsCameraActive(true);
-                            setCameraError(null);
-                        };
-                    }
-                } else {
-                    // Fallback
-                    setIsCameraActive(true);
-                    setCameraError(null);
+
+                        // Start Real-time Monitoring
+                        if (canvasRef.current) {
+                            monitorRef.current = new CameraQualityMonitor(videoRef.current, canvasRef.current);
+                            monitorRef.current.startMonitoring((feedback) => {
+                                const focusScore = focusRef.current.calculateFocusScore(
+                                    canvasRef.current.getContext('2d').getImageData(0, 0, canvasRef.current.width, canvasRef.current.height)
+                                );
+                                const guidance = focusRef.current.getFocusGuidance(focusScore);
+
+                                // Combine with brightness
+                                if (feedback.brightness === 'LOW') {
+                                    setRealtimeFeedback({ message: "More light needed", color: "orange" });
+                                } else {
+                                    setRealtimeFeedback(guidance);
+                                }
+                            });
+                        }
+                    };
                 }
             } catch (err) {
                 console.error("Camera error:", err);
@@ -74,11 +84,18 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
             }
         };
 
-        initCamera();
+        if (isCameraActive && monitorRef.current) {
+            // already running
+        } else {
+            initCamera();
+        }
 
         return () => {
             if (stream) {
                 stream.getTracks().forEach(track => track.stop());
+            }
+            if (monitorRef.current) {
+                monitorRef.current.stopMonitoring();
             }
         };
     }, [open, showValidationModal, showErrorModal]);
@@ -86,9 +103,9 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
     // Initialize crop when editor opens
     useEffect(() => {
         if (showCropEditor && capturedImageData) {
-            if (validationResult?.crop?.bounds?.contourPoints) {
-                const { contourPoints } = validationResult.crop.bounds;
-                const { width, height } = validationResult.crop.originalDimensions;
+            if (validationResult?.crop?.contourPoints) {
+                const { contourPoints } = validationResult.crop;
+                const { width, height } = validationResult.crop.originalDimensions || { width: 1000, height: 1000 }; // Fallback protection
 
                 // Map pixel points to 0-100 coordinates
                 setCropPoints({
@@ -155,8 +172,8 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
         else if (handle === 'bl') updatePoint('bl', deltaX, deltaY);
         else if (handle === 'br') updatePoint('br', deltaX, deltaY);
         else if (handle === 'top') {
-            updatePoint('tl', deltaX, deltaY);
-            updatePoint('tr', deltaX, deltaY);
+            updatePoint('tl', 0, deltaY);
+            updatePoint('tr', 0, deltaY);
         }
         else if (handle === 'right') {
             updatePoint('tr', deltaX, 0);
@@ -531,8 +548,8 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
                                         onClick={handleUploadDocument}
                                         disabled={!validationResult?.isValid || isCapturing || showErrorModal}
                                         className={`w-full py-5 px-6 rounded-2xl font-bold text-lg shadow-lg active:scale-95 transition-all duration-200 transform flex items-center justify-center gap-3 ${validationResult?.isValid && !showErrorModal
-                                                ? 'bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 text-white border-b-4 border-indigo-800 shadow-indigo-500/40 hover:shadow-indigo-500/60'
-                                                : 'bg-gray-700 text-gray-400 cursor-not-allowed opacity-60'
+                                            ? 'bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 text-white border-b-4 border-indigo-800 shadow-indigo-500/40 hover:shadow-indigo-500/60'
+                                            : 'bg-gray-700 text-gray-400 cursor-not-allowed opacity-60'
                                             }`}
                                     >
                                         {validationResult?.isValid && !showErrorModal ? (
@@ -580,12 +597,21 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
                                 )}
 
                                 {/* Camera Overlay */}
-                                <div className="absolute inset-0 pointer-events-none flex items-center justify-center p-12">
+                                <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center p-12">
                                     <div className="w-full h-full border-2 border-white/30 rounded-3xl relative">
                                         <div className="absolute top-0 left-0 w-12 h-12 border-t-4 border-l-4 border-white rounded-tl-3xl"></div>
                                         <div className="absolute top-0 right-0 w-12 h-12 border-t-4 border-r-4 border-white rounded-tr-3xl"></div>
                                         <div className="absolute bottom-0 left-0 w-12 h-12 border-b-4 border-l-4 border-white rounded-bl-3xl"></div>
                                         <div className="absolute bottom-0 right-0 w-12 h-12 border-b-4 border-r-4 border-white rounded-br-3xl"></div>
+
+                                        {/* Real-time Feedback Message */}
+                                        <div className="absolute top-1/2 left-0 right-0 -translate-y-1/2 flex justify-center">
+                                            <div className={`px-6 py-2 rounded-full backdrop-blur-md bg-black/40 border border-white/20 transition-all duration-300 ${realtimeFeedback.color === 'red' ? 'text-red-400' :
+                                                    realtimeFeedback.color === 'orange' ? 'text-orange-300' : 'text-green-400'
+                                                }`}>
+                                                <span className="text-sm font-bold uppercase tracking-widest">{realtimeFeedback.message}</span>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
 

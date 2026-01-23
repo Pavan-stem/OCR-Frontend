@@ -33,7 +33,15 @@ const detectEdgesOpenCV = (src) => {
 
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
     cv.GaussianBlur(gray, blur, new cv.Size(5, 5), 0);
-    cv.Canny(blur, edges, 60, 180);
+
+    // Use Adaptive Thresholding instead of Canny
+    // This is more robust to shadows and uneven lighting common in camera captures
+    cv.adaptiveThreshold(blur, edges, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2);
+
+    // Optional: Morphological Close to fill small gaps/noise
+    const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
+    cv.morphologyEx(edges, edges, cv.MORPH_CLOSE, kernel);
+
     cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
     let best = null;
@@ -42,6 +50,7 @@ const detectEdgesOpenCV = (src) => {
     for (let i = 0; i < contours.size(); i++) {
         const c = contours.get(i);
         const area = cv.contourArea(c);
+        // Minimum area check (10% of image)
         if (area < src.rows * src.cols * 0.1) continue;
 
         const peri = cv.arcLength(c, true);
@@ -49,14 +58,17 @@ const detectEdgesOpenCV = (src) => {
         cv.approxPolyDP(c, approx, 0.02 * peri, true);
 
         if (approx.rows === 4 && area > bestArea) {
-            bestArea = area;
-            best = approx.clone();
+            // Convexity check can help avoid weird shapes
+            if (cv.isContourConvex(approx)) {
+                bestArea = area;
+                best = approx.clone();
+            }
         }
         approx.delete();
     }
 
     gray.delete(); blur.delete(); edges.delete();
-    contours.delete(); hierarchy.delete();
+    contours.delete(); hierarchy.delete(); kernel.delete();
 
     if (!best) {
         return {
@@ -80,14 +92,15 @@ const detectEdgesOpenCV = (src) => {
     best.delete();
 
     // Order points (TL,TR,BR,BL)
+    // Robust ordering for any quadrilateral
     const sum = pts.map(p => p.x + p.y);
     const diff = pts.map(p => p.x - p.y);
 
     const ordered = [
-        pts[sum.indexOf(Math.min(...sum))],
-        pts[diff.indexOf(Math.max(...diff))],
-        pts[sum.indexOf(Math.max(...sum))],
-        pts[diff.indexOf(Math.min(...diff))]
+        pts[sum.indexOf(Math.min(...sum))], // TL
+        pts[diff.indexOf(Math.max(...diff))], // TR
+        pts[sum.indexOf(Math.max(...sum))], // BR
+        pts[diff.indexOf(Math.min(...diff))] // BL
     ];
 
     const rect = cv.boundingRect(cv.matFromArray(4, 1, cv.CV_32FC2, ordered.flatMap(p => [p.x, p.y])));
@@ -132,6 +145,197 @@ const detectLightingOpenCV = (src) => {
     return { issues, brightness, contrast };
 };
 
+/* ===================== COLOR STATS (PAPER LIKENESS) ===================== */
+const detectColorStats = (src) => {
+    const hsv = new cv.Mat();
+    cv.cvtColor(src, hsv, cv.COLOR_RGBA2RGB);
+    cv.cvtColor(hsv, hsv, cv.COLOR_RGB2HSV);
+
+    const channels = new cv.MatVector();
+    cv.split(hsv, channels);
+
+    const s = channels.get(1); // Saturation channel
+    const mean = new cv.Mat();
+    const std = new cv.Mat();
+    cv.meanStdDev(s, mean, std);
+
+    const saturation = mean.data64F[0];
+
+    hsv.delete(); channels.delete(); s.delete(); mean.delete(); std.delete();
+
+    return { saturation };
+};
+
+/* ===================== TABLE DETECTION ===================== */
+const detectTableOpenCV = (src) => {
+    // 1. Convert to binary inverted
+    const gray = new cv.Mat();
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+    const bw = new cv.Mat();
+    cv.adaptiveThreshold(gray, bw, 255, cv.ADAPTIVE_THRESH_MEAN_C, cv.THRESH_BINARY_INV, 15, -2);
+
+    // 2. Create Horizontal and Vertical Kernels
+    const horizontalSize = bw.cols / 30;
+    const verticalSize = bw.rows / 30;
+
+    const horizontalStructure = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(horizontalSize, 1));
+    const verticalStructure = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(1, verticalSize));
+
+    const horizontal = new cv.Mat();
+    const vertical = new cv.Mat();
+
+    // 3. Extract lines
+    cv.erode(bw, horizontal, horizontalStructure, new cv.Point(-1, -1));
+    cv.dilate(horizontal, horizontal, horizontalStructure, new cv.Point(-1, -1));
+
+    cv.erode(bw, vertical, verticalStructure, new cv.Point(-1, -1));
+    cv.dilate(vertical, vertical, verticalStructure, new cv.Point(-1, -1));
+
+    // 4. Combine to find intersections = Table Grid
+    const tableMask = new cv.Mat();
+    cv.addWeighted(horizontal, 0.5, vertical, 0.5, 0.0, tableMask);
+
+    // 5. Count intersections
+    const contours = new cv.MatVector();
+    const hierarchy = new cv.Mat();
+    cv.findContours(tableMask, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+    const intersectionCount = contours.size();
+
+    // 6. Calculate bounding box of all detected intersections to check completeness
+    let minX = bw.cols, minY = bw.rows, maxX = 0, maxY = 0;
+    let found = false;
+    for (let i = 0; i < contours.size(); i++) {
+        const rect = cv.boundingRect(contours.get(i));
+        minX = Math.min(minX, rect.x);
+        minY = Math.min(minY, rect.y);
+        maxX = Math.max(maxX, rect.x + rect.width);
+        maxY = Math.max(maxY, rect.y + rect.height);
+        found = true;
+    }
+
+    // Heuristic for cut-off: 
+    // If the table grid boundaries are too close to the image edges, it's incomplete.
+    const margin = 15;
+    const isTableCutOff = found && (minX <= margin || minY <= margin || maxX >= bw.cols - margin || maxY >= bw.rows - margin);
+
+    // Cleanup
+    gray.delete(); bw.delete(); horizontal.delete(); vertical.delete();
+    horizontalStructure.delete(); verticalStructure.delete(); tableMask.delete();
+    contours.delete(); hierarchy.delete();
+
+    return {
+        hasTable: intersectionCount > 3,
+        isTableCutOff
+    };
+};
+
+/* ===================== SCREENSHOT DETECTION (Histogram Analysis) ===================== */
+const detectScreenshotOpenCV = (src) => {
+    // Logic: Digital screenshots/PDFs usually have a single background color that covers a huge % of pixels.
+    // Photos have a distribution of background colors due to lighting/noise.
+
+    const gray = new cv.Mat();
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+
+    // Calculate Histogram with reduced bins to handle JPEG compression/noise
+    const srcVec = new cv.MatVector();
+    srcVec.push_back(gray);
+    const accumulate = false;
+    const channels = [0];
+    const histSize = [32]; // Reduce to 32 bins (groups of ~8 intensity levels)
+    const ranges = [0, 255];
+    const hist = new cv.Mat();
+    const mask = new cv.Mat();
+    const color = new cv.Scalar(255, 255, 255);
+    const scale = 1;
+
+    cv.calcHist(srcVec, channels, mask, hist, histSize, ranges, accumulate);
+
+    // Find the bin with the maximum number of pixels (the peak)
+    let maxVal = 0;
+    for (let i = 0; i < 32; i++) {
+        const binVal = hist.data32F[i];
+        if (binVal > maxVal) {
+            maxVal = binVal;
+        }
+    }
+
+    const totalPixels = src.cols * src.rows;
+    const peakRatio = maxVal / totalPixels;
+
+    // Cleanup
+    gray.delete(); srcVec.delete(); hist.delete(); mask.delete();
+
+    // Threshold:
+    // If ONE single color (bin) accounts for > 25% of the image, it's digital/screenshot.
+    // Photos rarely have > 5-10% in a single 1/256 bin unless completely blown out/black.
+    // Digital docs usually have > 60-80% background color.
+    return {
+        isScreenshot: peakRatio > 0.25,
+        peakRatio
+    };
+};
+
+/* ===================== DIGITAL UI DETECTION (Status Bars/Headers) ===================== */
+const detectDigitalUIOpenCV = (src) => {
+    // Check Top/Bottom 15% for perfect flat rows (Status bars, Nav bars)
+    const height = src.rows;
+    const scanHeight = Math.min(150, Math.floor(height * 0.15));
+
+    const gray = new cv.Mat();
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+
+    let maxContiguousTop = 0;
+    let currentContiguousTop = 0;
+
+    // Scan Top
+    for (let y = 0; y < scanHeight; y++) {
+        const row = gray.row(y);
+        const mean = new cv.Mat();
+        const std = new cv.Mat();
+        cv.meanStdDev(row, mean, std);
+        const stdDev = std.data64F[0];
+
+        // Digital row is flat (stdDev < 2.0 to catch compressed flat rows)
+        if (stdDev < 2.0) {
+            currentContiguousTop++;
+        } else {
+            maxContiguousTop = Math.max(maxContiguousTop, currentContiguousTop);
+            currentContiguousTop = 0;
+        }
+        row.delete(); mean.delete(); std.delete();
+    }
+    maxContiguousTop = Math.max(maxContiguousTop, currentContiguousTop);
+
+    let maxContiguousBottom = 0;
+    let currentContiguousBottom = 0;
+
+    // Scan Bottom
+    for (let y = height - 1; y > height - scanHeight; y--) {
+        const row = gray.row(y);
+        const mean = new cv.Mat();
+        const std = new cv.Mat();
+        cv.meanStdDev(row, mean, std);
+        const stdDev = std.data64F[0];
+
+        if (stdDev < 2.0) {
+            currentContiguousBottom++;
+        } else {
+            maxContiguousBottom = Math.max(maxContiguousBottom, currentContiguousBottom);
+            currentContiguousBottom = 0;
+        }
+        row.delete(); mean.delete(); std.delete();
+    }
+    maxContiguousBottom = Math.max(maxContiguousBottom, currentContiguousBottom);
+
+    gray.delete();
+
+    // A status bar is usually at least 20px
+    const hasDigitalUI = maxContiguousTop > 20 || maxContiguousBottom > 20;
+
+    return { hasDigitalUI, maxContiguousTop, maxContiguousBottom };
+};
 
 /* ===================== MAIN SCAN ===================== */
 export const scanDocument = async (file) => {
@@ -150,30 +354,133 @@ export const scanDocument = async (file) => {
 
                 if (cvReady()) {
                     const src = cv.imread(canvas);
+                    const width = src.cols;
+                    const height = src.rows;
 
-                    const blur = detectBlurOpenCV(src);
-                    if (blur < 80) issues.push("Image is blurry");
+                    // 1. Blur Check
+                    const blurScore = detectBlurOpenCV(src);
+                    const isBlurry = blurScore < 80;
 
+                    // 2. Lighting/Shadow Check
                     const light = detectLightingOpenCV(src);
-                    issues.push(...light.issues);
+                    const hasHeavyShadow = light.issues.length > 0;
 
+                    // 3. Document/Object Check (Saturation)
+                    const colorStats = detectColorStats(src);
+                    const isDocument = colorStats.saturation < 100;
+
+                    // 4. Cut-off Check (Edge Detection)
                     const edges = detectEdgesOpenCV(src);
+                    let isCutOff = false;
 
-                    // Fallback: If no document edges found, default to full image instead of blocking
-                    if (!edges.detected) {
-                        console.warn("Document edges not clearly detected, defaulting to full crop.");
+                    if (edges.detected) {
+                        const b = edges.bounds;
+                        const margin = 20; // Increased margin to avoid false positives on slightly tight crops
+                        if (b.x <= margin || b.y <= margin || (b.x + b.width) >= (width - margin) || (b.y + b.height) >= (height - margin)) {
+                            isCutOff = true;
+                        }
                         crop = {
-                            x: 0, y: 0,
-                            width: canvas.width,
-                            height: canvas.height,
-                            contourPoints: [
-                                { x: 0, y: 0 }, { x: canvas.width, y: 0 },
-                                { x: canvas.width, y: canvas.height }, { x: 0, y: canvas.height }
-                            ]
+                            ...edges.bounds,
+                            originalDimensions: { width, height }
                         };
-                        // Do NOT push error for edge detection failure to let manual crop handle it
                     } else {
-                        crop = edges.bounds;
+                        // Fallback crop
+                        crop = {
+                            x: 0, y: 0, width, height,
+                            contourPoints: [{ x: 0, y: 0 }, { x: width, y: 0 }, { x: width, y: height }, { x: 0, y: height }],
+                            originalDimensions: { width, height }
+                        };
+                    }
+
+                    // 5. Table Detection
+                    const tableAnalysis = detectTableOpenCV(src);
+                    const hasTable = tableAnalysis.hasTable;
+
+                    // If the table analysis says it's cut off, or if we have a table but no detected doc edges, flag as cut off.
+                    if (tableAnalysis.isTableCutOff || (hasTable && !edges.detected)) {
+                        isCutOff = true;
+                    }
+
+                    // 6. Screenshot / Digital Doc Detection (Multi-Signal)
+                    const screenshotAnalysis = detectScreenshotOpenCV(src);
+
+                    // 7. Digital UI Detection (Status bars / Headers)
+                    const uiAnalysis = detectDigitalUIOpenCV(src);
+
+                    // suspicionScore Calculation:
+                    // - Digital UI Found -> +5 (Immediate Reject)
+                    // - Background Flatness (High Peak) -> +1 or +2
+                    // - No Edges Detected -> +1
+                    // - Low Saturation -> +1
+
+                    let suspicionScore = 0;
+                    if (uiAnalysis.hasDigitalUI) suspicionScore += 5; // Status bars = Screenshot
+
+                    if (screenshotAnalysis.peakRatio > 0.50) suspicionScore += 2; // Very flat
+                    else if (screenshotAnalysis.peakRatio > 0.25) suspicionScore += 1; // Somewhat flat
+
+                    if (!edges.detected) suspicionScore += 1; // No document edges -> Full frame digital?
+                    if (colorStats.saturation < 40) suspicionScore += 1; // Grayscale digital?
+
+                    // THRESHOLD: 
+                    // If score >= 3, it's almost certainly digital.
+                    const isScreenshot = suspicionScore >= 3;
+
+                    // CONSTRUCT VALIDATION RESULT
+
+                    const analysis = {
+                        isDocument,
+                        isScreenshot,
+                        isBlurry,
+                        hasHeavyShadow,
+                        isCutOff,
+                        hasTable,
+                        isTableComplete: !isCutOff,
+                        isTableBlurry: isBlurry,
+                        hasTableShadow: hasHeavyShadow,
+                        suspicionScore,
+                        reason: ""
+                    };
+
+
+
+                    // Logic Refinement:
+                    // 1. IS SCREENSHOT? -> REJECT IMMEDIATELY.
+                    // 2. If it HAS A TABLE, we trust it more. Ignore Saturation check and lenient on CutOff.
+                    // 3. If it DOES NOT HAVE A TABLE, we are strict about saturation and cut-off.
+
+                    if (isScreenshot) {
+                        // Priority 1: Screenshot (Universal Reject)
+                        analysis.reason = "Digital PDF/Screenshot detected (Physical scan required)";
+                    } else if (hasTable) {
+                        // Priority 2: Table exists -> Check quality AND Cut-off
+                        if (isBlurry) analysis.reason = "INCOMPLETE_TABLE: Table text is unreadable/blurry";
+                        else if (hasHeavyShadow) analysis.reason = "INCOMPLETE_TABLE: Shadows affecting table visibility";
+                        else if (isCutOff) analysis.reason = "INCOMPLETE_TABLE: Table borders or grid lines are cut off";
+                        else analysis.reason = "COMPLETE_TABLE";
+                    } else {
+                        // Priority 3: No Table -> Strict checks
+                        if (!isDocument) analysis.reason = "Non-document object detected (Too colorful, No table)";
+                        else if (isBlurry) analysis.reason = "Image is blurry";
+                        else if (hasHeavyShadow) analysis.reason = "Heavy shadows or bad lighting";
+                        else if (isCutOff) analysis.reason = "Document edges cut off & No table detected";
+                        else analysis.reason = "No table structure detected (Grid missing)";
+                    }
+
+                    // Final Decision
+                    // Must NOT be a screenshot.
+                    // Must have a table OR (if we allowed non-tables, but we don't).
+                    // Must not be blurry/shadowy/cut-off.
+                    const finalValid = !isScreenshot && hasTable && !analysis.isBlurry && !analysis.hasHeavyShadow && !analysis.isCutOff;
+
+                    if (!finalValid && !analysis.reason) {
+                        analysis.reason = "No table structure detected";
+                    }
+
+                    if (!finalValid) {
+                        issues.push(analysis.reason);
+                        if (isBlurry && !isScreenshot) issues.push("Hold camera steady");
+                        if (hasHeavyShadow && !isScreenshot) issues.push("Move to better lighting");
                     }
 
                     src.delete();
@@ -184,6 +491,7 @@ export const scanDocument = async (file) => {
                 resolve({
                     isValid: issues.length === 0,
                     issues,
+                    analysis,
                     crop,
                     canvas
                 });
