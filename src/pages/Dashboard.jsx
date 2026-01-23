@@ -6,6 +6,7 @@ import UsersTab from './UsersTab';
 import OCRValidationTab from './OCRValidationTab';
 import ReportsTab from './ReportsTab';
 import ConversionView from './ConversionView';
+import HierarchyTab from './HierarchyTab';
 
 
 
@@ -130,6 +131,8 @@ const AdminDashboard = () => {
         return isDev ? <OCRValidationTab /> : <DashboardTab filterProps={filterProps} />;
       case 'reports':
         return isDev ? <ReportsTab /> : <DashboardTab filterProps={filterProps} />;
+      case 'hierarchy':
+        return isDev || userRole.toLowerCase().includes('admin') ? <HierarchyTab /> : <DashboardTab filterProps={filterProps} />;
       default:
         return <DashboardTab filterProps={filterProps} />;
     }
