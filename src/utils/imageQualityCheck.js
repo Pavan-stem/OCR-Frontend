@@ -1,221 +1,184 @@
 /**
- * Image Quality Analysis Utility
- * Detects blur, lighting issues, and shadow presence using HTML5 Canvas
- * Integrated with AI Document Scanner for professional document processing
+ * Image Quality Analysis Utility (FIXED & DOCUMENT-AWARE)
+ * No false positives for scanned or cropped documents
  */
 
 export const analyzeImage = async (file) => {
     return new Promise((resolve, reject) => {
         const img = new Image();
-        const objectUrl = URL.createObjectURL(file);
+        const url = URL.createObjectURL(file);
 
         img.onload = () => {
-            URL.revokeObjectURL(objectUrl);
+            URL.revokeObjectURL(url);
 
             try {
-                // Resize for performance (max 1000px dimension)
+                /* ================= CANVAS SETUP ================= */
                 const maxDim = 1000;
-                let width = img.width;
-                let height = img.height;
+                let { width, height } = img;
 
                 if (width > maxDim || height > maxDim) {
-                    const ratio = Math.min(maxDim / width, maxDim / height);
-                    width *= ratio;
-                    height *= ratio;
+                    const r = Math.min(maxDim / width, maxDim / height);
+                    width = Math.round(width * r);
+                    height = Math.round(height * r);
                 }
 
-                const canvas = document.createElement('canvas');
+                const canvas = document.createElement("canvas");
                 canvas.width = width;
                 canvas.height = height;
-                const ctx = canvas.getContext('2d');
+                const ctx = canvas.getContext("2d");
                 ctx.drawImage(img, 0, 0, width, height);
 
-                const imageData = ctx.getImageData(0, 0, width, height);
-                const data = imageData.data;
+                const { data } = ctx.getImageData(0, 0, width, height);
 
-                // 1. Convert to Grayscale
-                const grayData = new Uint8ClampedArray(width * height);
-                let totalBrightness = 0;
+                /* ================= GRAYSCALE ================= */
+                const gray = new Uint8ClampedArray(width * height);
+                let sum = 0;
 
                 for (let i = 0; i < data.length; i += 4) {
-                    // LUMA formula: 0.299R + 0.587G + 0.114B
-                    const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-                    grayData[i / 4] = gray;
-                    totalBrightness += gray;
+                    const g = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+                    gray[i / 4] = g;
+                    sum += g;
                 }
 
-                const avgBrightness = totalBrightness / (width * height);
-                const issues = [];
+                const avgBrightness = sum / gray.length;
 
-                // 2. Lighting Check
-                if (avgBrightness < 50) {
-                    issues.push("Image is too dark. Please use flash or find better lighting and capture again.");
-                } else if (avgBrightness > 200) {
-                    issues.push("Image is overexposed. Avoid glare and capture again.");
+                const errors = [];
+                const warnings = [];
+
+                /* ================= LIGHTING ================= */
+                let contrastSum = 0;
+                for (let i = 0; i < gray.length; i++) {
+                    contrastSum += Math.abs(gray[i] - avgBrightness);
+                }
+                const avgContrast = contrastSum / gray.length;
+
+                if (avgBrightness < 45) {
+                    errors.push("Image too dark. Use better lighting.");
                 }
 
-                // 3. Shadow/Contrast Check (Simple Variance)
-                // Split image into 4 quadrants and compare brightness
-                const halfW = Math.floor(width / 2);
-                const halfH = Math.floor(height / 2);
-                const quadrants = [0, 0, 0, 0];
-                const counts = [0, 0, 0, 0];
+                if (avgBrightness > 235 && avgContrast < 18) {
+                    errors.push("Image overexposed. Details are washed out.");
+                }
+
+                /* ================= SHADOW CHECK ================= */
+                const hw = width >> 1, hh = height >> 1;
+                const quad = [0, 0, 0, 0], cnt = [0, 0, 0, 0];
 
                 for (let y = 0; y < height; y++) {
                     for (let x = 0; x < width; x++) {
-                        const idx = y * width + x;
-                        const val = grayData[idx];
-
-                        const qIdx = (y < halfH ? 0 : 2) + (x < halfW ? 0 : 1);
-                        quadrants[qIdx] += val;
-                        counts[qIdx]++;
+                        const q = (y < hh ? 0 : 2) + (x < hw ? 0 : 1);
+                        quad[q] += gray[y * width + x];
+                        cnt[q]++;
                     }
                 }
 
-                const quadAvgs = quadrants.map((sum, i) => sum / counts[i]);
-                const minQuad = Math.min(...quadAvgs);
-                const maxQuad = Math.max(...quadAvgs);
+                const avgs = quad.map((s, i) => s / cnt[i]);
+                const delta = Math.max(...avgs) - Math.min(...avgs);
 
-                // If distinct difference between brightest and darkest quadrant => possible heavy shadow
-                if (maxQuad - minQuad > 80 && avgBrightness > 60) {
-                    issues.push("Shadow Detected: Uneven lighting or heavy shadows detected.");
+                if (delta > 90 && avgContrast < 25) {
+                    warnings.push("Uneven lighting detected (shadows present).");
                 }
 
-                // 4. Content Bounding Box & Orientation Detection
-                let dxSum = 0;
-                let dySum = 0;
-                let topWeight = 0;
-                let bottomWeight = 0;
-                let leftWeight = 0;
-                let rightWeight = 0;
-
+                /* ================= CONTENT BOX ================= */
                 let minX = width, minY = height, maxX = 0, maxY = 0;
-                const sampleStep = 2;
+                let dxSum = 0, dySum = 0;
 
-                for (let y = sampleStep; y < height - sampleStep; y += sampleStep) {
-                    for (let x = sampleStep; x < width - sampleStep; x += sampleStep) {
-                        const idx = y * width + x;
-                        const dx = Math.abs(grayData[idx + 1] - grayData[idx - 1]);
-                        const dy = Math.abs(grayData[idx + width] - grayData[idx - width]);
+                for (let y = 1; y < height - 1; y += 2) {
+                    for (let x = 1; x < width - 1; x += 2) {
+                        const i = y * width + x;
+                        const dx = Math.abs(gray[i + 1] - gray[i - 1]);
+                        const dy = Math.abs(gray[i + width] - gray[i - width]);
 
-                        if (dx > 20) dxSum += dx;
-                        if (dy > 20) dySum += dy;
-
-                        const edgeStrength = dx + dy;
-                        if (edgeStrength > 40) {
-                            // Expand bounding box
-                            if (x < minX) minX = x;
-                            if (x > maxX) maxX = x;
-                            if (y < minY) minY = y;
-                            if (y > maxY) maxY = y;
-
-                            // Density check for orientation
-                            if (y < height * 0.25) topWeight++;
-                            else if (y > height * 0.75) bottomWeight++;
-
-                            if (x < width * 0.25) leftWeight++;
-                            else if (x > width * 0.75) rightWeight++;
+                        if (dx + dy > 35) {
+                            minX = Math.min(minX, x);
+                            minY = Math.min(minY, y);
+                            maxX = Math.max(maxX, x);
+                            maxY = Math.max(maxY, y);
                         }
+
+                        dxSum += dx;
+                        dySum += dy;
                     }
                 }
 
-                // Calculate Content Box with padding (5% relative)
-                const padW = width * 0.05;
-                const padH = height * 0.05;
+                const padX = width * 0.05;
+                const padY = height * 0.05;
+
                 const contentBox = {
-                    x: Math.max(0, minX - padW),
-                    y: Math.max(0, minY - padH),
-                    width: Math.min(width, maxX + padW) - Math.max(0, minX - padW),
-                    height: Math.min(height, maxY + padH) - Math.max(0, minY - padH)
+                    x: Math.max(0, minX - padX),
+                    y: Math.max(0, minY - padY),
+                    width: Math.min(width, maxX + padX) - Math.max(0, minX - padX),
+                    height: Math.min(height, maxY + padY) - Math.max(0, minY - padY)
                 };
 
-                // Orientation Logic - Enhanced for SHG Tables
-                let suggestedRotation = 0;
+                /* ================= ROTATION ================= */
+                let rotation = 0;
+                const ratio = dxSum / (dySum || 1);
 
-                // shg tables are landscape. if edges are primarily vertical, it's likely rotated
-                const edgeRatio = dxSum / (dySum || 1);
+                if (ratio > 1.3) rotation = 90;
 
-                if (edgeRatio > 1.2) {
-                    suggestedRotation = 90; // Likely needs 90 deg rotation to be landscape
+                const bw = maxX - minX;
+                const bh = maxY - minY;
+
+                if (rotation === 0 && bh > bw * 1.15) {
+                    rotation = 90;
                 }
 
-                // Fine-tune based on weights (densities)
-                if (suggestedRotation === 0) {
-                    // Check if upside down (more content at bottom than top)
-                    if (bottomWeight > topWeight * 1.5) suggestedRotation = 180;
-                } else if (suggestedRotation === 90) {
-                    // Check if rotated 270 instead of 90
-                    if (rightWeight > leftWeight * 1.5) suggestedRotation = 270;
-                }
-
-                // Final check: SHG forms are ALWAYS landscape. 
-                // If after suggested rotation the bounding box is still portrait, 
-                // force a 90 degree shift if it helps reach landscape.
-                const curW = maxX - minX;
-                const curH = maxY - minY;
-
-                let finalW = (suggestedRotation === 90 || suggestedRotation === 270) ? curH : curW;
-                let finalH = (suggestedRotation === 90 || suggestedRotation === 270) ? curW : curH;
-
-                if (finalH > finalW * 1.1) {
-                    // Still portrait, try to flip it to landscape
-                    suggestedRotation = (suggestedRotation + 90) % 360;
-                }
-
-                // 5. Blur Detection (Laplacian Variance)
-                let variance = 0;
-                let mean = 0;
-                let pixelCount = 0;
+                /* ================= BLUR (NORMALIZED) ================= */
+                let meanLap = 0, varLap = 0, count = 0;
 
                 for (let y = 1; y < height - 1; y++) {
                     for (let x = 1; x < width - 1; x++) {
-                        const idx = y * width + x;
-                        const laplacian =
-                            grayData[idx - width] +
-                            grayData[idx + width] +
-                            grayData[idx - 1] +
-                            grayData[idx + 1] -
-                            (4 * grayData[idx]);
-
-                        mean += laplacian;
-                        pixelCount++;
+                        const i = y * width + x;
+                        const lap =
+                            gray[i - width] + gray[i + width] +
+                            gray[i - 1] + gray[i + 1] -
+                            4 * gray[i];
+                        meanLap += lap;
+                        count++;
                     }
                 }
-                mean /= pixelCount;
+
+                meanLap /= count;
 
                 for (let y = 1; y < height - 1; y++) {
                     for (let x = 1; x < width - 1; x++) {
-                        const idx = y * width + x;
-                        const laplacian =
-                            grayData[idx - width] +
-                            grayData[idx + width] +
-                            grayData[idx - 1] +
-                            grayData[idx + 1] -
-                            (4 * grayData[idx]);
-                        variance += Math.pow(laplacian - mean, 2);
+                        const i = y * width + x;
+                        const lap =
+                            gray[i - width] + gray[i + width] +
+                            gray[i - 1] + gray[i + 1] -
+                            4 * gray[i];
+                        varLap += (lap - meanLap) ** 2;
                     }
                 }
-                variance /= pixelCount;
+
+                const blurScore = varLap / count;
+
+                if (blurScore < 60) {
+                    errors.push("Image is blurry. Hold the camera steady.");
+                }
+
+                // User Request: If errors exist, suppress warnings (only show critical errors)
+                const finalWarnings = errors.length > 0 ? [] : warnings;
 
                 resolve({
-                    isValid: issues.length === 0,
-                    score: variance,
-                    issues: issues,
-                    suggestedRotation: suggestedRotation,
-                    contentBox: contentBox
+                    isValid: errors.length === 0,
+                    errors,
+                    warnings: finalWarnings,
+                    blurScore,
+                    brightness: avgBrightness,
+                    contrast: avgContrast,
+                    suggestedRotation: rotation,
+                    contentBox
                 });
 
-            } catch (err) {
-                console.error("Image analysis failed:", err);
-                // Fail safe: Allow upload if analysis breaks
-                resolve({ isValid: true, issues: [] });
+            } catch (e) {
+                console.error("Image analysis failed:", e);
+                resolve({ isValid: true, errors: [], warnings: [] });
             }
         };
 
-        img.onerror = () => {
-            reject(new Error("Failed to load image for analysis"));
-        };
-
-        img.src = objectUrl;
+        img.onerror = () => reject(new Error("Image load failed"));
+        img.src = url;
     });
 };

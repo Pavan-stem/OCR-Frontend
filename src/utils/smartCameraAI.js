@@ -1,132 +1,108 @@
 /**
- * Enhanced Smart Camera with AI Features
- * Real-time quality monitoring, document detection, and auto-adjustments
+ * Enhanced Smart Camera with AI Features (FIXED VERSION)
+ * Stable quality checks, document-safe brightness logic,
+ * robust edge detection, and strict capture blocking
  */
 
 import { getRealtimeQualityFeedback } from './aiModels';
 
-/**
- * Real-time camera quality monitor
- * Provides live feedback while user is framing the document
- */
+/* ---------------- CAMERA QUALITY MONITOR ---------------- */
+
 export class CameraQualityMonitor {
   constructor(videoElement, canvasElement) {
     this.video = videoElement;
     this.canvas = canvasElement;
     this.ctx = canvasElement?.getContext('2d');
     this.feedbackCallback = null;
-    this.isMonitoring = false;
     this.monitoringInterval = null;
   }
 
-  /**
-   * Start real-time quality monitoring
-   */
   startMonitoring(feedbackCallback) {
     this.feedbackCallback = feedbackCallback;
-    this.isMonitoring = true;
 
-    if (this.monitoringInterval) {
-      clearInterval(this.monitoringInterval);
-    }
+    if (this.monitoringInterval) clearInterval(this.monitoringInterval);
 
-    // Check quality every 500ms for smooth feedback
     this.monitoringInterval = setInterval(() => {
-      if (this.video?.readyState === 4) { // Video is ready
+      if (this.video?.readyState === 4) {
         this.analyzeFrame();
       }
-    }, 500);
+    }, 400);
   }
 
-  /**
-   * Stop monitoring
-   */
   stopMonitoring() {
-    this.isMonitoring = false;
-    if (this.monitoringInterval) {
-      clearInterval(this.monitoringInterval);
-    }
+    if (this.monitoringInterval) clearInterval(this.monitoringInterval);
   }
 
-  /**
-   * Analyze current video frame
-   */
   analyzeFrame() {
     try {
-      // Resize canvas to match video
       this.canvas.width = this.video.videoWidth;
       this.canvas.height = this.video.videoHeight;
-
-      // Draw current frame
       this.ctx.drawImage(this.video, 0, 0);
 
-      // Get real-time feedback
       const feedback = getRealtimeQualityFeedback(this.canvas);
 
-      if (this.feedbackCallback) {
-        this.feedbackCallback(feedback);
+      // ❌ Block false brightness errors for document-like images
+      if (
+        feedback?.brightness?.normalized > 0.9 &&
+        feedback?.sharpness?.score > 0.45
+      ) {
+        feedback.brightness.status = 'ok';
       }
-    } catch (err) {
-      console.error('Frame analysis error:', err);
+
+      this.feedbackCallback?.(feedback);
+    } catch (e) {
+      console.error('Camera frame analysis failed', e);
     }
   }
 }
 
-/**
- * Document edge detection for camera preview
- * Highlights document boundaries in real-time
- */
+/* ---------------- DOCUMENT EDGE DETECTOR ---------------- */
+
 export class DocumentEdgeDetector {
   constructor(canvasElement) {
     this.canvas = canvasElement;
     this.ctx = canvasElement?.getContext('2d');
   }
 
-  /**
-   * Draw detected edges on canvas overlay
-   */
   drawEdges(imageData) {
     const edges = this.detectEdges(imageData);
     this.renderEdges(edges, imageData.width, imageData.height);
   }
 
-  /**
-   * Simple edge detection
-   */
   detectEdges(imageData) {
-    const data = imageData.data;
-    const width = imageData.width;
-    const height = imageData.height;
-    const threshold = 100;
+    const { data, width, height } = imageData;
     const edges = [];
+
+    const sobelX = [-1, 0, 1, -2, 0, 2, -1, 0, 1];
+    const sobelY = [-1, -2, -1, 0, 0, 0, 1, 2, 1];
+
+    const gray = new Float32Array(width * height);
+
+    for (let i = 0; i < data.length; i += 4) {
+      gray[i / 4] = (data[i] + data[i + 1] + data[i + 2]) / 3;
+    }
 
     for (let y = 1; y < height - 1; y++) {
       for (let x = 1; x < width - 1; x++) {
-        const idx = (y * width + x) * 4;
+        let gx = 0, gy = 0;
 
-        const gx =
-          (-data[(y - 1) * width * 4 + (x - 1) * 4] + data[(y - 1) * width * 4 + (x + 1) * 4]) +
-          (-2 * data[y * width * 4 + (x - 1) * 4] + 2 * data[y * width * 4 + (x + 1) * 4]) +
-          (-data[(y + 1) * width * 4 + (x - 1) * 4] + data[(y + 1) * width * 4 + (x + 1) * 4]);
-
-        const gy =
-          (-data[(y - 1) * width * 4 + (x - 1) * 4] - 2 * data[(y - 1) * width * 4 + x * 4] - data[(y - 1) * width * 4 + (x + 1) * 4]) +
-          (data[(y + 1) * width * 4 + (x - 1) * 4] + 2 * data[(y + 1) * width * 4 + x * 4] + data[(y + 1) * width * 4 + (x + 1) * 4]);
-
-        const magnitude = Math.sqrt(gx * gx + gy * gy);
-
-        if (magnitude > threshold) {
-          edges.push({ x, y, magnitude });
+        let k = 0;
+        for (let ky = -1; ky <= 1; ky++) {
+          for (let kx = -1; kx <= 1; kx++) {
+            const val = gray[(y + ky) * width + (x + kx)];
+            gx += sobelX[k] * val;
+            gy += sobelY[k] * val;
+            k++;
+          }
         }
+
+        const mag = Math.sqrt(gx * gx + gy * gy);
+        if (mag > 120) edges.push({ x, y, mag });
       }
     }
-
     return edges;
   }
 
-  /**
-   * Render edges on overlay canvas
-   */
   renderEdges(edges, width, height) {
     if (!this.canvas) return;
 
@@ -134,274 +110,97 @@ export class DocumentEdgeDetector {
     this.canvas.height = height;
     this.ctx.clearRect(0, 0, width, height);
 
-    // Set color and draw edges
-    this.ctx.strokeStyle = '#00FF00';
-    this.ctx.lineWidth = 2;
-
-    edges.forEach((edge, idx) => {
-      if (idx % 5 === 0) { // Draw every 5th point to reduce density
-        this.ctx.fillStyle = `rgba(0, 255, 0, ${Math.min(1, edge.magnitude / 200)})`;
-        this.ctx.fillRect(edge.x, edge.y, 2, 2);
-      }
+    this.ctx.fillStyle = 'rgba(0,255,0,0.8)';
+    edges.forEach((e, i) => {
+      if (i % 6 === 0) this.ctx.fillRect(e.x, e.y, 2, 2);
     });
   }
 }
 
-/**
- * Smart focus detection
- * Analyzes frame sharpness and guides user to focus
- */
-export class SmartFocusGuide {
-  constructor() {
-    this.focusHistory = [];
-    this.maxHistorySize = 10;
-  }
+/* ---------------- SMART FOCUS GUIDE ---------------- */
 
-  /**
-   * Calculate focus score (0-1)
-   */
+export class SmartFocusGuide {
   calculateFocusScore(imageData) {
     const data = imageData.data;
-    const width = imageData.width;
-    let edgeEnergy = 0;
+    let variance = 0;
+    let mean = 0;
 
-    // Sample edges at regular intervals for performance
-    const step = 4;
-    for (let i = 0; i < data.length; i += step * 4) {
-      const idx = i;
-      const nextIdx = Math.min(i + 4, data.length - 1);
+    for (let i = 0; i < data.length; i += 16) {
+      mean += data[i];
+    }
+    mean /= (data.length / 16);
 
-      const c1 = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
-      const c2 = (data[nextIdx] + data[nextIdx + 1] + data[nextIdx + 2]) / 3;
-
-      edgeEnergy += Math.abs(c1 - c2);
+    for (let i = 0; i < data.length; i += 16) {
+      variance += Math.pow(data[i] - mean, 2);
     }
 
-    const normalizedScore = Math.min(1, edgeEnergy / (data.length / 100));
-    return normalizedScore;
+    const score = Math.min(1, variance / 6000);
+    return score;
   }
 
-  /**
-   * Get focus guidance
-   */
-  getFocusGuidance(focusScore) {
-    if (focusScore < 0.3) {
-      return {
-        status: 'blurry',
-        message: '🫂 Keep camera steady',
-        icon: '❌',
-        color: 'red'
-      };
-    } else if (focusScore < 0.6) {
-      return {
-        status: 'adjusting',
-        message: '⏳ Adjusting focus...',
-        icon: '⚠️',
-        color: 'orange'
-      };
-    } else {
-      return {
-        status: 'focused',
-        message: '✅ Ready to capture',
-        icon: '✅',
-        color: 'green'
-      };
-    }
-  }
+  getFocusGuidance(score) {
+    if (score < 0.35)
+      return { status: 'blurry', message: 'Hold camera steady', color: 'red' };
 
-  /**
-   * Add focus score to history and get trend
-   */
-  updateHistory(focusScore) {
-    this.focusHistory.push(focusScore);
-    if (this.focusHistory.length > this.maxHistorySize) {
-      this.focusHistory.shift();
-    }
+    if (score < 0.6)
+      return { status: 'adjusting', message: 'Adjust focus', color: 'orange' };
 
-    // Check if improving or stable
-    if (this.focusHistory.length >= 3) {
-      const recent = this.focusHistory.slice(-3);
-      const isImproving = recent[2] > recent[1] && recent[1] >= recent[0];
-      const isStable = Math.abs(recent[2] - recent[1]) < 0.05;
-
-      return {
-        isImproving,
-        isStable,
-        trend: isImproving ? 'up' : 'down'
-      };
-    }
-
-    return { isImproving: false, isStable: false, trend: 'none' };
+    return { status: 'focused', message: 'Ready', color: 'green' };
   }
 }
 
-/**
- * Intelligent capture optimizer
- * Automatically suggests best moment to capture
- */
+/* ---------------- CAPTURE OPTIMIZER ---------------- */
+
 export class CaptureOptimizer {
-  constructor() {
-    this.metrics = [];
-    this.readyToCapture = false;
-  }
+  isReadyForCapture({ focus, brightness, contrast }) {
+    const errors = [];
 
-  /**
-   * Check if conditions are optimal for capture
-   */
-  isReadyForCapture(focusScore, brightness, contrast) {
-    const metrics = {
-      focus: focusScore > 0.6,
-      brightness: brightness > 80 && brightness < 200,
-      contrast: contrast > 0.3,
-      timestamp: Date.now()
-    };
-
-    this.metrics.push(metrics);
-
-    // Keep last 5 measurements
-    if (this.metrics.length > 5) {
-      this.metrics.shift();
-    }
-
-    // Consider ready if last 3 measurements are all good
-    if (this.metrics.length >= 3) {
-      const recent = this.metrics.slice(-3);
-      this.readyToCapture = recent.every(m => m.focus && m.brightness && m.contrast);
-    }
+    if (focus < 0.6) errors.push('Image is blurry');
+    if (brightness < 70 || brightness > 240)
+      errors.push('Lighting not suitable');
+    if (contrast < 0.25) errors.push('Low contrast');
 
     return {
-      ready: this.readyToCapture,
-      metrics,
-      reason: this.getReadyReason(metrics)
+      ready: errors.length === 0,
+      errors
     };
   }
-
-  /**
-   * Get human-readable reason
-   */
-  getReadyReason(metrics) {
-    if (!metrics.focus) return 'Image is blurry';
-    if (!metrics.brightness) return 'Adjust lighting';
-    if (!metrics.contrast) return 'Improve contrast';
-    return 'Ready to capture';
-  }
 }
 
-/**
- * Auto-enhancement suggestions
- * Suggests image enhancements based on analysis
- */
+/* ---------------- ENHANCEMENT SUGGESTIONS ---------------- */
+
 export class EnhancementSuggestions {
-  static generateSuggestions(analysisResult) {
-    const suggestions = [];
+  static generateSuggestions({ quality, documentBounds }) {
+    const s = [];
 
-    const { quality, orientation, documentBounds } = analysisResult;
+    if (quality.brightness.normalized < 0.25)
+      s.push('Increase lighting');
 
-    // Brightness suggestions
-    if (quality.brightness.normalized < 0.3) {
-      suggestions.push({
-        type: 'brightness',
-        action: 'increase',
-        severity: 'high',
-        message: 'Image is too dark - increase brightness'
-      });
-    } else if (quality.brightness.normalized > 0.85) {
-      suggestions.push({
-        type: 'brightness',
-        action: 'decrease',
-        severity: 'medium',
-        message: 'Image is overexposed - reduce brightness'
-      });
-    }
+    if (quality.contrast.score < 0.3)
+      s.push('Improve contrast');
 
-    // Contrast suggestions
-    if (quality.contrast.score < 0.3) {
-      suggestions.push({
-        type: 'contrast',
-        action: 'increase',
-        severity: 'high',
-        message: 'Low contrast - improve lighting'
-      });
-    }
+    if (quality.sharpness.score < 0.5)
+      s.push('Stabilize camera');
 
-    // Focus suggestions
-    if (quality.sharpness.score < 0.5) {
-      suggestions.push({
-        type: 'focus',
-        action: 'improve',
-        severity: 'high',
-        message: 'Image is not sharp - ensure steady camera'
-      });
-    }
+    if (!documentBounds?.detected)
+      s.push('Align document fully in frame');
 
-    // Orientation suggestions
-    if (orientation.isPortrait) {
-      suggestions.push({
-        type: 'orientation',
-        action: 'rotate',
-        severity: 'medium',
-        angle: 90,
-        message: 'Document appears to be in portrait - rotate to landscape'
-      });
-    }
-
-    // Document framing
-    if (!documentBounds.detected) {
-      suggestions.push({
-        type: 'framing',
-        action: 'reframe',
-        severity: 'high',
-        message: 'Document not properly detected - ensure full document is visible'
-      });
-    }
-
-    return suggestions;
+    return s;
   }
 }
 
-/**
- * Gesture recognition for camera control (bonus feature)
- * Detect hand gestures to control capture
- */
+/* ---------------- GESTURE CONTROL (SAFE) ---------------- */
+
 export class GestureControl {
-  constructor() {
-    this.gestureHistory = [];
-  }
+  detectOKGesture(hands) {
+    if (!hands?.length) return false;
 
-  /**
-   * Detect if user is showing "OK" gesture (for hands-free capture)
-   */
-  detectOKGesture(detectedHands) {
-    // This would integrate with MediaPipe Hands API
-    // Simplified version for now
-    if (!detectedHands || detectedHands.length === 0) {
-      return false;
-    }
-
-    // Check if thumb and fingers form OK shape
-    return detectedHands.some(hand => {
-      const handedness = hand.handedness;
-      const landmarks = hand.landmarks;
-
-      if (landmarks.length < 9) return false;
-
-      // Simplified OK gesture: thumb and index close, other fingers extended
-      const thumbTip = landmarks[4];
-      const indexTip = landmarks[8];
-      const distance = this.euclideanDistance(thumbTip, indexTip);
-
-      return distance < 0.05; // Threshold for "OK"
+    return hands.some(h => {
+      const t = h.landmarks?.[4];
+      const i = h.landmarks?.[8];
+      if (!t || !i) return false;
+      return Math.hypot(t.x - i.x, t.y - i.y) < 0.04;
     });
-  }
-
-  /**
-   * Calculate Euclidean distance
-   */
-  euclideanDistance(p1, p2) {
-    return Math.sqrt(
-      Math.pow(p1.x - p2.x, 2) +
-      Math.pow(p1.y - p2.y, 2)
-    );
   }
 }
 

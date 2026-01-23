@@ -1,401 +1,209 @@
 /**
- * Example: Integrating AI Models into SHGUploadSection
- * This file shows how to use the AI models in your upload component
+ * Improved: AI-assisted Upload & Camera Integration
+ * Compatible with fixed utils pipeline
  */
 
-import { analyzeImageWithAI } from './utils/aiModels';
-import { CameraQualityMonitor, SmartFocusGuide, CaptureOptimizer } from './utils/smartCameraAI';
+import React from 'react';
+import cv from '@techstark/opencv-js';
+import { processImage } from './utils/smartCameraAI';
 
-// ============================================================================
-// EXAMPLE 1: Enhanced File Selection with AI Analysis
-// ============================================================================
+/* ============================================================================
+   1. FILE UPLOAD WITH HARD QUALITY BLOCKING
+============================================================================ */
 
-/**
- * Enhanced handleFileSelect with AI analysis
- * Drop-in replacement for existing function
- */
 export const enhancedHandleFileSelect = async (
   shgId,
   shgName,
   event,
-  analysisResults = null,
-  onAnalysisComplete = null
+  onResult
 ) => {
   const file = event.target.files?.[0];
   if (!file) return;
 
-  console.log(`📸 Analyzing image for SHG: ${shgName} (${shgId})`);
-
-  // Show analyzing state in UI
-  if (onAnalysisComplete) {
-    onAnalysisComplete({ status: 'analyzing', shgId });
-  }
-
   try {
-    // Perform comprehensive AI analysis
-    let analysis = analysisResults;
-    if (!analysis) {
-      analysis = await analyzeImageWithAI(file);
+    const img = await loadImageToMat(file);
+    const result = processImage(img);
+
+    if (result.status === 'error') {
+      onResult?.({
+        status: 'error',
+        shgId,
+        messages: result.messages
+      });
+      event.target.value = '';
+      return;
     }
 
-    console.log('🤖 Analysis Result:', analysis);
-
-    // Check if analysis passed
-    if (!analysis.isValid) {
-      // Show issues to user
-      const issuesText = analysis.issues.join('\n- ');
-      const proceed = window.confirm(
-        `⚠️ AI Analysis found potential issues:\n\n- ${issuesText}\n\n` +
-        `Suggestions:\n- ${analysis.suggestions.join('\n- ')}\n\n` +
-        `Do you want to use this image anyway?`
-      );
-
-      if (!proceed) {
-        if (onAnalysisComplete) {
-          onAnalysisComplete({ status: 'rejected', shgId, reason: issuesText });
-        }
-        event.target.value = '';
-        return;
-      }
-    }
-
-    // Analysis passed - use suggested rotation
-    const initialRotation = analysis.recommendedRotation ?? 0;
-
-    // Create file object with analysis attached
     const newFile = {
-      file: file,
+      file,
       fileName: file.name,
       fileSize: file.size,
       uploadDate: new Date().toISOString(),
-      shgName: shgName,
-      shgId: shgId,
-      validated: false,
-      rotation: initialRotation,
-      analysis: analysis, // Store AI analysis results
-      qualityScore: analysis.overall.quality,
-      issues: analysis.issues,
-      suggestions: analysis.suggestions
+      shgId,
+      shgName,
+      warnings: result.warnings,
+      validated: true
     };
 
-    if (onAnalysisComplete) {
-      onAnalysisComplete({
-        status: 'success',
-        shgId,
-        analysis,
-        file: newFile
-      });
-    }
-
+    onResult?.({ status: 'success', shgId, file: newFile });
     return newFile;
 
   } catch (err) {
-    console.error('AI Analysis error:', err);
-    if (onAnalysisComplete) {
-      onAnalysisComplete({
-        status: 'error',
-        shgId,
-        error: err.message
-      });
-    }
-    // Fallback: allow manual upload without AI
-    return null;
+    onResult?.({ status: 'error', shgId, messages: [err.message] });
   }
 };
 
-// ============================================================================
-// EXAMPLE 2: Real-time Camera Quality Feedback
-// ============================================================================
+/* ============================================================================
+   2. CAMERA CAPTURE WITH AUTO-CROP + QUALITY CHECK
+============================================================================ */
 
-/**
- * Camera quality monitor hook for SmartCamera component
- */
-export const useCameraQualityMonitor = (videoRef, canvasRef) => {
-  const [feedback, setFeedback] = React.useState(null);
-  const [monitorRef] = React.useState(() =>
-    new CameraQualityMonitor(videoRef.current, canvasRef.current)
-  );
-
-  React.useEffect(() => {
-    // Start monitoring when component mounts
-    monitorRef.startMonitoring((feedback) => {
-      setFeedback(feedback);
-      console.log('📊 Camera Feedback:', feedback);
-    });
-
-    // Cleanup
-    return () => monitorRef.stopMonitoring();
-  }, []);
-
-  return feedback;
-};
-
-/**
- * Example camera capture with AI quality check
- */
 export const handleSmartCameraCapture = async (
   videoRef,
   canvasRef,
-  onCaptureComplete
+  onResult
 ) => {
   if (!videoRef.current || !canvasRef.current) return;
 
   const canvas = canvasRef.current;
-  const context = canvas.getContext('2d');
+  const ctx = canvas.getContext('2d');
 
-  // Capture frame
   canvas.width = videoRef.current.videoWidth;
   canvas.height = videoRef.current.videoHeight;
-  context.drawImage(videoRef.current, 0, 0);
+  ctx.drawImage(videoRef.current, 0, 0);
 
-  // Convert to file
-  const blob = await new Promise(resolve => {
-    canvas.toBlob(resolve, 'image/jpeg', 0.95);
-  });
+  const mat = cv.imread(canvas);
+  const result = processImage(mat);
 
-  const file = new File([blob], 'camera-capture.jpg', {
-    type: 'image/jpeg',
-    lastModified: new Date().getTime()
-  });
-
-  // Analyze with AI
-  const analysis = await analyzeImageWithAI(file);
-
-  console.log('📸 Captured image analysis:', analysis);
-
-  if (onCaptureComplete) {
-    onCaptureComplete({
-      file,
-      analysis,
-      quality: analysis.overall.quality,
-      isGood: analysis.isValid
-    });
+  if (result.status === 'error') {
+    onResult?.({ status: 'error', messages: result.messages });
+    return;
   }
 
-  return { file, analysis };
+  cv.imshow(canvas, result.image);
+
+  onResult?.({
+    status: 'success',
+    warnings: result.warnings
+  });
 };
 
-// ============================================================================
-// EXAMPLE 3: Focus Guide Integration
-// ============================================================================
+/* ============================================================================
+   3. REAL-TIME SHARPNESS (FOCUS) MONITOR
+============================================================================ */
 
-/**
- * Smart focus guide hook
- */
-export const useFocusGuide = (canvasRef) => {
-  const [focusGuide] = React.useState(new SmartFocusGuide());
-  const [guidance, setGuidance] = React.useState(null);
-  const [focusScore, setFocusScore] = React.useState(0);
+export const useFocusMonitor = (canvasRef) => {
+  const [score, setScore] = React.useState(0);
+  const [message, setMessage] = React.useState('');
 
-  const updateFocus = React.useCallback((canvas) => {
-    if (!canvas) return;
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      if (!canvasRef.current) return;
 
-    const ctx = canvas.getContext('2d');
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const mat = cv.imread(canvasRef.current);
+      const gray = new cv.Mat();
+      cv.cvtColor(mat, gray, cv.COLOR_RGBA2GRAY);
 
-    const score = focusGuide.calculateFocusScore(imageData);
-    setFocusScore(score);
+      const lap = new cv.Mat();
+      cv.Laplacian(gray, lap, cv.CV_64F);
 
-    const guide = focusGuide.getFocusGuidance(score);
-    setGuidance(guide);
+      const sharpness = cv.mean(lap)[0];
+      setScore(sharpness);
 
-    return { score, guide };
-  }, [focusGuide]);
+      if (sharpness < 3) setMessage('❌ Very blurry');
+      else if (sharpness < 8) setMessage('⚠️ Slight blur');
+      else setMessage('✅ Good focus');
 
-  return { guidance, focusScore, updateFocus };
+      mat.delete();
+      gray.delete();
+      lap.delete();
+    }, 700);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  return { score, message };
 };
 
-// ============================================================================
-// EXAMPLE 4: Batch Quality Assessment
-// ============================================================================
+/* ============================================================================
+   4. BATCH QUALITY VALIDATION
+============================================================================ */
 
-/**
- * Assess quality of multiple files
- * Useful for bulk uploads
- */
 export const assessBatchQuality = async (files) => {
-  const results = await Promise.all(
-    files.map(async (file) => {
-      try {
-        const analysis = await analyzeImageWithAI(file);
-        return {
-          fileName: file.name,
-          analysis,
-          passed: analysis.isValid,
-          quality: analysis.overall.quality
-        };
-      } catch (err) {
-        return {
-          fileName: file.name,
-          error: err.message,
-          passed: false,
-          quality: 0
-        };
-      }
-    })
-  );
+  const results = [];
 
-  const passedCount = results.filter(r => r.passed).length;
-  const failedCount = results.filter(r => !r.passed).length;
+  for (const file of files) {
+    try {
+      const mat = await loadImageToMat(file);
+      const result = processImage(mat);
 
-  console.log(`✅ Passed: ${passedCount}, ❌ Failed: ${failedCount}`);
+      results.push({
+        fileName: file.name,
+        passed: result.status === 'success',
+        errors: result.messages ?? [],
+        warnings: result.warnings ?? []
+      });
 
-  return {
-    results,
-    summary: {
-      total: results.length,
-      passed: passedCount,
-      failed: failedCount,
-      avgQuality: results.reduce((sum, r) => sum + (r.quality ?? 0), 0) / results.length
+    } catch (e) {
+      results.push({
+        fileName: file.name,
+        passed: false,
+        errors: [e.message]
+      });
     }
-  };
-};
-
-// ============================================================================
-// EXAMPLE 5: Quality-based UI Rendering
-// ============================================================================
-
-/**
- * Render quality indicator based on analysis
- */
-export const QualityIndicator = ({ analysis, size = 'md' }) => {
-  if (!analysis) return null;
-
-  const { overall, brightness, contrast, sharpness } = analysis;
-
-  const sizeClasses = {
-    sm: 'text-xs',
-    md: 'text-sm',
-    lg: 'text-base'
-  };
-
-  const getColorClass = (score) => {
-    if (score > 0.7) return 'text-green-600 bg-green-50';
-    if (score > 0.5) return 'text-yellow-600 bg-yellow-50';
-    return 'text-red-600 bg-red-50';
-  };
-
-  const getScoreLabel = (score) => {
-    if (score > 0.7) return '✅ Good';
-    if (score > 0.5) return '⚠️ Fair';
-    return '❌ Poor';
-  };
-
-  return (
-    <div className={`rounded-lg p-3 ${getColorClass(overall.quality)}`}>
-      <div className={`font-semibold mb-2 ${sizeClasses[size]}`}>
-        Overall Quality: {getScoreLabel(overall.quality)} ({(overall.quality * 100).toFixed(0)}%)
-      </div>
-
-      <div className={`space-y-1 text-xs ${sizeClasses[size]}`}>
-        <div className="flex justify-between">
-          <span>Brightness:</span>
-          <span>{(brightness.score * 100).toFixed(0)}%</span>
-        </div>
-        <div className="flex justify-between">
-          <span>Contrast:</span>
-          <span>{(contrast.score * 100).toFixed(0)}%</span>
-        </div>
-        <div className="flex justify-between">
-          <span>Sharpness:</span>
-          <span>{(sharpness.score * 100).toFixed(0)}%</span>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ============================================================================
-// EXAMPLE 6: Issue Display Component
-// ============================================================================
-
-/**
- * Display analysis issues and suggestions to user
- */
-export const IssuesDisplay = ({ analysis }) => {
-  if (!analysis || analysis.issues.length === 0) {
-    return <div className="text-green-600 font-semibold">✅ No issues detected</div>;
   }
 
-  return (
-    <div className="space-y-3">
-      {analysis.issues.length > 0 && (
-        <div className="bg-red-50 border-l-4 border-red-500 p-3 rounded">
-          <div className="font-semibold text-red-700 mb-2">⚠️ Issues Found:</div>
-          <ul className="text-sm text-red-600 space-y-1">
-            {analysis.issues.map((issue, idx) => (
-              <li key={idx}>• {issue}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {analysis.suggestions.length > 0 && (
-        <div className="bg-blue-50 border-l-4 border-blue-500 p-3 rounded">
-          <div className="font-semibold text-blue-700 mb-2">💡 Suggestions:</div>
-          <ul className="text-sm text-blue-600 space-y-1">
-            {analysis.suggestions.map((suggestion, idx) => (
-              <li key={idx}>✓ {suggestion}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
+  return results;
 };
 
-// ============================================================================
-// EXAMPLE 7: Integration with Upload Progress
-// ============================================================================
+/* ============================================================================
+   5. UI COMPONENTS
+============================================================================ */
 
-/**
- * Enhanced upload with quality-based prioritization
- */
-export const prioritizeUploadsByQuality = (files) => {
-  // Sort files by quality score (highest first)
-  return files.sort((a, b) => {
-    const scoreA = a.analysis?.overall?.quality ?? 0;
-    const scoreB = b.analysis?.overall?.quality ?? 0;
-    return scoreB - scoreA;
+export const QualityIndicator = ({ errors = [], warnings = [] }) => {
+  if (errors.length > 0) {
+    return <div className="text-red-600">❌ Image rejected</div>;
+  }
+  if (warnings.length > 0) {
+    return <div className="text-yellow-600">⚠️ Minor issues</div>;
+  }
+  return <div className="text-green-600">✅ Good quality</div>;
+};
+
+export const IssuesDisplay = ({ errors = [], warnings = [] }) => (
+  <div>
+    {errors.map((e, i) => (
+      <div key={i} className="text-red-600">• {e}</div>
+    ))}
+    {warnings.map((w, i) => (
+      <div key={i} className="text-yellow-600">• {w}</div>
+    ))}
+  </div>
+);
+
+/* ============================================================================
+   6. HELPERS
+============================================================================ */
+
+const loadImageToMat = (file) =>
+  new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      resolve(cv.imread(canvas));
+    };
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
   });
-};
-
-// ============================================================================
-// EXAMPLE 8: Analytics Tracking
-// ============================================================================
-
-/**
- * Track quality metrics for analytics
- */
-export const trackQualityMetrics = (analysis) => {
-  const metrics = {
-    timestamp: new Date().toISOString(),
-    quality: {
-      overall: analysis.overall.quality,
-      brightness: analysis.quality.brightness.score,
-      contrast: analysis.quality.contrast.score,
-      sharpness: analysis.quality.sharpness.score
-    },
-    issues: analysis.issues.length,
-    passed: analysis.isValid,
-    documentDetected: analysis.documentBounds.detected,
-    suggestedRotation: analysis.recommendedRotation
-  };
-
-  // Send to analytics backend if available
-  console.log('📊 Quality Metrics:', metrics);
-
-  return metrics;
-};
 
 export default {
   enhancedHandleFileSelect,
-  useCameraQualityMonitor,
   handleSmartCameraCapture,
-  useFocusGuide,
+  useFocusMonitor,
   assessBatchQuality,
   QualityIndicator,
-  IssuesDisplay,
-  prioritizeUploadsByQuality,
-  trackQualityMetrics
+  IssuesDisplay
 };
