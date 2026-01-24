@@ -995,13 +995,19 @@ const UsersTab = ({ filterProps }) => {
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className={`grid gap-6 ${currentUserRole.includes('admin - cc')
+        ? 'grid-cols-1 hidden'
+        : currentUserRole.includes('admin - apm')
+          ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+          : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
+        }`}>
         {[
-          { label: 'Administrators', count: userCounts.admin, icon: Shield, color: 'from-purple-500 to-indigo-600' },
-          { label: 'Village VOs', count: userCounts.vo, icon: User, color: 'from-blue-500 to-cyan-600' },
-          { label: 'Developers', count: userCounts.developer, icon: Lock, color: 'from-amber-500 to-orange-600' },
-          { label: 'Total Accounts', count: userCounts.total, icon: CheckCircle, color: 'from-emerald-500 to-teal-600' }
-        ].map((stat, i) => (
+          { label: 'Administrators', count: userCounts.admin, icon: Shield, color: 'from-purple-500 to-indigo-600', show: !currentUserRole.includes('admin - cc') && !currentUserRole.includes('admin - apm') },
+          { label: 'CCs', count: userCounts.admin, icon: Shield, color: 'from-purple-500 to-indigo-600', show: currentUserRole.includes('admin - apm') },
+          { label: 'Village VOs', count: userCounts.vo, icon: User, color: 'from-blue-500 to-cyan-600', show: !currentUserRole.includes('admin - cc') },
+          { label: 'Developers', count: userCounts.developer, icon: Lock, color: 'from-amber-500 to-orange-600', show: !currentUserRole.includes('admin - cc') && !currentUserRole.includes('admin - apm') },
+          { label: 'Total Accounts', count: userCounts.total, icon: CheckCircle, color: 'from-emerald-500 to-teal-600', show: !currentUserRole.includes('admin - cc') }
+        ].filter(stat => stat.show).map((stat, i) => (
           <div key={i} className={`bg-white rounded-3xl p-4 sm:p-6 shadow-md border border-gray-100 flex items-center gap-4 sm:gap-5 transition-all hover:scale-[1.02]`}>
             <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br ${stat.color} flex items-center justify-center text-white shadow-lg shrink-0`}>
               <stat.icon className="w-6 h-6 sm:w-7 sm:h-7" />
@@ -1258,7 +1264,9 @@ const UsersTab = ({ filterProps }) => {
                     <th className="px-4 sm:px-8 py-5 text-[10px] font-black uppercase tracking-wider border-r border-indigo-600/50">Roles</th>
                     <th className="px-4 sm:px-8 py-5 text-[10px] font-black uppercase tracking-wider border-r border-indigo-600/50">Location</th>
                     <th className="px-4 sm:px-8 py-5 text-[10px] font-black uppercase tracking-wider border-r border-indigo-600/50 text-center">Uploads Tracking</th>
-                    <th className="px-4 sm:px-8 py-5 text-[10px] font-black uppercase tracking-wider text-right">Control</th>
+                    <th className="px-4 sm:px-8 py-5 text-[10px] font-black uppercase tracking-wider text-right">
+                      {currentUserRole.includes('admin - cc') ? 'Conversion' : 'Actions'}
+                    </th>
                   </tr>
                 </thead>
                 <tbody key={page} className="divide-y divide-gray-100 animate-slide-in">
@@ -1368,7 +1376,7 @@ const UsersTab = ({ filterProps }) => {
                             )}
                           </td>
                           <td className="px-4 sm:px-8 py-5 whitespace-nowrap text-right">
-                            <div className="flex justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="flex justify-end gap-3 transition-opacity">
                               {canViewUserUploads(u) && (
                                 <button
                                   onClick={() => {
