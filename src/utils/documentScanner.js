@@ -227,15 +227,38 @@ const detectTableOpenCV = (src) => {
         }
     }
 
+    // 7. Count Rows and Columns
+    // Dilate lines to merge broken segments
+    const horizontalDilated = new cv.Mat();
+    const verticalDilated = new cv.Mat();
+    // Use larger kernel to merge nearby lines
+    const kernelH = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(bw.cols / 20, 1));
+    const kernelV = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(1, bw.rows / 20));
+
+    cv.dilate(horizontal, horizontalDilated, kernelH);
+    cv.dilate(vertical, verticalDilated, kernelV);
+
+    const hContours = new cv.MatVector();
+    const vContours = new cv.MatVector();
+    cv.findContours(horizontalDilated, hContours, new cv.Mat(), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    cv.findContours(verticalDilated, vContours, new cv.Mat(), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+    const rowCount = hContours.size();
+    const colCount = vContours.size();
+
     // Cleanup
     gray.delete(); bw.delete(); horizontal.delete(); vertical.delete();
     horizontalStructure.delete(); verticalStructure.delete(); tableMask.delete();
     contours.delete(); hierarchy.delete();
+    horizontalDilated.delete(); verticalDilated.delete(); kernelH.delete(); kernelV.delete();
+    hContours.delete(); vContours.delete();
 
     return {
         hasTable: intersectionCount > 3,
         isTableCutOff,
-        isFullFrame
+        isFullFrame,
+        rowCount,
+        colCount
     };
 };
 
@@ -476,12 +499,17 @@ export const scanDocument = async (file) => {
                         message = "Invalid image. No table detected. Please upload a clear photo of the complete table only.";
                     } else if (isCutOff && !tableAnalysis.isFullFrame) {
                         status = "error";
-                        message = "Invalid image. Table borders or grid lines are cut off. Please ensure the four edges are visible.";
-                    } else if (isBlurry || hasHeavyShadow || isCutOff) {
-                        // Accept minor issues without altering the image
+                        message = "Incomplete table detected. One or more table borders are missing.";
+                    } else if (tableAnalysis.rowCount < 18 || tableAnalysis.colCount < 16) {
+                        status = "error";
+                        message = "Incomplete table detected. One or more table borders are missing.";
+                    } else if (isBlurry) {
+                        status = "error";
+                        message = "Invalid image. The document is blurry. Please hold the camera steady and retry.";
+                    } else if (hasHeavyShadow) {
+                        // Accept minor shadow issues, but warn if severe
                         status = "fixed";
-                        message = "Image accepted with minor notes";
-                        // optimization: We do NOT modify/enhance pixels anymore per user request.
+                        message = "Image accepted (minor shadows detected)";
                     }
 
                     // MAPPING TO STRICT OUTPUT FORMAT
