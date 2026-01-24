@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Edit, Trash2, Eye, Filter, Loader2, X, Shield, User, MapPin, Phone, Lock, CheckCircle, Search, ChevronLeft, ChevronRight, FileText, Calendar, AlertCircle, AlertTriangle, Settings, Power, Clock, Download } from 'lucide-react';
+import { Plus, Edit, Trash2, Folder, Filter, Loader2, X, Shield, User, MapPin, Phone, Lock, CheckCircle, Search, ChevronLeft, ChevronRight, FileText, Calendar, AlertCircle, AlertTriangle, Settings, Power, Clock, Download, Eye } from 'lucide-react';
 import { API_BASE } from '../utils/apiConfig';
 const REJECTION_REASONS = [
   "Follow guidelines",
@@ -93,7 +93,7 @@ const UsersTab = ({ filterProps }) => {
     const targetRoleLower = (targetUser?.role || 'vo').toLowerCase();
     const targetIsVO = targetRoleLower.startsWith('vo') || targetRoleLower === 'none' || !targetUser?.role;
 
-    // Eye button only shows for VO users (since only VOs have uploads)
+    // Folder button only shows for VO users (since only VOs have uploads)
     // Admin - CC, Admin - APM, and Admin users can view VO uploads if needed
     return targetIsVO;
   };
@@ -215,6 +215,18 @@ const UsersTab = ({ filterProps }) => {
   const [selectedUpload, setSelectedUpload] = useState(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [statusFormData, setStatusFormData] = useState({ status: 'pending', rejectionReason: REJECTION_REASONS[0] });
+  const [showImageViewer, setShowImageViewer] = useState(false);
+  const [viewerImageData, setViewerImageData] = useState({ url: '', title: '', subtitle: '', filename: '' });
+
+  const openImageViewer = (upload) => {
+    setViewerImageData({
+      url: upload.s3Url,
+      title: upload.shgName,
+      subtitle: `SHG ID: '${upload.shgID}`,
+      filename: `${upload.shgName}_${upload.shgID}.jpg`
+    });
+    setShowImageViewer(true);
+  };
 
   // Location data states (local to tab for better control)
   // ... rest of the states ...
@@ -456,6 +468,17 @@ const UsersTab = ({ filterProps }) => {
     fetchUsers();
     fetchUserCounts();
   }, [page, limit, debouncedSearchTerm, selectedDistrict, selectedMandal, selectedVillage, sortBy, sortOrders, filterMonth, filterYear]);
+
+  // Periodic refresh for users list (to update online status dots)
+  useEffect(() => {
+    if (!serverStatus.active) return;
+
+    const interval = setInterval(() => {
+      fetchUsers();
+    }, 30000); // Every 30 seconds
+
+    return () => clearInterval(interval);
+  }, [serverStatus.active, page, limit, debouncedSearchTerm, selectedDistrict, selectedMandal, selectedVillage, sortBy, sortOrders, filterMonth, filterYear]);
 
   // Handle auto-fill for restricted roles
   useEffect(() => {
@@ -1387,23 +1410,15 @@ const UsersTab = ({ filterProps }) => {
                                   className="p-2.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-xl transition-all shadow-sm"
                                   title="View Converted SHGs"
                                 >
-                                  <Eye className="w-4.5 h-4.5" />
+                                  <Folder className="w-4.5 h-4.5" />
                                 </button>
                               )}
-                              {(currentUserRole.includes('admin - apm') && (u.role || '').toLowerCase().includes('admin - cc')) && (
+                              {/* Download Button for CCs - Visible to Admins, Developers, and APMs */}
+                              {((currentUserRole.includes('admin') || currentUserRole.includes('developer')) && (u.role || '').toLowerCase().includes('admin - cc')) && (
                                 <button
                                   onClick={() => downloadUserData(u)}
                                   className="p-2.5 bg-cyan-50 text-cyan-600 hover:bg-cyan-600 hover:text-white rounded-xl transition-all shadow-sm"
                                   title="Download CC Data"
-                                >
-                                  <Download className="w-4.5 h-4.5" />
-                                </button>
-                              )}
-                              {!currentUserRole.includes('admin - cc') && !currentUserRole.includes('admin - apm') && canViewUserUploads(u) && (
-                                <button
-                                  onClick={() => downloadUserData(u)}
-                                  className="p-2.5 bg-cyan-50 text-cyan-600 hover:bg-cyan-600 hover:text-white rounded-xl transition-all shadow-sm"
-                                  title="Download VO Data"
                                 >
                                   <Download className="w-4.5 h-4.5" />
                                 </button>
@@ -1537,20 +1552,11 @@ const UsersTab = ({ filterProps }) => {
                               }}
                               className="flex-1 p-2.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-xl transition-all shadow-sm flex items-center justify-center gap-2"
                             >
-                              <Eye className="w-4 h-4" />
+                              <Folder className="w-4 h-4" />
                               <span className="text-[10px] font-black uppercase">View</span>
                             </button>
                           )}
-                          {(currentUserRole.includes('admin - apm') && (u.role || '').toLowerCase().includes('admin - cc')) && (
-                            <button
-                              onClick={() => downloadUserData(u)}
-                              className="flex-1 p-2.5 bg-cyan-50 text-cyan-600 hover:bg-cyan-600 hover:text-white rounded-xl transition-all shadow-sm flex items-center justify-center gap-2"
-                            >
-                              <Download className="w-4 h-4" />
-                              <span className="text-[10px] font-black uppercase">Download</span>
-                            </button>
-                          )}
-                          {!currentUserRole.includes('admin - cc') && !currentUserRole.includes('admin - apm') && canViewUserUploads(u) && (
+                          {((currentUserRole.includes('admin') || currentUserRole.includes('developer')) && (u.role || '').toLowerCase().includes('admin - cc')) && (
                             <button
                               onClick={() => downloadUserData(u)}
                               className="flex-1 p-2.5 bg-cyan-50 text-cyan-600 hover:bg-cyan-600 hover:text-white rounded-xl transition-all shadow-sm flex items-center justify-center gap-2"
@@ -1970,7 +1976,7 @@ const UsersTab = ({ filterProps }) => {
                         <div className="text-sm sm:text-2xl font-black text-white">{uploadsSummary.pending}</div>
                       </div>
                       <div className="bg-white/10 backdrop-blur-sm rounded-xl px-2.5 sm:px-4 py-1 sm:py-2.5 border border-white/20 w-full">
-                        <div className="text-[7px] sm:text-[10px] font-black text-white/70 uppercase">Validated</div>
+                        <div className="text-[7px] sm:text-[10px] font-black text-white/70 uppercase">Approved</div>
                         <div className="text-sm sm:text-2xl font-black text-white">{uploadsSummary.validated}</div>
                       </div>
                       <div className="bg-white/10 backdrop-blur-sm rounded-xl px-2.5 sm:px-4 py-1 sm:py-2.5 border border-white/20 w-full">
@@ -2050,6 +2056,13 @@ const UsersTab = ({ filterProps }) => {
                                     <Download size={14} /> {currentUserRole === 'admin - apm' ? 'Download' : ''}
                                   </button>
                                 )}
+                                <button
+                                  onClick={() => openImageViewer(upload)}
+                                  className="px-3 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1"
+                                  title="View Full Image"
+                                >
+                                  <Eye size={14} /> View
+                                </button>
                                 {currentUserRole !== 'admin - apm' && (
                                   <>
                                     <button
@@ -2057,7 +2070,7 @@ const UsersTab = ({ filterProps }) => {
                                       disabled={uploading}
                                       className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1"
                                     >
-                                      <CheckCircle size={14} /> Validate
+                                      <CheckCircle size={14} /> Approve
                                     </button>
                                     <button
                                       onClick={() => openStatusModal(upload)}
@@ -2132,6 +2145,13 @@ const UsersTab = ({ filterProps }) => {
                                   </button>
                                 )}
                                 <button
+                                  onClick={() => openImageViewer(upload)}
+                                  className="px-3 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1"
+                                  title="View Full Image"
+                                >
+                                  <Eye size={14} /> View
+                                </button>
+                                <button
                                   onClick={() => openStatusModal(upload)}
                                   className="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs transition-all shadow-sm"
                                 >
@@ -2150,7 +2170,7 @@ const UsersTab = ({ filterProps }) => {
                         <div className="flex items-center gap-2 mb-4 bg-white rounded-xl p-3 border-2 border-green-300 shadow-sm">
                           <CheckCircle className="text-green-500" size={24} />
                           <h4 className="text-lg font-black text-gray-900">
-                            Validated Uploads
+                            Approved Uploads
                             <span className="ml-2 text-sm font-normal text-gray-500">({userUploads.filter(u => u.status === 'validated').length})</span>
                           </h4>
                         </div>
@@ -2170,7 +2190,7 @@ const UsersTab = ({ filterProps }) => {
                                   <p className="text-xs text-gray-600">SHG ID: '{upload.shgID}</p>
                                 </div>
                                 <span className="px-2 py-1 rounded-lg text-[10px] font-black uppercase bg-green-200 text-green-800">
-                                  Validated
+                                  Approved
                                 </span>
                               </div>
 
@@ -2194,6 +2214,13 @@ const UsersTab = ({ filterProps }) => {
                                     <Download size={14} /> {currentUserRole === 'admin - apm' ? 'Download' : ''}
                                   </button>
                                 )}
+                                <button
+                                  onClick={() => openImageViewer(upload)}
+                                  className="px-3 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1"
+                                  title="View Full Image"
+                                >
+                                  <Eye size={14} /> View
+                                </button>
                                 {currentUserRole !== 'admin - apm' && (
                                   <button
                                     onClick={() => openStatusModal(upload)}
@@ -2224,9 +2251,7 @@ const UsersTab = ({ filterProps }) => {
             </div>
           </div>
         )
-      }
-
-      {/* Status Update Modal */}
+      }        {/* Status Update Modal */}
       {
         showStatusModal && selectedUpload && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
@@ -2261,7 +2286,7 @@ const UsersTab = ({ filterProps }) => {
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl font-bold focus:border-indigo-500 focus:outline-none transition-all"
                   >
                     <option value="pending">Pending</option>
-                    <option value="validated">Validated</option>
+                    <option value="validated">Approved</option>
                     <option value="rejected">Rejected</option>
                   </select>
                 </div>
@@ -2308,7 +2333,58 @@ const UsersTab = ({ filterProps }) => {
           </div>
         )
       }
-    </div >
+
+      {/* Full Image Viewer Modal */}
+      {showImageViewer && (
+        <div className="fixed inset-0 bg-indigo-950/60 backdrop-blur-md flex items-center justify-center z-[100] p-2 sm:p-4 !mt-0 animate-in fade-in duration-300">
+          <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-6xl overflow-hidden flex flex-col max-h-[95vh] sm:max-h-[90vh] border border-white/20 animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="px-4 sm:px-8 py-3 sm:py-6 border-b border-gray-100 bg-gradient-to-r from-indigo-600 to-purple-600">
+              <div className="flex justify-between items-center bg-transparent">
+                <div className="bg-transparent">
+                  <h3 className="text-lg sm:text-2xl font-black text-white leading-tight">{viewerImageData.title}</h3>
+                  <div className="flex items-center gap-2 mt-0.5 bg-transparent">
+                    <p className="text-[9px] sm:text-sm text-white/80 font-bold uppercase tracking-wider">{viewerImageData.subtitle}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowImageViewer(false)}
+                  className="p-1.5 sm:p-2.5 bg-white/20 text-white hover:bg-white/30 hover:shadow-md rounded-xl transition-all border border-white/30"
+                >
+                  <X className="w-5 h-5 sm:w-6 sm:h-6" />
+                </button>
+              </div>
+            </div>
+
+            {/* Content Area */}
+            <div className="flex-1 overflow-auto bg-gray-50/50 custom-scrollbar flex items-start justify-center p-0">
+              <img
+                src={viewerImageData.url}
+                alt={viewerImageData.title}
+                className="w-auto h-auto shadow-2xl"
+              />
+            </div>
+
+            {/* Footer */}
+            <div className="px-8 py-4 border-t border-gray-100 bg-white flex justify-end gap-4">
+              <button
+                onClick={() => setShowImageViewer(false)}
+                className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-black transition-all"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => downloadImage(viewerImageData.url, viewerImageData.filename)}
+                className="px-8 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-black transition-all shadow-md flex items-center gap-2"
+              >
+                <Download size={18} />
+                Download Original
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 

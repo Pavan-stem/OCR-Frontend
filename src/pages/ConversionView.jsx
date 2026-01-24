@@ -163,7 +163,7 @@ const ConversionView = ({ userId, userName, onClose }) => {
                         { label: 'Completed', count: summary.completed, icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-50' },
                         { label: 'Failed', count: summary.failed, icon: XCircle, color: 'text-red-600', bg: 'bg-red-50' },
                         { label: 'Processing', count: summary.processing, icon: RotateCw, color: 'text-indigo-600', bg: 'bg-indigo-50', animate: summary.processing > 0 },
-                        { label: 'Pending', count: summary.pending, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50' }
+                        { label: 'In Queue', count: summary.pending, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50' }
                     ].map((stat, i) => (
                         <div
                             key={i}

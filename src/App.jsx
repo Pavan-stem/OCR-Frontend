@@ -425,6 +425,34 @@ export default function EnhancedTableOCRSystem() {
     return () => clearInterval(interval);
   }, []);
 
+  // Heartbeat Polling to keep user online status fresh
+  useEffect(() => {
+    if (!user) return;
+
+    const sendHeartbeat = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+
+        await fetch(`${API_BASE}/api/heartbeat`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+      } catch (err) {
+        // Silently fail, heartbeat is best-effort
+        console.debug('Heartbeat failed:', err);
+      }
+    };
+
+    // Send immediately on mount if user exists
+    sendHeartbeat();
+
+    const interval = setInterval(sendHeartbeat, 60000); // Every 60 seconds
+    return () => clearInterval(interval);
+  }, [user]);
+
   const fileInputRef = useRef(null);
   const toastTimers = useRef({});
   const videoRef = useRef(null);
