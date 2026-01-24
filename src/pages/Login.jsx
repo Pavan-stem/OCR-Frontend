@@ -18,8 +18,8 @@ const Login = () => {
         setLoading(true);
 
         // Frontend validation: 6 (User ID), 8 (Cluster ID), 10 (Admin Phone), 15 (VO ID)
-        if (!/^\d{6}$/.test(identifier) && !/^\d{8}$/.test(identifier) && !/^\d{10}$/.test(identifier) && !/^\d{15}$/.test(identifier)) {
-            setError('Please enter a valid 6-digit User ID, 8-digit Cluster ID, 10-digit Admin Number or 15-digit VO ID.');
+        if (!/^\d{6}$/.test(identifier) && !/^\d{9}$/.test(identifier) && !/^\d{10}$/.test(identifier) && !/^\d{15}$/.test(identifier)) {
+            setError('Please enter a valid 6-digit User ID, 9-digit Cluster ID, 10-digit Admin Number or 15-digit VO ID.');
             setLoading(false);
             return;
         }
@@ -92,7 +92,7 @@ const Login = () => {
                                 if (val.length <= 15) setIdentifier(val);
                             }}
                             className="pl-10 block w-full border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm py-3 border"
-                            placeholder="Enter 6, 8, 10, or 15 digit ID"
+                            placeholder="Enter 6, 9, 10, or 15 digit ID"
                             required
                         />
                     </div>
