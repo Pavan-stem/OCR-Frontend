@@ -1,6 +1,7 @@
 /**
  * Image Quality Analysis Utility
  * Detects blur, lighting issues, and shadow presence using HTML5 Canvas
+ * Integrated with AI Document Scanner for professional document processing
  */
 
 export const analyzeImage = async (file) => {

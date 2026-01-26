@@ -16,13 +16,13 @@ export const getApiBase = () => {
   // Support both localhost AND local IP addresses (for mobile testing)
   const hostname = window.location.hostname;
   const port = window.location.port;
-
+  
   console.log(`[API Config] Detected hostname: ${hostname}, port: ${port}`);
-
+  
   // Check if it's localhost, 127.0.0.1, or a private IP
   const isLocalhost = hostname === "localhost" || hostname === "127.0.0.1";
   const isPrivateIP = /^(192\.168\.|10\.|172\.1[6-9]\.|172\.2[0-9]\.|172\.3[01]\.)/.test(hostname);
-
+  
   if (isLocalhost || isPrivateIP) {
     // Use local backend server on port 5004 with detected IP
     const apiUrl = `http://${hostname}:5004/OCRtest`;
@@ -44,7 +44,7 @@ export const getAuthApiBase = () => {
     const hostname = window.location.hostname;
     const isLocalhost = hostname === "localhost" || hostname === "127.0.0.1";
     const isPrivateIP = /^(192\.168\.|10\.|172\.1[6-9]\.|172\.2[0-9]\.|172\.3[01]\.)/.test(hostname);
-
+    
     if (isLocalhost || isPrivateIP) {
       return `http://${hostname}:5004/OCRtest`;
     }
