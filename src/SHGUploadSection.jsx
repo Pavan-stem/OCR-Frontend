@@ -4,7 +4,6 @@ import { createPortal } from 'react-dom';
 import { Upload, CheckCircle, X, FileText, Search, AlertCircle, Eye, Filter, RotateCw, RotateCcw, Camera, AlertTriangle, Activity } from 'lucide-react';
 import { API_BASE } from './utils/apiConfig';
 import { analyzeImage } from './utils/imageQualityCheck';
-import SmartCamera from './smartcamera';
 
 const SHGUploadSection = ({
   selectedMonth,
@@ -38,7 +37,6 @@ const SHGUploadSection = ({
   const [isProcessingPreview, setIsProcessingPreview] = useState(false);
   const [failedUploads, setFailedUploads] = useState([]);
   const [showFailedOnly, setShowFailedOnly] = useState(false);
-  const [openSmartCamera, setOpenSmartCamera] = useState(false);
   const [activeShgId, setActiveShgId] = useState(null);
   const [activeShgName, setActiveShgName] = useState(null);
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -626,40 +624,7 @@ const SHGUploadSection = ({
     }
   };
 
-  const handleSmartCameraCapture = async (file) => {
-    if (!file || !activeShgId || !activeShgName) return;
-
-    console.log('📸 Camera captured file:', file.name);
-    setAnalyzingMap(prev => ({ ...prev, [activeShgId]: true }));
-
-    try {
-      const analysis = await analyzeImage(file);
-      console.log('✅ Image analysis complete:', analysis);
-      setAnalyzingMap(prev => ({ ...prev, [activeShgId]: false }));
-
-      // Create a fake event object for compatibility with handleFileSelect
-      const fakeEvent = {
-        target: {
-          files: [file]
-        }
-      };
-
-      // Call handleFileSelect which will open the preview modal
-      handleFileSelect(activeShgId, activeShgName, fakeEvent, analysis);
-
-    } catch (err) {
-      console.error("❌ Smart camera error:", err);
-      setAnalyzingMap(prev => ({ ...prev, [activeShgId]: false }));
-
-      // Fallback to normal handling without analysis
-      const fakeEvent = {
-        target: {
-          files: [file]
-        }
-      };
-      handleFileSelect(activeShgId, activeShgName, fakeEvent);
-    }
-  };
+  /* Smart Camera handler removed */
 
 
   const handleFileSelect = async (shgId, shgName, event, analysisResults = null) => {
@@ -1436,16 +1401,11 @@ const SHGUploadSection = ({
 
                 <div className="flex flex-col gap-2">
                   {isMobileDevice ? (
-                    /* Mobile: Single Smart Scan Button "Upload Files" */
                     <button
-                      onClick={() => {
-                        setActiveShgId(shg.shgId);
-                        setActiveShgName(shg.shgName);
-                        setOpenSmartCamera(true);
-                      }}
+                      onClick={() => fileInputRefs.current[shg.shgId]?.click()}
                       className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-transparent active:scale-95"
                     >
-                      <Activity size={18} />
+                      <Upload size={18} />
                       <span>{t?.('upload.uploadFiles') || 'Upload Files'}</span>
                     </button>
                   ) : (
@@ -1588,16 +1548,11 @@ const SHGUploadSection = ({
               ) : (
                 <div className="flex flex-col gap-2">
                   {isMobileDevice ? (
-                    /* Mobile: Single Smart Scan Button "Upload Files" */
                     <button
-                      onClick={() => {
-                        setActiveShgId(shg.shgId);
-                        setActiveShgName(shg.shgName);
-                        setOpenSmartCamera(true);
-                      }}
+                      onClick={() => fileInputRefs.current[shg.shgId]?.click()}
                       className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-transparent active:scale-95"
                     >
-                      <Activity size={18} />
+                      <Upload size={18} />
                       <span>{t?.('upload.uploadFiles') || 'Upload Files'}</span>
                     </button>
                   ) : (
@@ -1696,7 +1651,7 @@ const SHGUploadSection = ({
             </div>
           )}
         </div>
-      </div>
+      </div >
     );
   };
 
@@ -2125,15 +2080,7 @@ const SHGUploadSection = ({
         </div>,
         document.body
       )}
-      <SmartCamera
-        open={openSmartCamera}
-        onClose={() => {
-          setOpenSmartCamera(false);
-          setActiveShgId(null);
-          setActiveShgName(null);
-        }}
-        onCapture={handleSmartCameraCapture}
-      />
+      {/* SmartCamera Removed */}
 
 
     </div>
