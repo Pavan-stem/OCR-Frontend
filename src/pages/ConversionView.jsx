@@ -103,6 +103,36 @@ const ConversionView = ({ userId, userName, onClose }) => {
         }
     };
 
+    const handleRejectSingle = async (item) => {
+        if (!window.confirm(`Are you sure you want to reject and send back ${item.shgName}?`)) return;
+        try {
+            const token = localStorage.getItem('token');
+            const payload = {
+                status: 'rejected',
+                rejectionReason: 'The Conversion has Failed, upload again'
+            };
+
+            const res = await fetch(`${API_BASE}/api/admin/uploads/${item.uploadId}/status`, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                fetchStatus();
+            } else {
+                alert(data.message || 'Failed to reject upload');
+            }
+        } catch (err) {
+            console.error('Error rejecting item:', err);
+            alert('Error rejecting item');
+        }
+    };
+
     const filteredResults = results[activeFolder].filter(item => {
         const dateStr = activeFolder === 'success' ? item.convertedAt : item.failedAt;
         const itemDate = new Date(dateStr);
@@ -379,7 +409,7 @@ const ConversionView = ({ userId, userName, onClose }) => {
                                             </div>
 
                                             {/* ACTION */}
-                                            <div className="flex">
+                                            <div className="flex gap-2">
                                                 {activeFolder === 'success' ? (
                                                     <button
                                                         onClick={() => setSelectedSHG(item)}
@@ -389,13 +419,24 @@ const ConversionView = ({ userId, userName, onClose }) => {
                                                         View Table
                                                     </button>
                                                 ) : (
-                                                    <button
-                                                        onClick={() => handleRetrySingle(item.id)}
-                                                        className="w-full sm:w-auto px-4 py-2 bg-red-50 text-red-600 rounded-xl font-black text-xs hover:bg-red-600 hover:text-white transition-all flex items-center justify-center gap-2 shadow-sm"
-                                                    >
-                                                        <RefreshCw className="w-4 h-4" />
-                                                        Retry
-                                                    </button>
+                                                    <>
+                                                        <button
+                                                            onClick={() => handleRetrySingle(item.id)}
+                                                            className="px-4 py-2 bg-red-50 text-red-600 rounded-xl font-black text-xs hover:bg-red-600 hover:text-white transition-all flex items-center justify-center gap-2 shadow-sm"
+                                                            title="Retry Conversion"
+                                                        >
+                                                            <RefreshCw className="w-4 h-4" />
+                                                            Retry
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleRejectSingle(item)}
+                                                            className="px-4 py-2 bg-gray-50 text-gray-600 rounded-xl font-black text-xs hover:bg-gray-600 hover:text-white transition-all flex items-center justify-center gap-2 shadow-sm"
+                                                            title="Reject and send back to VO"
+                                                        >
+                                                            <XCircle className="w-4 h-4" />
+                                                            Reject
+                                                        </button>
+                                                    </>
                                                 )}
                                             </div>
 
