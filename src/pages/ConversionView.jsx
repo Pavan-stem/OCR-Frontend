@@ -103,7 +103,7 @@ const ConversionView = ({ userId, userName, onClose }) => {
         }
     };
 
-    const handleRejectSingle = async (item) => {
+    const handleRejectSingle = async (item, folder) => {
         if (!window.confirm(`Are you sure you want to reject and send back ${item.shgName}?`)) return;
         try {
             const token = localStorage.getItem('token');
@@ -123,6 +123,16 @@ const ConversionView = ({ userId, userName, onClose }) => {
 
             const data = await res.json();
             if (data.success) {
+                // Immediately remove from local state for better UX
+                setResults(prev => ({
+                    ...prev,
+                    [folder]: prev[folder].filter(i => i.uploadId !== item.uploadId)
+                }));
+                // Also update summary counts
+                setSummary(prev => ({
+                    ...prev,
+                    [folder === 'success' ? 'completed' : 'failed']: Math.max(0, prev[folder === 'success' ? 'completed' : 'failed'] - 1)
+                }));
                 fetchStatus();
             } else {
                 alert(data.message || 'Failed to reject upload');
@@ -411,13 +421,23 @@ const ConversionView = ({ userId, userName, onClose }) => {
                                             {/* ACTION */}
                                             <div className="flex gap-2">
                                                 {activeFolder === 'success' ? (
-                                                    <button
-                                                        onClick={() => setSelectedSHG(item)}
-                                                        className="w-full sm:w-auto px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-black text-xs hover:bg-indigo-600 hover:text-white transition-all flex items-center justify-center gap-2 shadow-sm"
-                                                    >
-                                                        <Eye className="w-4 h-4" />
-                                                        View Table
-                                                    </button>
+                                                    <>
+                                                        <button
+                                                            onClick={() => setSelectedSHG(item)}
+                                                            className="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-black text-xs hover:bg-indigo-600 hover:text-white transition-all flex items-center justify-center gap-2 shadow-sm"
+                                                        >
+                                                            <Eye className="w-4 h-4" />
+                                                            View Table
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleRejectSingle(item, 'success')}
+                                                            className="px-4 py-2 bg-gray-50 text-gray-600 rounded-xl font-black text-xs hover:bg-gray-600 hover:text-white transition-all flex items-center justify-center gap-2 shadow-sm"
+                                                            title="Reject and send back to VO"
+                                                        >
+                                                            <XCircle className="w-4 h-4" />
+                                                            Reject
+                                                        </button>
+                                                    </>
                                                 ) : (
                                                     <>
                                                         <button
@@ -429,7 +449,7 @@ const ConversionView = ({ userId, userName, onClose }) => {
                                                             Retry
                                                         </button>
                                                         <button
-                                                            onClick={() => handleRejectSingle(item)}
+                                                            onClick={() => handleRejectSingle(item, 'failed')}
                                                             className="px-4 py-2 bg-gray-50 text-gray-600 rounded-xl font-black text-xs hover:bg-gray-600 hover:text-white transition-all flex items-center justify-center gap-2 shadow-sm"
                                                             title="Reject and send back to VO"
                                                         >

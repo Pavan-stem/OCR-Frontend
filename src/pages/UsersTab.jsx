@@ -400,10 +400,15 @@ const UsersTab = ({ filterProps }) => {
   }, [searchTerm]);
 
   // Fetch users from backend
-  const fetchUsers = async () => {
+  const fetchUsers = async (options = {}) => {
+    const isBackground = options.isBackground || false;
     if (!serverStatus.active) return;
-    setLoading(true);
-    setIsTransitioning(true);
+
+    if (!isBackground) {
+      setLoading(true);
+      setIsTransitioning(true);
+    }
+
     try {
       const token = localStorage.getItem('token');
       const params = new URLSearchParams();
@@ -437,8 +442,10 @@ const UsersTab = ({ filterProps }) => {
       setError('Failed to fetch users');
       console.error(err);
     } finally {
-      setLoading(false);
-      setTimeout(() => setIsTransitioning(false), 300);
+      if (!isBackground) {
+        setLoading(false);
+        setTimeout(() => setIsTransitioning(false), 300);
+      }
     }
   };
 
@@ -474,7 +481,8 @@ const UsersTab = ({ filterProps }) => {
     if (!serverStatus.active) return;
 
     const interval = setInterval(() => {
-      fetchUsers();
+      fetchUsers({ isBackground: true });
+      fetchUserCounts();
     }, 30000); // Every 30 seconds
 
     return () => clearInterval(interval);
