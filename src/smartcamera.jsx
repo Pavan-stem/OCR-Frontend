@@ -24,6 +24,19 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
     const [detectedContour, setDetectedContour] = useState(null);
     const animationFrameId = useRef(null);
 
+    useEffect(() => {
+        if (open) {
+            setCapturedImageData(null);
+            setLiveStatus({
+                isValid: false,
+                message: "Searching for document...",
+                color: "text-white"
+            });
+            setDetectedContour(null);
+            setCameraError(null);
+        }
+    }, [open]);
+
     // Initialize camera
     useEffect(() => {
         if (!open || capturedImageData) return;

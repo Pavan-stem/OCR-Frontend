@@ -1410,7 +1410,7 @@ const SHGUploadSection = ({
                       className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-transparent active:scale-95"
                     >
                       <Upload size={18} />
-                      <span>{t?.('upload.uploadFiles') || 'Upload Files'}</span>
+                      <span>{t?.('upload.uploadFiles') || 'Upload File'}</span>
                     </button>
                   ) : (
                     /* Desktop: Standard Upload */
@@ -1522,7 +1522,7 @@ const SHGUploadSection = ({
               <input
                 ref={(el) => (fileInputRefs.current[shg.shgId] = el)}
                 type="file"
-                accept=".png,.jpg,.jpeg,.pdf,.tiff,.tif,.bmp,.webp"
+                accept="image/jpeg,image/png,image/webp,application/pdf"
                 onChange={(e) =>
                   handleFileSelect(shg.shgId, shg.shgName, e)
                 }
@@ -1553,11 +1553,14 @@ const SHGUploadSection = ({
                 <div className="flex flex-col gap-2">
                   {isMobileDevice ? (
                     <button
-                      onClick={() => fileInputRefs.current[shg.shgId]?.click()}
+                      onClick={() => {
+                        setActionSheetTarget({ id: shg.shgId, name: shg.shgName });
+                        setShowActionSheet(true);
+                      }}
                       className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-transparent active:scale-95"
                     >
                       <Upload size={18} />
-                      <span>{t?.('upload.uploadFiles') || 'Upload Files'}</span>
+                      <span>{t?.('upload.uploadFile') || 'Upload File'}</span>
                     </button>
                   ) : (
                     /* Desktop: Standard Upload */
