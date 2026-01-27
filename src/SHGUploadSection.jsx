@@ -1522,7 +1522,7 @@ const SHGUploadSection = ({
               <input
                 ref={(el) => (fileInputRefs.current[shg.shgId] = el)}
                 type="file"
-                accept="image/jpeg,image/png,image/webp,application/pdf"
+                accept="application/pdf,image/jpeg,image/png,image/webp"
                 onChange={(e) =>
                   handleFileSelect(shg.shgId, shg.shgName, e)
                 }

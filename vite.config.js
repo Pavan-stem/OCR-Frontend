@@ -2,11 +2,16 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ command, mode }) => {
   const isGitHubPages = mode === 'github';
+  const isDev = command === 'serve';
+
+  let base = '/';
+  if (isGitHubPages) base = '/OCR-Frontend/';
+  else if (isDev) base = '/SMD/';
 
   return {
-    base: isGitHubPages ? '/OCR-Frontend/' : '/SMD/', // '/OCR-Frontend/' for GitHub Pages, '/SMD/' for server
+    base,
     plugins: [
       react(),
       tailwindcss(),
