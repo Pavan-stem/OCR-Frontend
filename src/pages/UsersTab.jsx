@@ -1381,13 +1381,13 @@ const UsersTab = ({ filterProps }) => {
                                 </div>
                                 <div className="flex flex-col mt-0.5">
                                   {uIsVO && u.voID && (
-                                    <span className="text-[10px] font-black text-indigo-600 uppercase tracking-tighter">ID: '{u.voID}</span>
+                                    <span className="text-[10px] font-black text-indigo-600 uppercase tracking-tighter">ID: {u.voID}</span>
                                   )}
                                   {uRoleLower.includes('admin - apm') && u.userID && (
-                                    <span className="text-[10px] font-black text-indigo-600 uppercase tracking-tighter">ID: '{u.userID}</span>
+                                    <span className="text-[10px] font-black text-indigo-600 uppercase tracking-tighter">ID: {u.userID}</span>
                                   )}
                                   {uRoleLower.includes('admin - cc') && u.clusterID && (
-                                    <span className="text-[10px] font-black text-indigo-600 uppercase tracking-tighter">ID: '{u.clusterID}</span>
+                                    <span className="text-[10px] font-black text-indigo-600 uppercase tracking-tighter">ID: {u.clusterID}</span>
                                   )}
                                   <div className="flex items-center gap-1 mt-0.5">
                                     <Clock className="w-2.5 h-2.5 text-gray-400" />
@@ -1547,13 +1547,13 @@ const UsersTab = ({ filterProps }) => {
                                 {u.role}
                               </span>
                               {uIsVO && u.voID && (
-                                <span className="text-[10px] font-black text-gray-400 uppercase">ID: '{u.voID}</span>
+                                <span className="text-[10px] font-black text-gray-400 uppercase">ID: {u.voID}</span>
                               )}
                               {uRoleLower.includes('admin - apm') && u.userID && (
-                                <span className="text-[10px] font-black text-gray-400 uppercase">ID: '{u.userID}</span>
+                                <span className="text-[10px] font-black text-gray-400 uppercase">ID: {u.userID}</span>
                               )}
                               {uRoleLower.includes('admin - cc') && u.clusterID && (
-                                <span className="text-[10px] font-black text-gray-400 uppercase">ID: '{u.clusterID}</span>
+                                <span className="text-[10px] font-black text-gray-400 uppercase">ID: {u.clusterID}</span>
                               )}
                             </div>
                           </div>
