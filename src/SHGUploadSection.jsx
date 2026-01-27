@@ -4,7 +4,6 @@ import { createPortal } from 'react-dom';
 import { Upload, CheckCircle, X, FileText, Search, AlertCircle, Eye, Filter, RotateCw, RotateCcw, Camera, AlertTriangle, Activity, ScanLine } from 'lucide-react';
 import { API_BASE } from './utils/apiConfig';
 import { analyzeImage } from './utils/imageQualityCheck';
-import SmartCamera from './smartcamera';
 
 const SHGUploadSection = ({
   selectedMonth,
@@ -164,7 +163,7 @@ const SHGUploadSection = ({
           return;
         }
 
-        const res = await fetch(`${API_BASE}/api/vo/uploads/failed`, {
+        const res = await fetch(`${API_BASE}/api/vo/uploads/failed?month=${selectedMonth}&year=${selectedYear}`, {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -629,24 +628,7 @@ const SHGUploadSection = ({
     }
   };
 
-  const handleOpenSmartCamera = (shgId, shgName) => {
-    setCameraTarget({ id: shgId, name: shgName });
-    setShowSmartCamera(true);
-  };
-
-  const handleSmartCameraCapture = (file) => {
-    if (cameraTarget.id && file) {
-      // Create synthetic event for compatibility with existing handler
-      const syntheticEvent = {
-        target: {
-          files: [file],
-          value: '' // Dummy value
-        }
-      };
-
-      handleFileSelect(cameraTarget.id, cameraTarget.name, syntheticEvent);
-    }
-  };
+  /* Smart Camera handler removed */
 
 
   const handleFileSelect = async (shgId, shgName, event, analysisResults = null) => {
@@ -1428,7 +1410,7 @@ const SHGUploadSection = ({
                       className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-transparent active:scale-95"
                     >
                       <Upload size={18} />
-                      <span>{t?.('upload.uploadFiles') || 'Upload File'}</span>
+                      <span>{t?.('upload.uploadFiles') || 'Upload Files'}</span>
                     </button>
                   ) : (
                     /* Desktop: Standard Upload */
@@ -1569,16 +1551,24 @@ const SHGUploadSection = ({
                 </button>
               ) : (
                 <div className="flex flex-col gap-2">
-                  <button
-                    onClick={() => {
-                      setActionSheetTarget({ id: shg.shgId, name: shg.shgName });
-                      setShowActionSheet(true);
-                    }}
-                    className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white border-transparent active:scale-95"
-                  >
-                    <Upload size={18} />
-                    <span>{t?.('upload.uploadFile') || 'Upload File'}</span>
-                  </button>
+                  {isMobileDevice ? (
+                    <button
+                      onClick={() => fileInputRefs.current[shg.shgId]?.click()}
+                      className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-transparent active:scale-95"
+                    >
+                      <Upload size={18} />
+                      <span>{t?.('upload.uploadFiles') || 'Upload Files'}</span>
+                    </button>
+                  ) : (
+                    /* Desktop: Standard Upload */
+                    <button
+                      onClick={() => fileInputRefs.current[shg.shgId]?.click()}
+                      className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-semibold cursor-pointer transition-all border shadow-sm text-xs sm:text-sm bg-blue-50 hover:bg-blue-100 text-blue-600 border-blue-200"
+                    >
+                      <Upload size={16} />
+                      <span>{t?.('upload.uploadFile') || 'Upload File'}</span>
+                    </button>
+                  )}
                 </div>
 
               )}
@@ -2034,7 +2024,7 @@ const SHGUploadSection = ({
                 <button
                   onClick={closePreview}
                   className="p-1.5 sm:p-2 bg-red-500 hover:bg-red-600 text-white rounded-lg"
-                  title="Close"
+                  title={t?.('common.close') || 'Close'}
                 >
                   <X size={18} className="sm:hidden" />
                   <X size={20} className="hidden sm:block" />
@@ -2075,30 +2065,11 @@ const SHGUploadSection = ({
                 </div>
               )}
             </div>
-
-            {/* Modal Footer */}
-            <div className="p-3 sm:p-4 border-t bg-gray-50">
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-                <div className='flex items-center gap-3 w-full sm:w-auto'>
-                </div>
-
-                <button
-                  onClick={closePreview}
-                  className="w-full sm:w-auto px-4 sm:px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-semibold text-sm sm:text-base"
-                >
-                  {t?.('common.close') || 'Close'}
-                </button>
-              </div>
-            </div>
           </div>
         </div>,
         document.body
       )}
-      <SmartCamera
-        open={showSmartCamera}
-        onClose={() => setShowSmartCamera(false)}
-        onCapture={handleSmartCameraCapture}
-      />
+      {/* SmartCamera Removed */}
 
       {/* Action Sheet Modal */}
       {showActionSheet && createPortal(

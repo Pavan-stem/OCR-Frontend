@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect } from 'react';
 import { Plus, Edit, Trash2, Folder, Filter, Loader2, X, Shield, User, MapPin, Phone, Lock, CheckCircle, Search, ChevronLeft, ChevronRight, FileText, Calendar, AlertCircle, AlertTriangle, Settings, Power, Clock, Download, Eye } from 'lucide-react';
 import { API_BASE } from '../utils/apiConfig';
 const REJECTION_REASONS = [
@@ -15,7 +15,12 @@ const UsersTab = ({ filterProps }) => {
   const formatLastActive = (dateStr) => {
     if (!dateStr) return 'Never';
     try {
-      const date = new Date(dateStr);
+      // Ensure dateStr is treated as UTC if it's an ISO string without Z/offset
+      let sanitizedStr = dateStr;
+      if (typeof dateStr === 'string' && dateStr.includes('T') && !dateStr.endsWith('Z') && !dateStr.includes('+')) {
+        sanitizedStr = dateStr + 'Z';
+      }
+      const date = new Date(sanitizedStr);
       const now = new Date();
       const diffMs = now - date;
       const diffMins = Math.floor(diffMs / 60000);
@@ -239,6 +244,27 @@ const UsersTab = ({ filterProps }) => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Lock body scroll when any modal is open to prevent background scrolling
+  // usage of useLayoutEffect prevents flicker/shifting when switching between modals
+  useLayoutEffect(() => {
+    const isAnyModalOpen = showAddModal || showEditModal || showUserUploads || showStatusModal || showImageViewer;
+
+    if (isAnyModalOpen) {
+      // Calculate scrollbar width to prevent content shift
+      const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+
+      const originalStyle = window.getComputedStyle(document.body).overflow;
+      const originalPaddingRight = window.getComputedStyle(document.body).paddingRight;
+
+      document.body.style.overflow = 'hidden';
+
+      return () => {
+        document.body.style.overflow = originalStyle;
+        document.body.style.paddingRight = originalPaddingRight;
+      };
+    }
+  }, [showAddModal, showEditModal, showUserUploads, showStatusModal, showImageViewer]);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -853,7 +879,15 @@ const UsersTab = ({ filterProps }) => {
   };
 
   const formatDateTime = (timestamp) => {
-    const date = new Date(timestamp);
+    if (!timestamp) return '';
+
+    // Ensure timestamp is treated as UTC if it's an ISO string without Z/offset
+    let sanitizedTs = timestamp;
+    if (typeof timestamp === 'string' && timestamp.includes('T') && !timestamp.endsWith('Z') && !timestamp.includes('+')) {
+      sanitizedTs = timestamp + 'Z';
+    }
+
+    const date = new Date(sanitizedTs);
 
     const dd = String(date.getDate()).padStart(2, '0');
     const mm = String(date.getMonth() + 1).padStart(2, '0');
@@ -2247,15 +2281,6 @@ const UsersTab = ({ filterProps }) => {
                 )}
               </div>
 
-              {/* Footer */}
-              <div className="px-8 py-4 border-t border-gray-100 bg-white">
-                <button
-                  onClick={() => setShowUserUploads(false)}
-                  className="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-black transition-all shadow-md"
-                >
-                  Close
-                </button>
-              </div>
             </div>
           </div>
         )
@@ -2287,39 +2312,24 @@ const UsersTab = ({ filterProps }) => {
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-black text-gray-700 mb-2">Status</label>
+                  <label className="block text-sm font-black text-gray-700 mb-2">Reason for Rejection</label>
                   <select
-                    value={statusFormData.status}
-                    onChange={(e) => setStatusFormData({ ...statusFormData, status: e.target.value })}
+                    value={statusFormData.rejectionReason}
+                    onChange={(e) => setStatusFormData({ ...statusFormData, rejectionReason: e.target.value })}
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl font-bold focus:border-indigo-500 focus:outline-none transition-all"
                   >
-                    <option value="pending">Pending</option>
-                    <option value="validated">Approved</option>
-                    <option value="rejected">Rejected</option>
+                    {REJECTION_REASONS.map((reason, idx) => (
+                      <option key={idx} value={reason}>{reason}</option>
+                    ))}
                   </select>
+                  <p className="mt-1 text-xs text-gray-600 font-bold">
+                    This will be shown to VO users. Default is "Follow guidelines".
+                  </p>
+                  <p className="mt-2 text-xs text-indigo-600 font-bold flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4" />
+                    Note: File will be kept in rejected history and VO will see the rejection reason.
+                  </p>
                 </div>
-
-                {statusFormData.status === 'rejected' && (
-                  <div>
-                    <label className="block text-sm font-black text-gray-700 mb-2">Reason for Rejection</label>
-                    <select
-                      value={statusFormData.rejectionReason}
-                      onChange={(e) => setStatusFormData({ ...statusFormData, rejectionReason: e.target.value })}
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl font-bold focus:border-indigo-500 focus:outline-none transition-all"
-                    >
-                      {REJECTION_REASONS.map((reason, idx) => (
-                        <option key={idx} value={reason}>{reason}</option>
-                      ))}
-                    </select>
-                    <p className="mt-1 text-xs text-gray-600 font-bold">
-                      This will be shown to VO users. Default is "Follow guidelines".
-                    </p>
-                    <p className="mt-2 text-xs text-indigo-600 font-bold flex items-center gap-2">
-                      <AlertCircle className="w-4 h-4" />
-                      Note: File will be kept in rejected history and VO will see the rejection reason.
-                    </p>
-                  </div>
-                )}
               </div>
 
               <div className="flex gap-3 mt-6">
@@ -2375,12 +2385,6 @@ const UsersTab = ({ filterProps }) => {
 
             {/* Footer */}
             <div className="px-8 py-4 border-t border-gray-100 bg-white flex justify-end gap-4">
-              <button
-                onClick={() => setShowImageViewer(false)}
-                className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-black transition-all"
-              >
-                Close
-              </button>
               <button
                 onClick={() => downloadImage(viewerImageData.url, viewerImageData.filename)}
                 className="px-8 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-black transition-all shadow-md flex items-center gap-2"

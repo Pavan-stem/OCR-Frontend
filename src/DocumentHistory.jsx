@@ -62,9 +62,36 @@ export default function DocumentHistory({ onClose }) {
     }
   };
 
+  const formatDateTime = (rawDate, options = {}) => {
+    if (!rawDate) return 'N/A';
+    let sanitizedDate = rawDate;
+
+    if (typeof rawDate === 'string' && rawDate.includes('T') && !rawDate.endsWith('Z') && !rawDate.includes('+')) {
+      sanitizedDate = rawDate + 'Z';
+    }
+
+    try {
+      return new Date(sanitizedDate).toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        dateStyle: options.dateStyle || 'medium',
+        timeStyle: options.timeStyle || 'short'
+      });
+    } catch (e) {
+      console.error('Date formatting failed', e);
+      return 'N/A';
+    }
+  };
+
   // Client-side filtering based on selected month and year
   const filteredUploads = uploads.filter(upload => {
-    const uploadDate = new Date(upload.date || upload.uploadTimestamp);
+    const rawDate = upload.date || upload.uploadTimestamp;
+    let sanitizedDate = rawDate;
+
+    if (typeof rawDate === 'string' && rawDate.includes('T') && !rawDate.endsWith('Z') && !rawDate.includes('+')) {
+      sanitizedDate = rawDate + 'Z';
+    }
+
+    const uploadDate = new Date(sanitizedDate);
 
     // If date is invalid, exclude it
     if (isNaN(uploadDate.getTime())) return false;
@@ -255,13 +282,7 @@ export default function DocumentHistory({ onClose }) {
 
                     {/* DATE */}
                     <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
-                      {u.date || u.uploadTimestamp
-                        ? new Date(u.date || u.uploadTimestamp).toLocaleString('en-IN', {
-                          timeZone: 'Asia/Kolkata',
-                          dateStyle: 'medium',
-                          timeStyle: 'short'
-                        })
-                        : 'N/A'}
+                      {formatDateTime(u.date || u.uploadTimestamp)}
                     </td>
 
                     {/* STATUS */}
@@ -288,16 +309,6 @@ export default function DocumentHistory({ onClose }) {
                 ))}
               </tbody>
             </table>
-          </div>
-
-          {/* FOOTER */}
-          <div className="border-t border-slate-200 px-4 py-4 flex justify-end flex-shrink-0 bg-white z-20">
-            <button
-              onClick={onClose}
-              className="px-6 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded"
-            >
-              {t('common.close')}
-            </button>
           </div>
 
         </div>
@@ -432,13 +443,7 @@ export default function DocumentHistory({ onClose }) {
 
                   <div className="flex items-center justify-between gap-3 pl-8">
                     <div className="text-xs text-slate-600">
-                      {u.date || u.uploadTimestamp
-                        ? new Date(u.date || u.uploadTimestamp).toLocaleString('en-IN', {
-                          timeZone: 'Asia/Kolkata',
-                          dateStyle: 'short',
-                          timeStyle: 'short'
-                        })
-                        : 'N/A'}
+                      {formatDateTime(u.date || u.uploadTimestamp, { dateStyle: 'short' })}
                     </div>
                     <button
                       onClick={() => viewDocument(u)}
@@ -451,16 +456,6 @@ export default function DocumentHistory({ onClose }) {
                 </div>
               ))}
             </div>
-          </div>
-
-          {/* FOOTER */}
-          <div className="border-t border-slate-200 px-4 py-4 flex justify-end flex-shrink-0 bg-white z-20">
-            <button
-              onClick={onClose}
-              className="px-6 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded"
-            >
-              {t('common.close')}
-            </button>
           </div>
 
         </div>
@@ -495,15 +490,6 @@ export default function DocumentHistory({ onClose }) {
                 alt="Document"
                 className="max-w-full mx-auto border rounded shadow"
               />
-            </div>
-
-            <div className="border-t px-4 py-3 flex justify-end">
-              <button
-                onClick={() => setSelectedDocument(null)}
-                className="px-5 py-2 bg-slate-700 hover:bg-slate-800 text-white rounded"
-              >
-                {t('common.close')}
-              </button>
             </div>
           </div>
         </div>
