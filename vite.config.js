@@ -6,7 +6,7 @@ export default defineConfig(({ mode }) => {
   const isGitHubPages = mode === 'github';
 
   return {
-    base: isGitHubPages ? '/OCR-Frontend/' : '/', // '/OCR-Frontend/' for GitHub Pages, '/' for server
+    base: isGitHubPages ? '/OCR-Frontend/' : '/SMD/', // '/OCR-Frontend/' for GitHub Pages, '/SMD/' for server
     plugins: [
       react(),
       tailwindcss(),
