@@ -26,7 +26,14 @@ const ConversionView = ({ userId, userName, onClose }) => {
     const [results, setResults] = useState({ success: [], failed: [] });
     const [activeFolder, setActiveFolder] = useState('success');
     const [searchTerm, setSearchTerm] = useState('');
-    const [selectedSHG, setSelectedSHG] = useState(null);
+    const [selectedSHG, setSelectedSHG] = useState(() => {
+        try {
+            const saved = localStorage.getItem('selectedSHG');
+            return saved ? JSON.parse(saved) : null;
+        } catch {
+            return null;
+        }
+    });
     const [refreshing, setRefreshing] = useState(false);
 
     // Month and Year filtering
@@ -58,6 +65,14 @@ const ConversionView = ({ userId, userName, onClose }) => {
             setRefreshing(false);
         }
     }, [userId]);
+
+    useEffect(() => {
+        if (selectedSHG) {
+            localStorage.setItem('selectedSHG', JSON.stringify(selectedSHG));
+        } else {
+            localStorage.removeItem('selectedSHG');
+        }
+    }, [selectedSHG]);
 
     useEffect(() => {
         fetchStatus(true);
