@@ -11,7 +11,7 @@ import HierarchyTab from './HierarchyTab';
 
 
 const AdminDashboard = () => {
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState(() => localStorage.getItem('activeTab') || 'dashboard');
   const [userRole, setUserRole] = useState(() => {
     try {
       const user = JSON.parse(localStorage.getItem('user'));
@@ -28,12 +28,34 @@ const AdminDashboard = () => {
       return 'Admin';
     }
   });
-  const [selectedDistrict, setSelectedDistrict] = useState('all');
-  const [selectedMandal, setSelectedMandal] = useState('all');
-  const [selectedVillage, setSelectedVillage] = useState('all');
+  const [selectedDistrict, setSelectedDistrict] = useState(() => {
+    try {
+      const user = JSON.parse(localStorage.getItem('user'));
+      const role = (user?.role || '').toLowerCase();
+      if (role.includes('admin - apm') || role.includes('admin - cc')) {
+        return user.district || 'all';
+      }
+      return sessionStorage.getItem('dashboardSelectedDistrict') || 'all';
+    } catch {
+      return 'all';
+    }
+  });
+  const [selectedMandal, setSelectedMandal] = useState(() => {
+    try {
+      const user = JSON.parse(localStorage.getItem('user'));
+      const role = (user?.role || '').toLowerCase();
+      if (role.includes('admin - apm') || role.includes('admin - cc')) {
+        return user.mandal || 'all';
+      }
+      return sessionStorage.getItem('dashboardSelectedMandal') || 'all';
+    } catch {
+      return 'all';
+    }
+  });
+  const [selectedVillage, setSelectedVillage] = useState(() => sessionStorage.getItem('dashboardSelectedVillage') || 'all');
   const [showLogoutModal, setShowLogoutModal] = useState(false);
-  const [selectedUserId, setSelectedUserId] = useState(null);
-  const [selectedUserName, setSelectedUserName] = useState('');
+  const [selectedUserId, setSelectedUserId] = useState(() => localStorage.getItem('selectedUserId') || null);
+  const [selectedUserName, setSelectedUserName] = useState(() => localStorage.getItem('selectedUserName') || '');
 
   // Initial location setup based on role
   useEffect(() => {
@@ -99,6 +121,40 @@ const AdminDashboard = () => {
     const r = role.toLowerCase();
     return r.includes('admin') || r.includes('district') || r.includes('super');
   };
+
+  // Persist dashboard state
+  useEffect(() => {
+    localStorage.setItem('activeTab', activeTab);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (selectedUserId) {
+      localStorage.setItem('selectedUserId', selectedUserId);
+    } else {
+      localStorage.removeItem('selectedUserId');
+    }
+  }, [selectedUserId]);
+
+  useEffect(() => {
+    if (selectedUserName) {
+      localStorage.setItem('selectedUserName', selectedUserName);
+    } else {
+      localStorage.removeItem('selectedUserName');
+    }
+  }, [selectedUserName]);
+
+  // Persist location filters
+  useEffect(() => {
+    sessionStorage.setItem('dashboardSelectedDistrict', selectedDistrict);
+  }, [selectedDistrict]);
+
+  useEffect(() => {
+    sessionStorage.setItem('dashboardSelectedMandal', selectedMandal);
+  }, [selectedMandal]);
+
+  useEffect(() => {
+    sessionStorage.setItem('dashboardSelectedVillage', selectedVillage);
+  }, [selectedVillage]);
 
   // Check if user is Admin and redirect if not
   useEffect(() => {

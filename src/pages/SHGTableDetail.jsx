@@ -126,7 +126,8 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    table_data: data.table_data
+                    table_data: data.table_data,
+                    shgID: data.shgID
                 })
             });
             const result = await res.json();
@@ -152,6 +153,24 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
     const handleCellChange = (rIdx, cIdx, val) => {
         const newData = { ...data };
         newData.table_data.data_rows[rIdx].cells[cIdx].text = val;
+        setData(newData);
+    };
+
+    const handleSHGIDChange = (val) => {
+        const newData = { ...data };
+        newData.shgID = val;
+
+        // Also update the label in header_rows if it exists to show live update
+        if (newData.table_data && newData.table_data.header_rows) {
+            newData.table_data.header_rows.forEach(row => {
+                row.forEach(cell => {
+                    if (cell.col_span === 15 && cell.row_span === 1) {
+                        cell.label = val;
+                    }
+                });
+            });
+        }
+
         setData(newData);
     };
 
@@ -317,7 +336,7 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                                 title={showImage ? "Hide Original Image" : "View Original Image"}
                             >
                                 <ImageIcon className="w-5 h-5 sm:w-6 sm:h-6" />
-                                <span className="hidden sm:inline">View Image</span>
+                                <span className="hidden sm:inline">{showImage ? "Show digital data" : "View Image"}</span>
                             </button>
                         )}
 
@@ -381,7 +400,16 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                                                     rowSpan={cell.row_span || 1}
                                                     className={`bg-indigo-50/50 border-b border-r border-indigo-100/50 px-6 py-4 text-[11px] font-black text-indigo-900 transition-colors uppercase tracking-wider ${isLastLevel ? 'bg-indigo-100/30' : ''} ${isSHGIDHeader ? 'text-left' : 'text-center'}`}
                                                 >
-                                                    {cell.label}
+                                                    {isSHGIDHeader && isEditing ? (
+                                                        <input
+                                                            type="text"
+                                                            value={cell.label}
+                                                            onChange={(e) => handleSHGIDChange(e.target.value)}
+                                                            className="w-full bg-white border border-black/30 rounded px-2 py-1 text-indigo-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-bold"
+                                                        />
+                                                    ) : (
+                                                        cell.label
+                                                    )}
                                                 </th>
                                             );
                                         })}
@@ -413,17 +441,6 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                                                         />
                                                     ) : (
                                                         <span>{cIdx === 0 ? padMBKId(cell.text) : cell.text}</span>
-                                                    )}
-                                                    {!isEditing && cell.confidence < 0.6 && cell.text && (
-                                                        <div className="flex items-center gap-1.5 mt-2">
-                                                            <div className="h-1 flex-1 bg-amber-100 rounded-full overflow-hidden">
-                                                                <div
-                                                                    className="h-full bg-amber-500 rounded-full animate-pulse"
-                                                                    style={{ width: `${Math.max(20, cell.confidence * 100)}%` }}
-                                                                ></div>
-                                                            </div>
-                                                            <span className="text-[9px] font-black text-amber-600 uppercase">Review</span>
-                                                        </div>
                                                     )}
                                                 </div>
                                             </td>
