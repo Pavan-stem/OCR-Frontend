@@ -4,7 +4,7 @@ import { API_BASE } from '../utils/apiConfig';
 import DashboardTab from './DashboardTab';
 import UsersTab from './UsersTab';
 import OCRValidationTab from './OCRValidationTab';
-import ReportsTab from './ReportsTab';
+import AnalyticsPage from './AnalyticsPage';
 import ConversionView from './ConversionView';
 import HierarchyTab from './HierarchyTab';
 
@@ -203,8 +203,8 @@ const AdminDashboard = () => {
       case 'validation':
 
         return isDev ? <OCRValidationTab /> : <DashboardTab filterProps={filterProps} />;
-      case 'reports':
-        return isDev ? <ReportsTab /> : <DashboardTab filterProps={filterProps} />;
+      case 'analytics':
+        return <AnalyticsPage />;
       case 'hierarchy':
         return isDev || userRole.toLowerCase().includes('admin') ? <HierarchyTab /> : <DashboardTab filterProps={filterProps} />;
       default:
@@ -479,7 +479,7 @@ const AdminDashboard = () => {
                     { id: 'dashboard', label: 'Dashboard', icon: BarChart },
                     { id: 'users', label: 'Users', icon: Users },
                     { id: 'validation', label: 'OCR Validation', icon: CheckCircle, developerOnly: true },
-                    { id: 'reports', label: 'Reports', icon: FileText, developerOnly: true }
+                    { id: 'analytics', label: 'Analytics', icon: FileText }
                   ]
                     .filter(tab => {
                       const isDev = userRole.toLowerCase().includes('developer');
