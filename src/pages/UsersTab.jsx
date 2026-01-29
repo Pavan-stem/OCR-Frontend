@@ -8,7 +8,10 @@ const REJECTION_REASONS = [
   "table wasn't visible",
   "wrong table",
   "There was too much blur",
-  "There was background noise use plane background"
+  "There was background noise use plane background",
+  "Table was bent",
+  "Table was rotated",
+  "Wrong Image"
 ];
 
 const UsersTab = ({ filterProps }) => {
@@ -219,7 +222,8 @@ const UsersTab = ({ filterProps }) => {
   const [filterYear, setFilterYear] = useState(currentYear);
   const [selectedUpload, setSelectedUpload] = useState(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
-  const [statusFormData, setStatusFormData] = useState({ status: 'pending', rejectionReason: REJECTION_REASONS[0] });
+  const [status, setStatus] = useState('pending');
+  const [rejectionReason, setRejectionReason] = useState('');
   const [showImageViewer, setShowImageViewer] = useState(false);
   const [viewerImageData, setViewerImageData] = useState({ url: '', title: '', subtitle: '', filename: '' });
 
@@ -781,23 +785,37 @@ const UsersTab = ({ filterProps }) => {
   const handleUpdateStatus = async () => {
     setUploading(true);
     if (!selectedUpload) return;
+
+    const finalStatus = 'rejected'; // ← source of truth
+
     try {
       const token = localStorage.getItem('token');
-      console.log('Update Status Payload:', statusFormData);
-      const res = await fetch(`${API_BASE}/api/admin/uploads/${selectedUpload._id}/status`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(statusFormData)
+
+      console.log('Update Status Payload:', {
+        status: finalStatus,
+        rejectionReason
       });
+
+      const res = await fetch(
+        `${API_BASE}/api/admin/uploads/${selectedUpload._id}/status`,
+        {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            status: finalStatus,
+            rejectionReason
+          })
+        }
+      );
+
       const data = await res.json();
       if (data.success) {
         alert('Status updated successfully!');
         setShowStatusModal(false);
         setSelectedUpload(null);
-        // Refresh uploads
         fetchUserUploads(selectedUser._id);
       } else {
         alert(data.message || 'Failed to update status');
@@ -845,10 +863,8 @@ const UsersTab = ({ filterProps }) => {
 
   const openStatusModal = (upload) => {
     setSelectedUpload(upload);
-    setStatusFormData({
-      status: upload.status || 'pending',
-      rejectionReason: upload.rejectionReason || ''
-    });
+    setStatus(upload.status || 'pending');
+    setRejectionReason(upload.rejectionReason || '');
     setShowStatusModal(true);
   };
 
@@ -1381,13 +1397,13 @@ const UsersTab = ({ filterProps }) => {
                                 </div>
                                 <div className="flex flex-col mt-0.5">
                                   {uIsVO && u.voID && (
-                                    <span className="text-[10px] font-black text-indigo-600 uppercase tracking-tighter">ID: '{u.voID}</span>
+                                    <span className="text-[10px] font-black text-indigo-600 uppercase tracking-tighter">ID: {u.voID}</span>
                                   )}
                                   {uRoleLower.includes('admin - apm') && u.userID && (
-                                    <span className="text-[10px] font-black text-indigo-600 uppercase tracking-tighter">ID: '{u.userID}</span>
+                                    <span className="text-[10px] font-black text-indigo-600 uppercase tracking-tighter">ID: {u.userID}</span>
                                   )}
                                   {uRoleLower.includes('admin - cc') && u.clusterID && (
-                                    <span className="text-[10px] font-black text-indigo-600 uppercase tracking-tighter">ID: '{u.clusterID}</span>
+                                    <span className="text-[10px] font-black text-indigo-600 uppercase tracking-tighter">ID: {u.clusterID}</span>
                                   )}
                                   <div className="flex items-center gap-1 mt-0.5">
                                     <Clock className="w-2.5 h-2.5 text-gray-400" />
@@ -1547,13 +1563,13 @@ const UsersTab = ({ filterProps }) => {
                                 {u.role}
                               </span>
                               {uIsVO && u.voID && (
-                                <span className="text-[10px] font-black text-gray-400 uppercase">ID: '{u.voID}</span>
+                                <span className="text-[10px] font-black text-gray-400 uppercase">ID: {u.voID}</span>
                               )}
                               {uRoleLower.includes('admin - apm') && u.userID && (
-                                <span className="text-[10px] font-black text-gray-400 uppercase">ID: '{u.userID}</span>
+                                <span className="text-[10px] font-black text-gray-400 uppercase">ID: {u.userID}</span>
                               )}
                               {uRoleLower.includes('admin - cc') && u.clusterID && (
-                                <span className="text-[10px] font-black text-gray-400 uppercase">ID: '{u.clusterID}</span>
+                                <span className="text-[10px] font-black text-gray-400 uppercase">ID: {u.clusterID}</span>
                               )}
                             </div>
                           </div>
@@ -2314,8 +2330,11 @@ const UsersTab = ({ filterProps }) => {
                 <div>
                   <label className="block text-sm font-black text-gray-700 mb-2">Reason for Rejection</label>
                   <select
-                    value={statusFormData.rejectionReason}
-                    onChange={(e) => setStatusFormData({ ...statusFormData, rejectionReason: e.target.value })}
+                    value={rejectionReason}
+                    onChange={e => {
+                      setRejectionReason(e.target.value);
+                      setStatus('rejected');
+                    }}
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl font-bold focus:border-indigo-500 focus:outline-none transition-all"
                   >
                     {REJECTION_REASONS.map((reason, idx) => (
