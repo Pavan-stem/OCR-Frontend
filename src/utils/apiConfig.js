@@ -25,7 +25,7 @@ export const getApiBase = () => {
 
   if (isLocalhost || isPrivateIP) {
     // Use local backend server on port 5004 with detected IP
-    const apiUrl = `http://${hostname}:5004/OCR`;
+    const apiUrl = `http://${hostname}:5002/OCR`;
     console.log(`[API Config] Using local backend: ${apiUrl}`);
     return apiUrl;
   }
@@ -46,7 +46,7 @@ export const getAuthApiBase = () => {
     const isPrivateIP = /^(192\.168\.|10\.|172\.1[6-9]\.|172\.2[0-9]\.|172\.3[01]\.)/.test(hostname);
 
     if (isLocalhost || isPrivateIP) {
-      return `http://${hostname}:5004/OCR`;
+      return `http://${hostname}:5002/OCR`;
     }
   }
 
