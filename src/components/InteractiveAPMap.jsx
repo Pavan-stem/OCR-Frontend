@@ -1011,48 +1011,146 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
                             <p className="text-[9px] text-white/30 italic">Complex regions cleaned: {Object.values(manualMapping).filter(v => v === "IGNORE").length}</p>
                         </div>
                     ) : selectedDistrict ? (
-                        <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
-                            <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-6">
-                                <div className="flex justify-between items-center mb-3">
-                                    <span className="text-[10px] text-gray-400 font-black uppercase tracking-widest">District Metrics</span>
-                                    <span className="text-[10px] text-indigo-600 font-black uppercase tracking-widest flex items-center gap-1.5">
-                                        <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse" />
-                                        Contextual
-                                    </span>
-                                </div>
-                                <p className="text-gray-600 text-sm font-medium leading-relaxed italic">Visualizing capture velocity for {selectedDistrict}. Switch region by clicking the map.</p>
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="bg-white/80 p-5 rounded-3xl border border-gray-100 shadow-sm">
-                                    <span className="block text-[10px] text-gray-400 font-black uppercase tracking-widest mb-2">UPLOADED</span>
-                                    <span className="text-2xl font-black text-gray-900">{summary[selectedDistrict]?.uploaded || 0}</span>
-                                </div>
-                                <div className="bg-white/80 p-5 rounded-3xl border border-gray-100 shadow-sm">
-                                    <span className="block text-[10px] text-gray-400 font-black uppercase tracking-widest mb-2">CONVERTED</span>
-                                    <span className="text-2xl font-black text-emerald-600">{summary[selectedDistrict]?.converted || 0}</span>
+                        <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-500">
+                            {/* VO Operations Section */}
+                            <div className="bg-indigo-50 rounded-2xl p-5">
+                                <h4 className="text-xs font-black text-indigo-900 uppercase mb-3">VO Operations</h4>
+                                <div className="grid grid-cols-3 gap-3">
+                                    <div className="bg-white/80 p-3 rounded-xl">
+                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Uploaded</span>
+                                        <span className="text-lg font-black text-indigo-600">{summary[selectedDistrict]?.uploaded || 0}</span>
+                                    </div>
+                                    <div className="bg-white/80 p-3 rounded-xl">
+                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Pending</span>
+                                        <span className="text-lg font-black text-amber-600">{summary[selectedDistrict]?.pending || 0}</span>
+                                    </div>
+                                    <div className="bg-white/80 p-3 rounded-xl">
+                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Total</span>
+                                        <span className="text-lg font-black text-gray-900">{summary[selectedDistrict]?.total || 0}</span>
+                                    </div>
                                 </div>
                             </div>
+
+                            {/* CC Actions Section */}
+                            <div className="bg-emerald-50 rounded-2xl p-5">
+                                <h4 className="text-xs font-black text-emerald-900 uppercase mb-3">CC Actions</h4>
+                                <div className="grid grid-cols-3 gap-3">
+                                    <div className="bg-white/80 p-3 rounded-xl">
+                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Approved</span>
+                                        <span className="text-lg font-black text-green-600">{summary[selectedDistrict]?.approved || 0}</span>
+                                    </div>
+                                    <div className="bg-white/80 p-3 rounded-xl">
+                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Rejected</span>
+                                        <span className="text-lg font-black text-red-600">{summary[selectedDistrict]?.rejected || 0}</span>
+                                    </div>
+                                    <div className="bg-white/80 p-3 rounded-xl">
+                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Pending</span>
+                                        <span className="text-lg font-black text-amber-600">{summary[selectedDistrict]?.pending || 0}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Digital Conversion Section */}
+                            <div className="bg-purple-50 rounded-2xl p-5">
+                                <h4 className="text-xs font-black text-purple-900 uppercase mb-3">Digital Conversion</h4>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="bg-white/80 p-3 rounded-xl">
+                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Converted</span>
+                                        <span className="text-lg font-black text-purple-600">{summary[selectedDistrict]?.converted || 0}</span>
+                                    </div>
+                                    <div className="bg-white/80 p-3 rounded-xl">
+                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Failed</span>
+                                        <span className="text-lg font-black text-red-600">{summary[selectedDistrict]?.failed || 0}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Finance Overview Section (Simplified) */}
+                            {summary[selectedDistrict]?.financeStats && (
+                                <div className="bg-gradient-to-br from-indigo-50/50 to-blue-50/50 rounded-2xl p-5 border border-indigo-100/30 shadow-sm relative overflow-hidden group">
+                                    <div className="flex justify-between items-center mb-4 pb-3 border-b border-indigo-100/50">
+                                        <h4 className="text-[10px] font-black text-indigo-900 uppercase tracking-widest">Finance Overview</h4>
+                                    </div>
+
+                                    <div className="space-y-3 relative z-10">
+                                        <div className="flex justify-between items-center group/item">
+                                            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-tight group-hover/item:text-indigo-600 transition-colors">Total Collections</span>
+                                            <span className="text-xs font-black text-indigo-700">
+                                                ₹{(summary[selectedDistrict].financeStats.totalLoanRecovered || 0).toLocaleString('en-IN')}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between items-center group/item">
+                                            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-tight group-hover/item:text-emerald-600 transition-colors">Member Deposits</span>
+                                            <span className="text-xs font-black text-emerald-700">
+                                                ₹{(summary[selectedDistrict].financeStats.totalSavings || 0).toLocaleString('en-IN')}
+                                            </span>
+                                        </div>
+                                        <div className="flex justify-between items-center group/item pt-2 border-t border-indigo-50">
+                                            <span className="text-[10px] font-bold text-rose-500 uppercase tracking-tight group-hover/item:text-rose-700 transition-colors">Total Disbursements</span>
+                                            <span className="text-xs font-black text-rose-700">
+                                                ₹{(summary[selectedDistrict].financeStats.outgoing || 0).toLocaleString('en-IN')}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 rounded-full -mr-16 -mt-16 blur-2xl group-hover:bg-indigo-500/10 transition-colors duration-700"></div>
+                                </div>
+                            )}
                         </div>
                     ) : (
-                        <div className="flex-1 flex flex-col items-center justify-center text-center p-8 space-y-6 bg-indigo-50/20 rounded-[40px] border border-indigo-100/50">
-                            <div className="w-24 h-24 rounded-full bg-indigo-600/10 flex items-center justify-center">
-                                <Search className="w-12 h-12 text-indigo-600 opacity-60" />
+                        <div className="flex-1 flex flex-col gap-6 overflow-y-auto max-h-[600px] animate-in fade-in slide-in-from-right-4 duration-500">
+                            {/* State Level VO Operations Section */}
+                            <div className="bg-indigo-50 rounded-2xl p-5">
+                                <h4 className="text-xs font-black text-indigo-900 uppercase mb-3">Statewide VO Operations</h4>
+                                <div className="grid grid-cols-3 gap-3">
+                                    <div className="bg-white/80 p-3 rounded-xl">
+                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Uploaded</span>
+                                        <span className="text-lg font-black text-indigo-600">{summary.all?.uploaded || 0}</span>
+                                    </div>
+                                    <div className="bg-white/80 p-3 rounded-xl">
+                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Pending</span>
+                                        <span className="text-lg font-black text-amber-600">{summary.all?.pending || 0}</span>
+                                    </div>
+                                    <div className="bg-white/80 p-3 rounded-xl">
+                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Total</span>
+                                        <span className="text-lg font-black text-gray-900">{summary.all?.total || 0}</span>
+                                    </div>
+                                </div>
                             </div>
-                            <div>
-                                <h4 className="text-xl font-black text-gray-900 uppercase tracking-tight">Select Geography</h4>
-                                <p className="text-gray-400 text-xs mt-3 leading-relaxed font-bold uppercase tracking-widest max-w-[200px]">Pulse signals will appear upon district selection.</p>
-                            </div>
-                        </div>
-                    )}
 
-                    {isDeveloper && (
-                        <div className="mt-auto pt-6 border-t border-white/5">
-                            <div className="flex items-center gap-3 p-3 bg-red-950/30 border border-red-500/20 rounded-xl">
-                                <Info className="w-5 h-5 text-red-400 shrink-0" />
-                                <p className="text-[10px] text-red-200/60 leading-normal">
-                                    {editMode ? "PAINTING: Click and drag to clean or assign. Use 'CLEAN' (Eraser) to remove far-off fragments forever." : "Map optimized for principal landmass. Hidden artifacts ignored."}
-                                </p>
+                            {/* State Level CC Actions Section */}
+                            <div className="bg-emerald-50 rounded-2xl p-5">
+                                <h4 className="text-xs font-black text-emerald-900 uppercase mb-3">Statewide CC Actions</h4>
+                                <div className="grid grid-cols-3 gap-3">
+                                    <div className="bg-white/80 p-3 rounded-xl">
+                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Approved</span>
+                                        <span className="text-lg font-black text-green-600">{summary.all?.approved || 0}</span>
+                                    </div>
+                                    <div className="bg-white/80 p-3 rounded-xl">
+                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Rejected</span>
+                                        <span className="text-lg font-black text-red-600">{summary.all?.rejected || 0}</span>
+                                    </div>
+                                    <div className="bg-white/80 p-3 rounded-xl">
+                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Pending</span>
+                                        <span className="text-lg font-black text-amber-600">{summary.all?.ccPending || 0}</span>
+                                    </div>
+                                </div>
                             </div>
+
+                            {/* State Level Digital Conversion Section */}
+                            <div className="bg-purple-50 rounded-2xl p-5">
+                                <h4 className="text-xs font-black text-purple-900 uppercase mb-3">Statewide Digital Conversion</h4>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="bg-white/80 p-3 rounded-xl">
+                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Converted</span>
+                                        <span className="text-lg font-black text-purple-600">{summary.all?.converted || 0}</span>
+                                    </div>
+                                    <div className="bg-white/80 p-3 rounded-xl">
+                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Failed</span>
+                                        <span className="text-lg font-black text-red-600">{summary.all?.failed || 0}</span>
+                                    </div>
+                                </div>
+                            </div>
+
                         </div>
                     )}
                 </div>

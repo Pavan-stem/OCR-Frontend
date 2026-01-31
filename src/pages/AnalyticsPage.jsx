@@ -1,16 +1,25 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-    Download, FileBarChart, PieChart, Activity, Clock, CheckCircle,
+    Download, FileBarChart, PieChart as PieChartIcon, Activity, Clock, CheckCircle,
     FileText, Filter, LayoutGrid, List, ChevronRight, AlertCircle,
     TrendingUp, Users, MapPin, Calendar, ArrowUpRight, ArrowDownRight,
     Shield, User, ChevronDown, Loader2
 } from 'lucide-react';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-    LineChart, Line, PieChart as RePieChart, Pie, Cell, Legend, AreaChart, Area
+    LineChart, Line, PieChart, Pie, Cell, Legend, AreaChart, Area
 } from 'recharts';
 import InteractiveAPMap from '../components/InteractiveAPMap';
 import { API_BASE } from '../utils/apiConfig';
+
+const formatIndianCurrency = (value) => {
+    if (value === null || value === undefined) return '₹0';
+    const absVal = Math.abs(value);
+    if (absVal >= 10000000) return `₹${(value / 10000000).toFixed(2)}Cr`;
+    if (absVal >= 100000) return `₹${(value / 100000).toFixed(2)}L`;
+    if (absVal >= 1000) return `₹${(value / 1000).toFixed(1)}K`;
+    return `₹${Math.floor(value)}`;
+};
 
 const AnalyticsPage = () => {
     // Local Stats State
@@ -19,6 +28,10 @@ const AnalyticsPage = () => {
     const [tableData, setTableData] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+
+    // Payment Analytics State
+    const [paymentData, setPaymentData] = useState(null);
+    const [paymentTrends, setPaymentTrends] = useState([]);
 
     // Filter State
     const [filters, setFilters] = useState({
@@ -31,6 +44,8 @@ const AnalyticsPage = () => {
 
     // UI State
     const [activeView, setActiveView] = useState('charts'); // charts, table
+    const [activeMetric, setActiveMetric] = useState('totalCollections');
+    const [isCollectionsExpanded, setIsCollectionsExpanded] = useState(false);
 
     // User Role Info
     const user = useMemo(() => {
@@ -44,27 +59,42 @@ const AnalyticsPage = () => {
     const isAPM = role.includes('admin - apm');
     const isCC = role.includes('admin - cc');
 
-    // Fetch Summary & Trends
+    // Fetch Summary & Trends & Payment Analytics
     useEffect(() => {
         const fetchGlobalStats = async () => {
             try {
                 const token = localStorage.getItem('token');
                 const params = new URLSearchParams(filters).toString();
 
-                const [sumRes, trendRes] = await Promise.all([
+                const [sumRes, trendRes, paymentRes, paymentTrendRes] = await Promise.all([
                     fetch(`${API_BASE}/api/analytics/v2/summary?${params}`, {
                         headers: { 'Authorization': `Bearer ${token}` }
                     }),
                     fetch(`${API_BASE}/api/analytics/v2/trends?${params}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    }),
+                    fetch(`${API_BASE}/api/payments/summary?${params}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    }),
+                    fetch(`${API_BASE}/api/payments/trends?${params}`, {
                         headers: { 'Authorization': `Bearer ${token}` }
                     })
                 ]);
 
                 const sumData = await sumRes.json();
                 const trendData = await trendRes.json();
+                const paymentResData = await paymentRes.json();
+                const paymentTrendData = await paymentTrendRes.json();
 
                 if (sumData.success) setSummary(sumData.summary);
                 if (trendData.success) setTrends(trendData.data);
+                if (paymentResData.success) {
+                    setPaymentData(paymentResData.data);
+                }
+                if (paymentTrendData.success) {
+                    setPaymentTrends(paymentTrendData.data);
+                }
+                console.log('Payment analytics loaded');
             } catch (err) {
                 console.error("Failed to fetch analytics:", err);
             }
@@ -171,7 +201,20 @@ const AnalyticsPage = () => {
             {/* Interactive Map Section */}
             <div className="animate-in fade-in slide-in-from-top-4 duration-1000">
                 <InteractiveAPMap
-                    summary={summary?.mapStats || {}}
+                    summary={{
+                        ...(summary?.mapStats || {}),
+                        all: {
+                            uploaded: summary?.shgStats?.uploaded,
+                            pending: summary?.shgStats?.pending,
+                            total: summary?.shgStats?.total,
+                            approved: summary?.ccActions?.approved,
+                            rejected: summary?.ccActions?.rejected,
+                            ccPending: summary?.ccActions?.pending,
+                            converted: summary?.conversion?.converted,
+                            failed: summary?.conversion?.failed,
+                            financeStats: paymentData?.financeStats
+                        }
+                    }}
                     filters={filters}
                     onDistrictSelect={(d) => setFilters(prev => ({ ...prev, district: d || 'all', mandal: 'all', village: 'all' }))}
                     onMandalSelect={(m) => setFilters(prev => ({ ...prev, mandal: m, village: 'all' }))}
@@ -182,9 +225,33 @@ const AnalyticsPage = () => {
             {/* Removed Metric Summary Cards per user request */}
 
             {activeView === 'charts' && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    <TrendChart data={trends} />
-                    <DistributionCharts summary={summary} />
+                <div className="flex flex-col gap-8">
+                    <FinanceAnalytics
+                        data={paymentData}
+                        activeMetric={activeMetric}
+                        onMetricChange={setActiveMetric}
+                        isExpanded={isCollectionsExpanded}
+                        setIsExpanded={setIsCollectionsExpanded}
+                    />
+
+                    {/* Unified Multi-Metric Visualization - Perfect Alignment */}
+                    <div className="flex flex-col xl:flex-row gap-8 items-stretch">
+                        <div className="flex-1 min-h-[500px] flex flex-col">
+                            <PaymentTrendChart data={paymentTrends} />
+                        </div>
+                        <div className="xl:w-[400px] flex flex-col">
+                            <UnifiedDistributionCard
+                                data={paymentData?.distributions}
+                                activeMetric={activeMetric}
+                                level={filters.village !== 'all' ? 'cc' : filters.mandal !== 'all' ? 'village' : filters.district !== 'all' ? 'mandal' : 'district'}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <TrendChart data={trends} />
+                        <DistributionCharts summary={summary} />
+                    </div>
                 </div>
             )}
 
@@ -228,6 +295,19 @@ const AnalyticsFilters = ({ filters, setFilters, user }) => {
             loadMandals();
         }
     }, [filters.district]);
+
+    useEffect(() => {
+        if (filters.mandal !== 'all') {
+            const loadVillages = async () => {
+                try {
+                    const res = await fetch(`${API_BASE}/api/villages?mandal=${filters.mandal}&district=${filters.district}`);
+                    const data = await res.json();
+                    if (data.success) setLocations(prev => ({ ...prev, villages: data.villages }));
+                } catch { }
+            };
+            loadVillages();
+        }
+    }, [filters.mandal, filters.district]);
 
     return (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 bg-white/40 backdrop-blur-md p-6 rounded-[32px] border border-white/20 shadow-lg">
@@ -298,39 +378,145 @@ const AnalyticsFilters = ({ filters, setFilters, user }) => {
     );
 };
 
-const MetricCards = ({ summary, loading }) => {
-    if (loading) return (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {[1, 2, 3, 4].map(i => (
-                <div key={i} className="h-44 bg-gray-100 animate-pulse rounded-[32px]"></div>
-            ))}
-        </div>
-    );
+const FinanceAnalytics = ({ data, activeMetric, onMetricChange, isExpanded, setIsExpanded }) => {
+    if (!data || !data.financeStats) return null;
 
-    const cards = [
-        { label: "Deployment Scope", value: summary.totalVOs, sub: "Active VO Units", icon: Users, color: "text-blue-600", bg: "bg-blue-50" },
-        { label: "Upload Velocity", value: summary.shgStats.uploaded, sub: `${summary.shgStats.total} Total Targets`, icon: TrendingUp, color: "text-emerald-600", bg: "bg-emerald-50" },
-        { label: "CC Verification", value: summary.ccActions.approved, sub: `${summary.ccActions.pending} Pending Action`, icon: CheckCircle, color: "text-indigo-600", bg: "bg-indigo-50" },
-        { label: "Digital Success", value: summary.conversion.converted, sub: "Successfully Converted", icon: Activity, color: "text-purple-600", bg: "bg-purple-50" }
-    ];
+    const {
+        totalSavings, totalLoanRecovered,
+        totalLoansTaken, totalSavingsRepaid,
+        totalPenalties, loanRecoveryBreakdown,
+        loanCount
+    } = data.financeStats;
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {cards.map((c, i) => (
-                <div key={i} className="bg-white/95 backdrop-blur-xl p-8 rounded-[32px] border border-white/30 hover:-translate-y-1 transition-all group overflow-hidden relative">
-                    <div className={`absolute top-0 right-0 w-32 h-32 ${c.bg} rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-500 opacity-50`}></div>
-                    <div className="flex justify-between items-start relative z-10">
-                        <div>
-                            <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] mb-1">{c.label}</p>
-                            <h4 className="text-4xl font-black text-gray-900 mb-2">{c.value.toLocaleString()}</h4>
-                            <p className="text-xs font-bold text-gray-500">{c.sub}</p>
-                        </div>
-                        <div className={`${c.bg} ${c.color} p-4 rounded-2xl group-hover:rotate-12 transition-transform shadow-sm`}>
-                            <c.icon size={28} />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            {/* Collections Breakdown */}
+            <div
+                onClick={() => onMetricChange('totalCollections')}
+                className={`bg-white/90 backdrop-blur-xl p-6 rounded-[32px] border transition-all duration-300 cursor-pointer overflow-hidden group shadow-xl hover:shadow-2xl ${activeMetric === 'totalCollections' ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-white/20'}`}
+            >
+                <div
+                    className="flex justify-between items-center group/header"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setIsExpanded(!isExpanded);
+                        onMetricChange('totalCollections');
+                        document.getElementById('chart-totalCollections')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }}
+                >
+                    <div>
+                        <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-1">Total Collections</p>
+                        <h4 className="text-2xl font-black text-gray-900 group-hover/header:text-indigo-600 transition-colors">
+                            ₹{totalLoanRecovered.toLocaleString('en-IN')}
+                        </h4>
+                    </div>
+                    <div className={`p-3 rounded-2xl transition-all duration-300 ${isExpanded ? 'bg-indigo-600 text-white rotate-180' : 'bg-indigo-50 text-indigo-600 group-hover/header:bg-indigo-100'}`}>
+                        <ChevronDown className="w-5 h-5" />
+                    </div>
+                </div>
+
+                <div className={`grid transition-all duration-500 overflow-hidden ${isExpanded ? 'grid-rows-[1fr] mt-6' : 'grid-rows-[0fr] mt-0'}`}>
+                    <div className="min-h-0">
+                        <div className="pt-4 border-t border-gray-100 flex flex-col gap-3">
+                            {[
+                                { label: 'Bank Loan', val: loanRecoveryBreakdown.bankLoan },
+                                { label: 'SHG Internal', val: loanRecoveryBreakdown.shgInternal },
+                                { label: 'Streenidhi Micro', val: loanRecoveryBreakdown.streenidhiMicro },
+                                { label: 'Streenidhi Tenny', val: loanRecoveryBreakdown.streenidhiTenni },
+                                { label: 'Unnati (SCSP)', val: loanRecoveryBreakdown.unnatiSCSP },
+                                { label: 'Unnati (TSP)', val: loanRecoveryBreakdown.unnatiTSP },
+                                { label: 'CIF Loan', val: loanRecoveryBreakdown.cif },
+                                { label: 'VO Internal', val: loanRecoveryBreakdown.voInternal }
+                            ].map((item) => (
+                                <div key={item.label} className="flex justify-between items-center group/item hover:bg-gray-50 p-1 rounded-lg transition-colors">
+                                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter group-hover/item:text-gray-600 transition-colors">{item.label}</span>
+                                    <span className="text-[11px] font-black text-gray-900">₹{item.val.toLocaleString('en-IN')}</span>
+                                </div>
+                            ))}
                         </div>
                     </div>
                 </div>
-            ))}
+            </div>
+
+            {/* Member Deposits */}
+            <div
+                onClick={() => {
+                    onMetricChange('memberDeposits');
+                    document.getElementById('chart-memberDeposits')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }}
+                className={`bg-white/90 backdrop-blur-xl p-6 rounded-[32px] border transition-all duration-300 cursor-pointer shadow-xl hover:shadow-2xl ${activeMetric === 'memberDeposits' ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-white/20'}`}
+            >
+                <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Member Deposits</p>
+                <h4 className="text-2xl font-black text-gray-900">₹{totalSavings.toLocaleString('en-IN')}</h4>
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                    <p className="text-[9px] text-gray-400 font-bold uppercase flex items-center gap-2">
+                        <TrendingUp className="w-3 h-3 text-emerald-500" />
+                        Monthly Savings
+                    </p>
+                </div>
+            </div>
+
+            {/* Loans Sanctioned */}
+            <div
+                onClick={() => {
+                    onMetricChange('loansSanctioned');
+                    document.getElementById('chart-loansSanctioned')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }}
+                className={`bg-white/90 backdrop-blur-xl p-6 rounded-[32px] border transition-all duration-300 cursor-pointer shadow-xl hover:shadow-2xl ${activeMetric === 'loansSanctioned' ? 'border-rose-500 ring-2 ring-rose-500/20' : 'border-white/20'}`}
+            >
+                <div className="flex justify-between items-start mb-1">
+                    <p className="text-[10px] font-black text-rose-600 uppercase tracking-widest">Loans Sanctioned</p>
+                    <span className="bg-rose-50 text-rose-600 text-[10px] font-black px-2 py-0.5 rounded-lg border border-rose-100">
+                        {loanCount || 0} Loans
+                    </span>
+                </div>
+                <p className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter mb-1">Number of loans taken</p>
+                <h4 className="text-2xl font-black text-gray-900">₹{totalLoansTaken.toLocaleString('en-IN')}</h4>
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                    <div className="flex items-center gap-2">
+                        <ArrowUpRight className="w-3 h-3 text-rose-500" />
+                        <span className="text-[9px] font-bold text-gray-400 uppercase">Capital Outflow</span>
+                    </div>
+                </div>
+            </div>
+
+            {/* Savings Withdrawal */}
+            <div
+                onClick={() => {
+                    onMetricChange('savingsWithdrawal');
+                    document.getElementById('chart-savingsWithdrawal')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }}
+                className={`bg-white/90 backdrop-blur-xl p-6 rounded-[32px] border transition-all duration-300 cursor-pointer shadow-xl hover:shadow-2xl ${activeMetric === 'savingsWithdrawal' ? 'border-orange-500 ring-2 ring-orange-500/20' : 'border-white/20'}`}
+            >
+                <p className="text-[10px] font-black text-orange-600 uppercase tracking-widest mb-1">Savings Withdrawal</p>
+                <h4 className="text-2xl font-black text-gray-900">₹{totalSavingsRepaid.toLocaleString('en-IN')}</h4>
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                    <div className="flex items-center gap-2">
+                        <Clock className="w-3 h-3 text-orange-500" />
+                        <span className="text-[9px] font-bold text-gray-400 uppercase">Member Repayments</span>
+                    </div>
+                </div>
+            </div>
+
+            {/* Late Penalties */}
+            <div
+                onClick={() => {
+                    onMetricChange('latePenalties');
+                    document.getElementById('chart-latePenalties')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }}
+                className={`bg-white/90 backdrop-blur-xl p-6 rounded-[32px] border transition-all duration-300 cursor-pointer shadow-xl hover:shadow-2xl ${activeMetric === 'latePenalties' ? 'border-amber-500 ring-2 ring-amber-500/20' : 'border-white/20'}`}
+            >
+                <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-1">Late Penalties</p>
+                <h4 className="text-2xl font-black text-gray-900">₹{totalPenalties.toLocaleString('en-IN')}</h4>
+                <div className="mt-4 pt-4 border-t border-gray-100 flex items-start gap-3">
+                    <div className="p-2 bg-amber-50 rounded-xl">
+                        <AlertCircle className="w-4 h-4 text-amber-600" />
+                    </div>
+                    <div>
+                        <p className="text-[9px] text-gray-400 font-bold uppercase leading-tight">Deferred Payment Surcharges</p>
+                    </div>
+                </div>
+            </div>
         </div>
     );
 };
@@ -373,6 +559,178 @@ const TrendChart = ({ data }) => {
     );
 };
 
+const PaymentTrendChart = ({ data }) => {
+    if (!data || data.length === 0) return null;
+
+    return (
+        <div className="bg-white/80 backdrop-blur-md p-8 rounded-[32px] border border-white/20 shadow-lg h-full flex flex-col" id="payment-trends">
+            <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-3">
+                    <div className="bg-indigo-600 p-2 rounded-xl shadow-lg">
+                        <TrendingUp className="w-5 h-5 text-white" />
+                    </div>
+                    <h3 className="text-xl font-black text-gray-900 tracking-tight uppercase">Financial Performance Trend</h3>
+                </div>
+                <div className="flex flex-wrap gap-4">
+                    {[
+                        { label: 'Collections', color: '#10b981' },
+                        { label: 'Deposits', color: '#4f46e5' },
+                        { label: 'Loans', color: '#f43f5e' },
+                        { label: 'Withdrawal', color: '#f97316' },
+                        { label: 'Penalties', color: '#f59e0b' }
+                    ].map(m => (
+                        <div key={m.label} className="flex items-center gap-2">
+                            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: m.color }}></div>
+                            <span className="text-[9px] font-black text-gray-400 uppercase">{m.label}</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            <div className="flex-grow w-full min-h-[400px]">
+                <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={data} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                        <XAxis dataKey="month"
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 'bold' }}
+                        />
+                        <YAxis
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fill: '#94a3b8', fontWeight: 'bold' }}
+                            tickFormatter={(value) => formatIndianCurrency(value).replace('₹', '')}
+                        />
+                        <Tooltip
+                            contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '16px', color: '#fff' }}
+                            itemStyle={{ fontWeight: 'bold' }}
+                            cursor={{ fill: '#f8fafc' }}
+                            formatter={(value) => formatIndianCurrency(value)}
+                        />
+                        <Bar dataKey="collections" name="Collections" fill="#10b981" radius={[4, 4, 0, 0]} isAnimationActive={true} />
+                        <Bar dataKey="deposits" name="Member Deposits" fill="#4f46e5" radius={[4, 4, 0, 0]} isAnimationActive={true} />
+                        <Bar dataKey="loans" name="Loans Sanctioned" fill="#f43f5e" radius={[4, 4, 0, 0]} isAnimationActive={true} />
+                        <Bar dataKey="withdrawals" name="Savings Withdrawal" fill="#f97316" radius={[4, 4, 0, 0]} isAnimationActive={true} />
+                        <Bar dataKey="penalties" name="Late Penalties" fill="#f59e0b" radius={[4, 4, 0, 0]} isAnimationActive={true} />
+                    </BarChart>
+                </ResponsiveContainer>
+            </div>
+        </div>
+    );
+};
+
+const UnifiedDistributionCard = ({ data, activeMetric, level }) => {
+    if (!data) return null;
+
+    const METRIC_CONFIG = {
+        totalCollections: { label: 'Collections', color: '#4f46e5' },
+        memberDeposits: { label: 'Deposits', color: '#10b981' },
+        loansSanctioned: { label: 'Loans', color: '#f43f5e' },
+        savingsWithdrawal: { label: 'Withdrawal', color: '#f97316' },
+        latePenalties: { label: 'Penalties', color: '#f59e0b' }
+    };
+
+    return (
+        <div className="bg-white/90 backdrop-blur-xl p-6 rounded-[32px] border border-white/20 shadow-2xl h-full flex flex-col">
+            <div className="flex items-center gap-3 mb-6">
+                <div className="bg-indigo-600 p-2 rounded-xl shadow-lg">
+                    <PieChartIcon className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                    <h3 className="text-sm font-black text-gray-900 tracking-tight uppercase leading-none">Geographic Pulse</h3>
+                    <p className="text-[8px] font-bold text-gray-400 uppercase tracking-widest mt-1">Consolidated Distributions</p>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-x-4 gap-y-8">
+                {Object.entries(METRIC_CONFIG).map(([key, config]) => (
+                    <div
+                        key={key}
+                        id={`chart-${key}`}
+                        className={`flex flex-col items-center transition-all duration-500 rounded-2xl p-2 ${activeMetric === key ? 'bg-indigo-50/50 ring-1 ring-indigo-500/20 scale-105 shadow-lg' : 'opacity-80'}`}
+                    >
+                        <div className="flex items-center gap-2 mb-2 w-full">
+                            <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: config.color }}></div>
+                            <span className="text-[9px] font-black text-gray-600 uppercase tracking-tighter truncate">{config.label}</span>
+                        </div>
+                        <MiniPaymentPie
+                            data={data[key] || []}
+                            color={config.color}
+                            level={level}
+                            metricLabel={config.label}
+                        />
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+const MiniPaymentPie = ({ data, color, level, metricLabel }) => {
+    // Broad, high-contrast palette for many segments (20-30+)
+    const COLORS = [
+        '#4f46e5', '#10b981', '#f59e0b', '#f43f5e', '#8b5cf6',
+        '#06b6d4', '#ec4899', '#f97316', '#6366f1', '#14b8a6',
+        '#ef4444', '#22c55e', '#3b82f6', '#a855f7', '#d946ef',
+        '#64748b', '#1e293b', '#0f172a', '#475569', '#334155',
+        '#020617', '#111827', '#1f2937', '#374151', '#4b5563',
+        '#7c3aed', '#db2777', '#dc2626', '#ca8a04', '#16a34a'
+    ];
+    const total = data.reduce((a, b) => a + (b.value || 0), 0);
+
+    const CustomTooltip = ({ active, payload }) => {
+        if (active && payload && payload.length) {
+            const item = payload[0].payload;
+            return (
+                <div className="bg-slate-900/95 backdrop-blur-md p-3 rounded-xl border border-white/10 shadow-2xl z-[1000]">
+                    <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-1 border-b border-white/5 pb-1">
+                        {level.toUpperCase()}
+                    </p>
+                    <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-white truncate max-w-[120px]">{item.name || item.label}</p>
+                        <div className="flex justify-between items-center gap-4">
+                            <span className="text-[8px] text-slate-400 uppercase">{metricLabel}</span>
+                            <span className="text-[9px] font-black text-white">{formatIndianCurrency(item.value)}</span>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+        return null;
+    };
+
+    return (
+        <div className="w-full aspect-square relative min-h-[120px]">
+            <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                    <Pie
+                        data={data}
+                        innerRadius={35}
+                        outerRadius={50}
+                        paddingAngle={3}
+                        dataKey="value"
+                        stroke="none"
+                    >
+                        {data.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                        ))}
+                    </Pie>
+                    <Tooltip
+                        content={<CustomTooltip />}
+                        wrapperStyle={{ zIndex: 10001, outline: 'none' }}
+                        useTranslate3d={true}
+                    />
+                </PieChart>
+            </ResponsiveContainer>
+            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-0">
+                <span className="text-[7px] font-black text-gray-400 uppercase leading-none">Total</span>
+                <span className="text-[10px] font-black text-gray-900 mt-1">{formatIndianCurrency(total)}</span>
+            </div>
+        </div>
+    );
+};
+
 const DistributionCharts = ({ summary }) => {
     if (!summary) return null;
 
@@ -394,7 +752,7 @@ const DistributionCharts = ({ summary }) => {
                     <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest text-center">Capture Stats</h4>
                     <div className="h-44">
                         <ResponsiveContainer width="100%" height="100%">
-                            <RePieChart>
+                            <PieChart>
                                 <Pie
                                     data={pieData}
                                     innerRadius={60}
@@ -407,7 +765,7 @@ const DistributionCharts = ({ summary }) => {
                                     ))}
                                 </Pie>
                                 <Tooltip />
-                            </RePieChart>
+                            </PieChart>
                         </ResponsiveContainer>
                     </div>
                     <div className="flex flex-col gap-2">
@@ -424,7 +782,7 @@ const DistributionCharts = ({ summary }) => {
                     <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest text-center">Digital Integrity</h4>
                     <div className="h-44">
                         <ResponsiveContainer width="100%" height="100%">
-                            <RePieChart>
+                            <PieChart>
                                 <Pie
                                     data={conversionData}
                                     innerRadius={60}
@@ -437,7 +795,7 @@ const DistributionCharts = ({ summary }) => {
                                     ))}
                                 </Pie>
                                 <Tooltip />
-                            </RePieChart>
+                            </PieChart>
                         </ResponsiveContainer>
                     </div>
                     <div className="flex flex-col gap-2">
