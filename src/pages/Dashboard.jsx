@@ -7,6 +7,7 @@ import OCRValidationTab from './OCRValidationTab';
 import AnalyticsPage from './AnalyticsPage';
 import ConversionView from './ConversionView';
 import HierarchyTab from './HierarchyTab';
+import SettingsTab from './SettingsTab';
 
 
 
@@ -207,6 +208,8 @@ const AdminDashboard = () => {
         return <AnalyticsPage />;
       case 'hierarchy':
         return isDev || userRole.toLowerCase().includes('admin') ? <HierarchyTab /> : <DashboardTab filterProps={filterProps} />;
+      case 'settings':
+        return isDev ? <SettingsTab /> : <DashboardTab filterProps={filterProps} />;
       default:
         return <DashboardTab filterProps={filterProps} />;
     }
@@ -479,7 +482,8 @@ const AdminDashboard = () => {
                     { id: 'dashboard', label: 'Dashboard', icon: BarChart },
                     { id: 'users', label: 'Users', icon: Users },
                     { id: 'validation', label: 'OCR Validation', icon: CheckCircle, developerOnly: true },
-                    { id: 'analytics', label: 'Analytics', icon: FileText }
+                    { id: 'analytics', label: 'Analytics', icon: FileText },
+                    { id: 'settings', label: 'Settings', icon: Wrench, developerOnly: true }
                   ]
                     .filter(tab => {
                       const isDev = userRole.toLowerCase().includes('developer');

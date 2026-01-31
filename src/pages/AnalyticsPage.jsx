@@ -9,6 +9,7 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
     LineChart, Line, PieChart as RePieChart, Pie, Cell, Legend, AreaChart, Area
 } from 'recharts';
+import InteractiveAPMap from '../components/InteractiveAPMap';
 import { API_BASE } from '../utils/apiConfig';
 
 const AnalyticsPage = () => {
@@ -166,6 +167,16 @@ const AnalyticsPage = () => {
 
             {/* Role-Adaptive Filter Bar */}
             <AnalyticsFilters filters={filters} setFilters={setFilters} user={user} />
+
+            {/* Interactive Map Section */}
+            <div className="animate-in fade-in slide-in-from-top-4 duration-1000">
+                <InteractiveAPMap
+                    summary={summary?.mapStats || {}}
+                    filters={filters}
+                    onDistrictSelect={(d) => setFilters(prev => ({ ...prev, district: d || 'all', mandal: 'all', village: 'all' }))}
+                    onMandalSelect={(m) => setFilters(prev => ({ ...prev, mandal: m, village: 'all' }))}
+                />
+            </div>
 
             {/* Sections based on Active View */}
             {/* Removed Metric Summary Cards per user request */}
