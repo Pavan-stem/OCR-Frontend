@@ -46,6 +46,7 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [originalData, setOriginalData] = useState(null);
     const [saving, setSaving] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
     const [showImage, setShowImage] = useState(false);
     const [s3Url, setS3Url] = useState(null);
     const [opacity, setOpacity] = useState(0.5);
@@ -142,6 +143,31 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
             alert('Network error. Failed to save changes.');
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleSyncToPayments = async () => {
+        setIsSyncing(true);
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(`${API_BASE}/api/conversion/sync-payments/${uploadId}`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            const result = await res.json();
+            if (result.success) {
+                alert(result.message);
+            } else {
+                alert(result.message || 'Failed to save data');
+            }
+        } catch (err) {
+            console.error('Error syncing to payments:', err);
+            alert('Network error. Failed to save data.');
+        } finally {
+            setIsSyncing(false);
         }
     };
 
@@ -340,10 +366,20 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                             </button>
                         )}
 
-                        <div className="hidden sm:flex items-center gap-2 px-4 py-2 bg-white/10 rounded-full border border-white/10">
-                            <ShieldCheck className="text-indigo-200" size={16} />
-                            <span className="text-[10px] text-white font-black uppercase tracking-tight">Digital Validate</span>
-                        </div>
+                        <button
+                            onClick={handleSyncToPayments}
+                            disabled={isSyncing || isEditing}
+                            className={`hidden sm:flex items-center gap-2 px-6 py-2.5 rounded-full shadow-xl transition-all border-2 ${isSyncing
+                                    ? 'bg-indigo-400 border-indigo-300 text-white cursor-not-allowed'
+                                    : 'bg-emerald-500 border-emerald-400 text-white hover:bg-emerald-600 hover:scale-110 active:scale-95'
+                                } ${isEditing ? 'opacity-50 cursor-not-allowed' : 'animate-pulse-subtle'}`}
+                            title="Save data to member payments collection"
+                        >
+                            {isSyncing ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                            <span className="text-[11px] font-black uppercase tracking-widest text-white">
+                                {isSyncing ? 'Processing...' : 'Save Data to DB'}
+                            </span>
+                        </button>
                     </div>
                 </div>
 
