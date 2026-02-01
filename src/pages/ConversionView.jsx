@@ -44,11 +44,16 @@ const ConversionView = ({ userId, userName, onClose }) => {
         if (showLoading) setLoading(true);
         try {
             const token = localStorage.getItem('token');
+            const params = new URLSearchParams({
+                month: selectedMonth,
+                year: selectedYear
+            }).toString();
+
             const [statusRes, resultsRes] = await Promise.all([
-                fetch(`${API_BASE}/api/conversion/status/${userId}`, {
+                fetch(`${API_BASE}/api/conversion/status/${userId}?${params}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 }),
-                fetch(`${API_BASE}/api/conversion/results/${userId}`, {
+                fetch(`${API_BASE}/api/conversion/results/${userId}?${params}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 })
             ]);
@@ -64,7 +69,7 @@ const ConversionView = ({ userId, userName, onClose }) => {
             if (showLoading) setLoading(false);
             setRefreshing(false);
         }
-    }, [userId]);
+    }, [userId, selectedMonth, selectedYear]);
 
     useEffect(() => {
         if (selectedSHG) {
@@ -159,22 +164,13 @@ const ConversionView = ({ userId, userName, onClose }) => {
     };
 
     const filteredResults = results[activeFolder].filter(item => {
-        const dateStr = activeFolder === 'success' ? item.convertedAt : item.failedAt;
-        const itemDate = new Date(dateStr);
-        const matchesMonth = itemDate.getMonth() + 1 === selectedMonth;
-        const matchesYear = itemDate.getFullYear() === selectedYear;
         const matchesSearch = item.shgName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
             item.shgID?.toLowerCase().includes(searchTerm.toLowerCase());
 
-        return matchesMonth && matchesYear && matchesSearch;
+        return matchesSearch;
     });
-
     const getSidebarCount = (folder) => {
-        return results[folder].filter(item => {
-            const dateStr = folder === 'success' ? item.convertedAt : item.failedAt;
-            const itemDate = new Date(dateStr);
-            return (itemDate.getMonth() + 1 === selectedMonth) && (itemDate.getFullYear() === selectedYear);
-        }).length;
+        return results[folder].length;
     };
 
     if (selectedSHG) {

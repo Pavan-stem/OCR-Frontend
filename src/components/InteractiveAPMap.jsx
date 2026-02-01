@@ -30,15 +30,7 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
     const [draggingMandal, setDraggingMandal] = useState(null); // Which mandal is being dragged
     const [mandalCopied, setMandalCopied] = useState(false);
 
-    const isDeveloper = useMemo(() => {
-        try {
-            const user = JSON.parse(localStorage.getItem('user'));
-            const role = (user?.role || '').toLowerCase();
-            return role.includes('developer');
-        } catch {
-            return false;
-        }
-    }, []);
+    // Removed isDeveloper check, use forceCalibration prop for explicit control
 
     // Constants for color categories
     const COLOR_CATEGORIES = useMemo(() => ({
@@ -633,22 +625,15 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
                     </div>
                 </div>
                 <div className="flex items-center gap-2 relative z-10">
-                    {isDeveloper && (
+                    {onDistrictSelect && (
                         <button
-                            onClick={() => setEditMode(!editMode)}
-                            className={`p-2 rounded-lg border transition-all ${editMode ? 'bg-yellow-500 border-yellow-400 text-slate-950' : 'bg-white/10 border-white/20 text-white'}`}
-                            title="Calibration Mode"
+                            onClick={resetView}
+                            className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-white text-xs font-bold transition-all active:scale-95 group"
                         >
-                            {editMode ? <Search className="w-4 h-4" /> : <Filter className="w-4 h-4" />}
+                            <Home className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform" />
+                            RESET VIEW
                         </button>
                     )}
-                    <button
-                        onClick={resetView}
-                        className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-white text-xs font-bold transition-all active:scale-95 group"
-                    >
-                        <Home className="w-4 h-4 group-hover:-translate-y-0.5 transition-transform" />
-                        RESET VIEW
-                    </button>
                 </div>
             </div>
 

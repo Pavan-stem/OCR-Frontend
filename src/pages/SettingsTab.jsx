@@ -19,7 +19,7 @@ const SettingsTab = () => {
 
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                 <div className="xl:col-span-2">
-                    <InteractiveAPMap />
+                    <InteractiveAPMap forceCalibration={true} />
                 </div>
 
                 <div className="space-y-6">

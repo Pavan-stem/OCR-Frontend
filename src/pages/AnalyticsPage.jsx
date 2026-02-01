@@ -153,21 +153,21 @@ const AnalyticsPage = () => {
     };
 
     return (
-        <div className="space-y-8 animate-in fade-in duration-700 pb-16">
+        <div className="min-h-screen text-white p-4 lg:p-8 animate-in fade-in duration-700 pb-16">
             {/* Header & Controls */}
-            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6">
-                <div>
-                    <h2 className="text-4xl font-black text-gray-900 tracking-tight flex items-center gap-3">
+            <div className="flex flex-col lg:flex-row bg-white/[0.03] backdrop-blur-3xl p-8 rounded-[32px] border border-white/10 shadow-2xl justify-between items-start lg:items-center gap-6 mb-8">
+                <div className="w-[25rem]">
+                    <h2 className="text-5xl font-black text-white px-2 tracking-tighter flex items-center gap-3 drop-shadow-2xl">
                         Analytics
                     </h2>
-                    <p className="text-sm text-gray-400 font-bold mt-1 uppercase tracking-widest flex items-center gap-2">
-                        <Activity className="w-4 h-4 text-emerald-500" />
+                    <p className="text-xs text-blue-400 font-bold mt-2 uppercase tracking-[0.3em] flex items-center gap-2 px-2 opacity-80">
+                        <Activity className="w-4 h-4 text-emerald-400" />
                         Live System Pulse & Behavioral Intelligence
                     </p>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-                    <div className="flex bg-white/50 backdrop-blur-sm p-1 rounded-2xl border border-gray-200">
+                <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto pr-4">
+                    <div className="flex bg-white/5 backdrop-blur-xl p-1.5 rounded-2xl border border-white/10 shadow-2xl">
                         {[
                             { id: 'charts', icon: PieChart, label: 'Performance Charts' },
                             { id: 'table', icon: List, label: 'Unit Performance Details' }
@@ -175,9 +175,9 @@ const AnalyticsPage = () => {
                             <button
                                 key={v.id}
                                 onClick={() => setActiveView(v.id)}
-                                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all ${activeView === v.id
-                                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100'
-                                    : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'}`}
+                                className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black transition-all duration-300 ${activeView === v.id
+                                    ? 'bg-indigo-600 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)] translate-y-[-1px]'
+                                    : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
                             >
                                 <v.icon className="w-4 h-4" />
                                 {v.label}
@@ -187,7 +187,7 @@ const AnalyticsPage = () => {
 
                     <button
                         onClick={handleDownload}
-                        className="flex items-center gap-3 px-8 py-4 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-indigo-700 transition-all hover:-translate-y-1 active:scale-95 border-2 border-indigo-500 shadow-lg shadow-indigo-100"
+                        className="flex items-center gap-3 px-2 py-3.5 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-indigo-500 transition-all hover:scale-[1.02] active:scale-95 border border-indigo-500/50 shadow-[0_0_25px_rgba(79,70,229,0.3)]"
                     >
                         <Download className="w-4 h-4" />
                         Download Report
@@ -196,11 +196,14 @@ const AnalyticsPage = () => {
             </div>
 
             {/* Role-Adaptive Filter Bar */}
-            <AnalyticsFilters filters={filters} setFilters={setFilters} user={user} />
+            <div className="mb-10">
+                <AnalyticsFilters filters={filters} setFilters={setFilters} user={user} />
+            </div>
 
             {/* Interactive Map Section */}
-            <div className="animate-in fade-in slide-in-from-top-4 duration-1000">
+            <div className="animate-in fade-in slide-in-from-top-4 duration-1000 overflow-hidden mb-5">
                 <InteractiveAPMap
+                    forceCalibration={false}
                     summary={{
                         ...(summary?.mapStats || {}),
                         all: {
@@ -270,8 +273,21 @@ const AnalyticsPage = () => {
 const AnalyticsFilters = ({ filters, setFilters, user }) => {
     const [locations, setLocations] = useState({ districts: [], mandals: [], villages: [] });
     const role = (user.role || '').toLowerCase();
+    const isAPM = role.includes('apm');
+    const isCC = role.includes('cc');
 
-    // Load location logic (Same as DashboardTab)
+    // Initialize APM filters if needed
+    useEffect(() => {
+        if (isAPM && user.district) {
+            setFilters(prev => ({
+                ...prev,
+                district: user.district,
+                mandal: user.mandal || 'all'
+            }));
+        }
+    }, [isAPM, user.district, user.mandal, setFilters]);
+
+    // Load location logic
     useEffect(() => {
         const loadDistricts = async () => {
             try {
@@ -309,70 +325,105 @@ const AnalyticsFilters = ({ filters, setFilters, user }) => {
         }
     }, [filters.mandal, filters.district]);
 
+    const selectStyle = "w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm font-bold text-white focus:border-indigo-500/50 focus:bg-white/10 outline-none transition-all appearance-none cursor-pointer hover:bg-white/10";
+    const labelStyle = "text-[10px] font-black text-indigo-400/60 uppercase tracking-[0.2em] ml-1 mb-2 block";
+
     return (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 bg-white/40 backdrop-blur-md p-6 rounded-[32px] border border-white/20 shadow-lg">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 bg-white/[0.03] backdrop-blur-3xl p-8 rounded-[32px] border border-white/10 shadow-2xl relative overflow-hidden group">
+            <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none" />
+
             {/* Time Filters */}
-            <div className="space-y-1">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Period (Month)</label>
-                <select
-                    value={filters.month}
-                    onChange={(e) => setFilters(prev => ({ ...prev, month: e.target.value }))}
-                    className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl px-4 py-3 text-sm font-bold text-gray-700 focus:border-indigo-500 outline-none transition-all"
-                >
-                    {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
-                        <option key={m} value={m}>{new Date(0, m - 1).toLocaleString('default', { month: 'long' })}</option>
-                    ))}
-                </select>
+            <div className="space-y-1 relative z-10">
+                <label className={labelStyle}>Period (Month)</label>
+                <div className="relative">
+                    <select
+                        value={filters.month}
+                        onChange={(e) => setFilters(prev => ({ ...prev, month: e.target.value }))}
+                        className={selectStyle}
+                    >
+                        {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                            <option key={m} value={m} className="bg-[#1a1c4b] text-white">{new Date(0, m - 1).toLocaleString('default', { month: 'long' })}</option>
+                        ))}
+                    </select>
+                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400/50 pointer-events-none" />
+                </div>
             </div>
 
-            <div className="space-y-1">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Context (Year)</label>
-                <select
-                    value={filters.year}
-                    onChange={(e) => setFilters(prev => ({ ...prev, year: e.target.value }))}
-                    className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl px-4 py-3 text-sm font-bold text-gray-700 focus:border-indigo-500 outline-none transition-all"
-                >
-                    {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
-                </select>
+            <div className="space-y-1 relative z-10">
+                <label className={labelStyle}>Context (Year)</label>
+                <div className="relative">
+                    <select
+                        value={filters.year}
+                        onChange={(e) => setFilters(prev => ({ ...prev, year: e.target.value }))}
+                        className={selectStyle}
+                    >
+                        {[2024, 2025, 2026].map(y => <option key={y} value={y} className="bg-[#1a1c4b] text-white">{y}</option>)}
+                    </select>
+                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400/50 pointer-events-none" />
+                </div>
             </div>
 
             {/* Location Filters - Role Adaptive */}
-            <div className="space-y-1">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Regional (District)</label>
-                <select
-                    value={filters.district}
-                    disabled={role.includes('apm') || role.includes('cc')}
-                    onChange={(e) => setFilters(prev => ({ ...prev, district: e.target.value, mandal: 'all', village: 'all' }))}
-                    className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl px-4 py-3 text-sm font-bold text-gray-700 focus:border-indigo-500 outline-none transition-all disabled:opacity-50"
-                >
-                    <option value="all">All Districts</option>
-                    {locations.districts.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
-                </select>
-            </div>
+            {(!isAPM && !isCC) ? (
+                <>
+                    <div className="space-y-1 relative z-10">
+                        <label className={labelStyle}>Regional (District)</label>
+                        <div className="relative">
+                            <select
+                                value={filters.district}
+                                onChange={(e) => setFilters(prev => ({ ...prev, district: e.target.value, mandal: 'all', village: 'all' }))}
+                                className={selectStyle}
+                            >
+                                <option value="all" className="bg-[#1a1c4b] text-white">All Districts</option>
+                                {locations.districts.map(d => <option key={d.id} value={d.name} className="bg-[#1a1c4b] text-white">{d.name}</option>)}
+                            </select>
+                            <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400/50 pointer-events-none" />
+                        </div>
+                    </div>
 
-            <div className="space-y-1">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Administrative (Mandal)</label>
-                <select
-                    value={filters.mandal}
-                    disabled={role.includes('cc') || (role.includes('apm') && filters.mandal !== 'all')}
-                    onChange={(e) => setFilters(prev => ({ ...prev, mandal: e.target.value, village: 'all' }))}
-                    className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl px-4 py-3 text-sm font-bold text-gray-700 focus:border-indigo-500 outline-none transition-all disabled:opacity-50"
-                >
-                    <option value="all">All Mandals</option>
-                    {locations.mandals.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
-                </select>
-            </div>
+                    <div className="space-y-1 relative z-10">
+                        <label className={labelStyle}>Administrative (Mandal)</label>
+                        <div className="relative">
+                            <select
+                                value={filters.mandal}
+                                onChange={(e) => setFilters(prev => ({ ...prev, mandal: e.target.value, village: 'all' }))}
+                                className={selectStyle}
+                            >
+                                <option value="all" className="bg-[#1a1c4b] text-white">All Mandals</option>
+                                {locations.mandals.map(m => <option key={m.id} value={m.name} className="bg-[#1a1c4b] text-white">{m.name}</option>)}
+                            </select>
+                            <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400/50 pointer-events-none" />
+                        </div>
+                    </div>
+                </>
+            ) : (
+                <div className="lg:col-span-2 flex items-end pb-1 relative z-10 pr-4">
+                    <div className="bg-indigo-500/10 border border-indigo-500/20 rounded-2xl px-6 py-3 w-full flex items-center gap-3 shadow-lg shadow-indigo-500/5 overflow-hidden">
+                        <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 rounded-full -mr-12 -mt-12" />
+                        <MapPin className="w-5 h-5 text-indigo-400 shrink-0" />
+                        <div>
+                            <p className="text-[10px] font-black text-indigo-300/50 uppercase tracking-widest leading-none mb-1">Scope</p>
+                            <p className="text-sm font-black text-white truncate max-w-[200px]">
+                                {filters.district} {filters.mandal !== 'all' ? `• ${filters.mandal}` : ''}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
 
-            <div className="space-y-1">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">Locale (Village)</label>
-                <select
-                    value={filters.village}
-                    onChange={(e) => setFilters(prev => ({ ...prev, village: e.target.value }))}
-                    className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl px-4 py-3 text-sm font-bold text-gray-700 focus:border-indigo-500 outline-none transition-all"
-                >
-                    <option value="all">All Villages</option>
-                    {locations.villages.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
-                </select>
+            <div className="space-y-1 relative z-10">
+                <label className={labelStyle}>Locale (Village)</label>
+                <div className="relative">
+                    <select
+                        value={filters.village}
+                        onChange={(e) => setFilters(prev => ({ ...prev, village: e.target.value }))}
+                        className={selectStyle}
+                    >
+                        <option value="all" className="bg-[#1a1c4b] text-white">All Villages</option>
+                        {locations.villages.map(v => <option key={v.id} value={v.name} className="bg-[#1a1c4b] text-white">{v.name}</option>)}
+                    </select>
+                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400/50 pointer-events-none" />
+                </div>
             </div>
         </div>
     );
