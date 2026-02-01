@@ -8,7 +8,7 @@ export default defineConfig(({ command, mode }) => {
 
   let base = '/';
   if (isGitHubPages) base = '/OCR-Frontend/';
-  else if (isDev) base = '/SMD/';
+  else if (isDev || mode === 'smd') base = '/SMD/';
 
   return {
     base,

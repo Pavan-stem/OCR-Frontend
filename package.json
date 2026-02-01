@@ -11,6 +11,7 @@
     "dev:all": "concurrently -n \"backend,frontend\" -c \"cyan,magenta\" \"npm run dev:backend\" \"npm run dev:frontend\"",
     "build": "vite build",
     "build:gh": "vite build --mode github",
+    "build:smd": "vite build --mode smd",
     "predeploy": "npm run build:gh",
     "deploy": "gh-pages -d dist",
     "preview": "vite preview"

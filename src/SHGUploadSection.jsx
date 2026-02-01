@@ -679,13 +679,8 @@ const SHGUploadSection = ({
 
         reader.onload = (e) => {
           img.onload = () => {
-            // Use smart suggested rotation or fallback to simple landscape check
-            let initialRotation = analysis?.suggestedRotation ?? 0;
-
-            // If smart suggestion is 0 but image is still portrait, force to landscape
-            if (initialRotation === 0 && img.height > img.width) {
-              initialRotation = 90;
-            }
+            // Auto-rotation disabled as per user request
+            let initialRotation = 0;
 
             console.log(`Smart-rotated image for SHG: ${shgId} to ${initialRotation}deg`);
 
