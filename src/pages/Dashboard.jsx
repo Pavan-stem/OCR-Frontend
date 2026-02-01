@@ -7,6 +7,7 @@ import OCRValidationTab from './OCRValidationTab';
 import AnalyticsPage from './AnalyticsPage';
 import ConversionView from './ConversionView';
 import HierarchyTab from './HierarchyTab';
+import SettingsTab from './SettingsTab';
 
 
 
@@ -204,9 +205,12 @@ const AdminDashboard = () => {
 
         return isDev ? <OCRValidationTab /> : <DashboardTab filterProps={filterProps} />;
       case 'analytics':
-        return <AnalyticsPage />;
+        const isPrivileged = isDev || userRole.toLowerCase().includes('admin');
+        return isPrivileged ? <AnalyticsPage /> : <DashboardTab filterProps={filterProps} />;
       case 'hierarchy':
         return isDev || userRole.toLowerCase().includes('admin') ? <HierarchyTab /> : <DashboardTab filterProps={filterProps} />;
+      case 'settings':
+        return isDev ? <SettingsTab /> : <DashboardTab filterProps={filterProps} />;
       default:
         return <DashboardTab filterProps={filterProps} />;
     }
@@ -479,11 +483,17 @@ const AdminDashboard = () => {
                     { id: 'dashboard', label: 'Dashboard', icon: BarChart },
                     { id: 'users', label: 'Users', icon: Users },
                     { id: 'validation', label: 'OCR Validation', icon: CheckCircle, developerOnly: true },
-                    { id: 'analytics', label: 'Analytics', icon: FileText }
+                    { id: 'analytics', label: 'Analytics', icon: FileText, privilegedOnly: true },
+                    { id: 'settings', label: 'Settings', icon: Wrench, developerOnly: true }
                   ]
                     .filter(tab => {
-                      const isDev = userRole.toLowerCase().includes('developer');
+                      const lowerRole = userRole.toLowerCase();
+                      const isDev = lowerRole.includes('developer');
+                      const isAdmin = lowerRole.includes('admin') && !lowerRole.includes('apm') && !lowerRole.includes('cc');
+                      const isAPM = lowerRole.includes('admin - apm');
+
                       if (tab.developerOnly && !isDev) return false;
+                      if (tab.privilegedOnly && !(isDev || isAdmin || isAPM)) return false;
                       return true;
                     })
                     .map(tab => (
