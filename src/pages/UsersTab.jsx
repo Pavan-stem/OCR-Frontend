@@ -533,6 +533,13 @@ const UsersTab = ({ filterProps }) => {
         setUsers(data.users);
         setTotalPages(data.pagination.pages);
         setTotalUsers(data.pagination.total);
+
+        // [FIX]: Auto-reset pagination if current page exceeds available pages
+        // This happens when switching from a user with many pages (Admin) to one with few (CC)
+        if (data.pagination.pages > 0 && page > data.pagination.pages) {
+          console.warn(`Current page ${page} > Total pages ${data.pagination.pages}. Resetting to 1.`);
+          setPage(1);
+        }
       } else {
         setError(data.error);
       }
