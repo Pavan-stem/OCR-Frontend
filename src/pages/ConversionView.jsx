@@ -37,8 +37,14 @@ const ConversionView = ({ userId, userName, onClose }) => {
     const [refreshing, setRefreshing] = useState(false);
 
     // Month and Year filtering
+    // Month and Year filtering
     const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
     const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+
+    // Pagination State
+    const [currentPage, setCurrentPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
+    const [limit] = useState(5); // Default limit per user request
 
     const fetchStatus = useCallback(async (showLoading = false) => {
         if (showLoading) setLoading(true);
@@ -46,7 +52,9 @@ const ConversionView = ({ userId, userName, onClose }) => {
             const token = localStorage.getItem('token');
             const params = new URLSearchParams({
                 month: selectedMonth,
-                year: selectedYear
+                year: selectedYear,
+                page: currentPage,
+                limit: limit
             }).toString();
 
             const [statusRes, resultsRes] = await Promise.all([
@@ -62,14 +70,27 @@ const ConversionView = ({ userId, userName, onClose }) => {
             const resultsData = await resultsRes.json();
 
             if (statusData.success) setSummary(statusData.summary);
-            if (resultsData.success) setResults(resultsData.results);
+            if (resultsData.success) {
+                setResults(resultsData.results);
+                if (resultsData.pagination) {
+                    setTotalPages(resultsData.pagination.pages_success); // Simplified: Using success pages for navigation primarily?
+                    // Actually, we might have different pages for success/failed.
+                    // For now, let's assume we are paging based on the active folder count or just using the max pages returned.
+                    // Let's use 'pages_success' if success folder is active, or 'pages_failed' effectively?
+                    // The backend returns totals. let's calculate totalPages locally based on activeFolder.
+                    const totalItems = activeFolder === 'success'
+                        ? (resultsData.pagination.total_success || 0)
+                        : (resultsData.pagination.total_failed || 0);
+                    setTotalPages(Math.max(1, Math.ceil(totalItems / limit)));
+                }
+            }
         } catch (err) {
             console.error('Error fetching conversion data:', err);
         } finally {
             if (showLoading) setLoading(false);
             setRefreshing(false);
         }
-    }, [userId, selectedMonth, selectedYear]);
+    }, [userId, selectedMonth, selectedYear, currentPage, limit, activeFolder]);
 
     useEffect(() => {
         if (selectedSHG) {
@@ -474,6 +495,29 @@ const ConversionView = ({ userId, userName, onClose }) => {
                                         </div>
                                     </div>
                                 ))}
+                            </div>
+                        )}
+
+                        {/* PAGINATION CONTROLS */}
+                        {!loading && filteredResults.length > 0 && (
+                            <div className="p-4 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                    disabled={currentPage === 1}
+                                    className="px-4 py-2 rounded-xl bg-white border border-gray-200 text-gray-700 font-bold text-xs hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-all"
+                                >
+                                    Previous
+                                </button>
+                                <span className="text-xs font-black text-gray-500 uppercase tracking-widest">
+                                    Page {currentPage} of {totalPages}
+                                </span>
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                    disabled={currentPage === totalPages}
+                                    className="px-4 py-2 rounded-xl bg-white border border-gray-200 text-gray-700 font-bold text-xs hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-all"
+                                >
+                                    Next
+                                </button>
                             </div>
                         )}
                     </div>

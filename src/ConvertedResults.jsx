@@ -1,12 +1,13 @@
 import React, { useState, useMemo } from 'react';
-import { Download, Eye, Table2, Folder, FolderOpen, FileText, X, Info, Grid3X3, Edit3 } from 'lucide-react';
+import { Download, Eye, Table2, Folder, FolderOpen, FileText, X, Info, Grid3X3, Edit3, Loader2 } from 'lucide-react';
+import { API_BASE } from './utils/apiConfig';
 
 const TOTAL_FILES_TARGET = 10;
 
-export default function ConvertedResults({ 
-  results, 
-  failedFiles = [], 
-  onViewResult, 
+export default function ConvertedResults({
+  results,
+  failedFiles = [],
+  onViewResult,
   onExportCSV,
   onShowStats,
   selectedMonth,
@@ -124,13 +125,71 @@ export default function ConvertedResults({
     };
   };
 
-  const openEditModal = (result) => {
+  const [loadingDetails, setLoadingDetails] = useState(false);
+
+  const openEditModal = async (result) => {
     if (!result) return;
-    const headers = result.headers?.length ? result.headers : Object.keys(result.data?.[0] || {});
+
+    let resultToUse = result;
+
+    // Lazy load if data is missing but ID exists
+    if ((!result.data || result.data.length === 0) && (result.id || result.uploadId)) {
+      setLoadingDetails(true);
+      try {
+        const token = localStorage.getItem('token');
+        // Prefer uploadId if available as that's what the endpoint expects based on routes, 
+        // but fall back to id if needed (check your specific data structure).
+        // The route is /conversion/detail/<upload_id>
+        const idToFetch = result.uploadId || result.id;
+
+        const res = await fetch(`${API_BASE}/api/conversion/detail/${idToFetch}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.data) {
+            // Merge fetched data into resultToUse
+            const detail = json.data;
+            resultToUse = {
+              ...result,
+              data: detail.table_data?.data_rows?.map(r =>
+                r.cells.reduce((acc, cell, idx) => {
+                  // Try to map back to a simple object structure if your table logic relies on it
+                  // Or if your editableData expects simple key-value pairs
+                  const header = detail.table_data.column_headers?.[idx]?.label || `col${idx}`;
+                  acc[header] = cell.text;
+                  return acc;
+                }, {})
+              ) || [],
+              // If you store raw HTML or other fields, populate them here
+              shgName: detail.shgName,
+              shgID: detail.shgID
+            };
+
+            // If your data structure for 'data' in ConvertedResults is different (e.g. array of objects matching headers),
+            // you might need to adapt the transformation above. 
+            // Assuming broadly standard behavior or adaptation to existing logic.
+
+            // FALLBACK: If the existing logic used 'rows' and 'headers' directly check that.
+            // Re-reading file: logic uses result.data || []
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load details for edit", err);
+        alert("Failed to load document details. Please check connection.");
+        setLoadingDetails(false);
+        return;
+      } finally {
+        setLoadingDetails(false);
+      }
+    }
+
+    const headers = resultToUse.headers?.length ? resultToUse.headers : Object.keys(resultToUse.data?.[0] || {});
     setEditHeaders(headers);
-    setEditableData((result.data || []).map(row => ({ ...row })));
-    setEditingResult(result);
-    setHtmlFragments(extractHtmlFragments(result.htmlData));
+    setEditableData((resultToUse.data || []).map(row => ({ ...row })));
+    setEditingResult(resultToUse);
+    setHtmlFragments(extractHtmlFragments(resultToUse.htmlData));
   };
 
   const closeEditModal = () => {
@@ -682,9 +741,8 @@ export default function ConvertedResults({
                     className="bg-gray-800/80 border border-gray-700 rounded-2xl p-4 hover:border-indigo-400 hover:shadow-lg transition-all"
                   >
                     <div className="flex items-center gap-3 mb-3">
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                        activeFolderModal === 'converted' ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'
-                      }`}>
+                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${activeFolderModal === 'converted' ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'
+                        }`}>
                         <FileText size={28} />
                       </div>
                       <div className="min-w-0">
