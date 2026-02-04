@@ -160,10 +160,10 @@ const AnalyticsPage = () => {
                     <h2 className="text-5xl font-black text-white px-2 tracking-tighter flex items-center gap-3 drop-shadow-2xl">
                         Analytics
                     </h2>
-                    <p className="text-xs text-blue-400 font-bold mt-2 uppercase tracking-[0.3em] flex items-center gap-2 px-2 opacity-80">
+                    {/* <p className="text-xs text-blue-400 font-bold mt-2 uppercase tracking-[0.3em] flex items-center gap-2 px-2 opacity-80">
                         <Activity className="w-4 h-4 text-emerald-400" />
                         Live System Pulse & Behavioral Intelligence
-                    </p>
+                    </p> */}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto pr-4">
@@ -219,6 +219,7 @@ const AnalyticsPage = () => {
                         }
                     }}
                     filters={filters}
+                    locked={isAPM || isCC}
                     onDistrictSelect={(d) => setFilters(prev => ({ ...prev, district: d || 'all', mandal: 'all', village: 'all' }))}
                     onMandalSelect={(m) => setFilters(prev => ({ ...prev, mandal: m, village: 'all' }))}
                 />
@@ -334,7 +335,7 @@ const AnalyticsFilters = ({ filters, setFilters, user }) => {
 
             {/* Time Filters */}
             <div className="space-y-1 relative z-10">
-                <label className={labelStyle}>Period (Month)</label>
+                <label className={labelStyle}>Month</label>
                 <div className="relative">
                     <select
                         value={filters.month}
@@ -350,7 +351,7 @@ const AnalyticsFilters = ({ filters, setFilters, user }) => {
             </div>
 
             <div className="space-y-1 relative z-10">
-                <label className={labelStyle}>Context (Year)</label>
+                <label className={labelStyle}>Year</label>
                 <div className="relative">
                     <select
                         value={filters.year}
@@ -367,7 +368,7 @@ const AnalyticsFilters = ({ filters, setFilters, user }) => {
             {(!isAPM && !isCC) ? (
                 <>
                     <div className="space-y-1 relative z-10">
-                        <label className={labelStyle}>Regional (District)</label>
+                        <label className={labelStyle}>District</label>
                         <div className="relative">
                             <select
                                 value={filters.district}
@@ -382,7 +383,7 @@ const AnalyticsFilters = ({ filters, setFilters, user }) => {
                     </div>
 
                     <div className="space-y-1 relative z-10">
-                        <label className={labelStyle}>Administrative (Mandal)</label>
+                        <label className={labelStyle}>Mandal</label>
                         <div className="relative">
                             <select
                                 value={filters.mandal}
@@ -412,7 +413,7 @@ const AnalyticsFilters = ({ filters, setFilters, user }) => {
             )}
 
             <div className="space-y-1 relative z-10">
-                <label className={labelStyle}>Locale (Village)</label>
+                <label className={labelStyle}>Village</label>
                 <div className="relative">
                     <select
                         value={filters.village}

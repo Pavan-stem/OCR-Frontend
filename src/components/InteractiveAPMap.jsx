@@ -4,7 +4,7 @@ import mandalCalibration from '../data/mandal_calibration.json';
 import { MapPin, Home, Info, RefreshCw, Filter, Search, RotateCcw, RotateCw, Trash2, Copy, Check, Download, Eraser, MousePointer2, Target } from 'lucide-react';
 import { API_BASE } from '../utils/apiConfig';
 
-const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMandalSelect }) => {
+const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMandalSelect, locked = false }) => {
     const [svgContent, setSvgContent] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -236,7 +236,7 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
                 const centerX = minX + width / 2;
                 const centerY = minY + height / 2;
                 const targetRatio = 3509 / 2482;
-                const zoomFactor = 1.05; // Tighter zoom to fill viewport with district
+                const zoomFactor = 1.1; // Extra padding to clear rounded card corners
 
                 let viewWidth = width * zoomFactor;
                 let viewHeight = height * zoomFactor;
@@ -269,7 +269,7 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
                 zoomToDistrict(null);
             }
         }
-    }, [filters.district, zoomToDistrict, editMode]);
+    }, [filters.district, zoomToDistrict, editMode, loading, svgContent]);
 
     // Zoom sync for Calibration/Edit mode
     useEffect(() => {
@@ -356,7 +356,17 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
             if (name && name !== "BORDER") p.setAttribute('data-district', name);
 
             if (name && name !== "BORDER" && !isIgnored) {
-                p.setAttribute('data-interactive', 'true');
+                // If locked, only the already selected district remains interactive
+                if (locked) {
+                    if (selectedDistrict && name === selectedDistrict) {
+                        p.setAttribute('data-interactive', 'true');
+                    } else {
+                        p.removeAttribute('data-interactive');
+                        p.style.pointerEvents = 'none';
+                    }
+                } else {
+                    p.setAttribute('data-interactive', 'true');
+                }
             } else {
                 p.removeAttribute('data-interactive');
                 p.style.pointerEvents = (editMode || isBorder) ? 'auto' : 'none';
@@ -455,7 +465,7 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
     };
 
     const handleSvgClick = (e) => {
-        if (editMode) return; // Handled by mouseDown/Up in edit mode
+        if (editMode || locked) return; // Handled by mouseDown/Up in edit mode, disabled in locked mode
         const path = e.target.closest('path');
         if (!path) {
             resetView();
@@ -478,6 +488,13 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
 
         const districtName = path?.getAttribute('data-district');
         const isIgnored = path?.getAttribute('data-ignored') === 'true';
+
+        // If locked, only hover on the selected district
+        if (locked && districtName !== selectedDistrict) {
+            if (hoveredDistrict) setHoveredDistrict(null);
+            container.querySelectorAll(`path[data-hovered="true"]`).forEach(p => p.removeAttribute('data-hovered'));
+            return;
+        }
 
         // OPTIMIZED STATE RESET: Only clear if we are moving to a different district or nothing
         if (hoveredDistrict && hoveredDistrict !== districtName) {
@@ -625,7 +642,7 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
                     </div>
                 </div>
                 <div className="flex items-center gap-2 relative z-10">
-                    {onDistrictSelect && (
+                    {onDistrictSelect && !locked && (
                         <button
                             onClick={resetView}
                             className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-white text-xs font-bold transition-all active:scale-95 group"
@@ -638,9 +655,9 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-5 h-auto min-h-[500px]">
-                <div className="lg:col-span-3 bg-indigo-50/30 relative p-4 group cursor-crosshair overflow-hidden">
+                <div className="lg:col-span-3 bg-indigo-50/30 relative group cursor-crosshair overflow-hidden">
                     <div
-                        className="relative z-10 w-full h-[500px] flex items-center justify-center overflow-hidden"
+                        className="relative z-10 w-full h-[600px] flex items-center justify-center overflow-hidden"
                         onMouseDown={(e) => {
                             if (mandalMode && editMode) {
                                 // Check if clicking on a mandal marker
@@ -807,9 +824,9 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
                              #ap-map-container path[data-border="true"] {
                                 fill: none !important;
                                 stroke: #94a3b8 !important;
-                                stroke-width: 1.5px !important;
+                                stroke-width: 0.5px !important;
                                 pointer-events: none;
-                                opacity: 0.3 !important; /* Made even more subtle to let the unified look shine */
+                                opacity: 0.1 !important;
                             }
                             ${editMode ? `
                                 #ap-map-container path {
@@ -1030,7 +1047,7 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
                                     </div>
                                     <div className="bg-white/80 p-3 rounded-xl">
                                         <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Pending</span>
-                                        <span className="text-lg font-black text-amber-600">{summary[selectedDistrict]?.pending || 0}</span>
+                                        <span className="text-lg font-black text-amber-600">{summary[selectedDistrict]?.ccPending || 0}</span>
                                     </div>
                                 </div>
                             </div>
