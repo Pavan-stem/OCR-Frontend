@@ -46,8 +46,7 @@ const SHGUploadSection = ({
   const [isCameraCapture, setIsCameraCapture] = useState(false);
   const [showSmartCamera, setShowSmartCamera] = useState(false);
   const [cameraTarget, setCameraTarget] = useState({ id: null, name: null });
-  const [showActionSheet, setShowActionSheet] = useState(false);
-  const [actionSheetTarget, setActionSheetTarget] = useState({ id: null, name: null });
+  // Action Sheet removed
 
   // Detect if device is mobile/tablet
   useEffect(() => {
@@ -1401,11 +1400,11 @@ const SHGUploadSection = ({
                 <div className="flex flex-col gap-2">
                   {isMobileDevice ? (
                     <button
-                      onClick={() => fileInputRefs.current[shg.shgId]?.click()}
+                      onClick={() => nativeCameraInputRefs.current[shg.shgId]?.click()}
                       className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-transparent active:scale-95"
                     >
-                      <Upload size={18} />
-                      <span>{t?.('upload.uploadFiles') || 'Upload File'}</span>
+                      <Camera size={18} />
+                      <span>{t?.('Upload File') || 'Upload File'}</span>
                     </button>
                   ) : (
                     /* Desktop: Standard Upload */
@@ -1414,7 +1413,7 @@ const SHGUploadSection = ({
                       className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-semibold cursor-pointer transition-all border shadow-sm text-xs sm:text-sm bg-blue-50 hover:bg-blue-100 text-blue-600 border-blue-200"
                     >
                       <Upload size={16} />
-                      <span>{t?.('upload.uploadFile') || 'Upload File'}</span>
+                      <span>{t?.('Upload File') || 'Upload File'}</span>
                     </button>
                   )}
                 </div>
@@ -1548,14 +1547,11 @@ const SHGUploadSection = ({
                 <div className="flex flex-col gap-2">
                   {isMobileDevice ? (
                     <button
-                      onClick={() => {
-                        setActionSheetTarget({ id: shg.shgId, name: shg.shgName });
-                        setShowActionSheet(true);
-                      }}
+                      onClick={() => nativeCameraInputRefs.current[shg.shgId]?.click()}
                       className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-transparent active:scale-95"
                     >
-                      <Upload size={18} />
-                      <span>{t?.('upload.uploadFile') || 'Upload File'}</span>
+                      <Camera size={18} />
+                      <span>{t?.('upload.takePhoto') || 'Take Photo'}</span>
                     </button>
                   ) : (
                     /* Desktop: Standard Upload */
@@ -2070,51 +2066,7 @@ const SHGUploadSection = ({
       {/* SmartCamera Removed */}
 
       {/* Action Sheet Modal */}
-      {showActionSheet && createPortal(
-        <div className="fixed inset-0 bg-black/60 z-[9999] flex items-end sm:items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-sm rounded-t-2xl sm:rounded-2xl p-6 flex flex-col gap-4 animate-in slide-in-from-bottom-10 shadow-2xl">
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="text-lg font-bold text-gray-800">{t?.('upload.chooseOption') || 'Choose Option'}</h3>
-              <button onClick={() => setShowActionSheet(false)} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200"><X size={20} /></button>
-            </div>
-
-            <button
-              onClick={() => {
-                setShowActionSheet(false);
-                handleOpenSmartCamera(actionSheetTarget.id, actionSheetTarget.name);
-              }}
-              className="flex items-center gap-4 p-4 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-all active:scale-95"
-            >
-              <div className="p-3 bg-blue-500 text-white rounded-full shadow-blue-200 shadow-lg">
-                <ScanLine size={24} />
-              </div>
-              <div className="text-left">
-                <p className="font-bold text-gray-800">{t?.('upload.smartScan') || 'Smart Scan'}</p>
-                <p className="text-xs text-gray-500">Auto-crop & enhance document</p>
-              </div>
-            </button>
-
-            <button
-              onClick={() => {
-                setShowActionSheet(false);
-                if (fileInputRefs.current[actionSheetTarget.id]) {
-                  fileInputRefs.current[actionSheetTarget.id].click();
-                }
-              }}
-              className="flex items-center gap-4 p-4 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-xl transition-all active:scale-95"
-            >
-              <div className="p-3 bg-gray-700 text-white rounded-full shadow-gray-300 shadow-lg">
-                <Upload size={24} />
-              </div>
-              <div className="text-left">
-                <p className="font-bold text-gray-800">{t?.('upload.uploadFile') || 'Upload File'}</p>
-                <p className="text-xs text-gray-500">Gallery or PDF</p>
-              </div>
-            </button>
-          </div>
-        </div>,
-        document.body
-      )}
+      {/* Action Sheet Removed */}
 
 
     </div>
