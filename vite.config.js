@@ -8,7 +8,7 @@ export default defineConfig(({ command, mode }) => {
 
   let base = '/';
   if (isGitHubPages) base = '/OCR-Frontend/';
-  else if (isDev || mode === 'smd') base = '/SMD/';
+  else if (isDev || mode === 'Test') base = '/Test/';
 
   return {
     base,
@@ -28,7 +28,7 @@ export default defineConfig(({ command, mode }) => {
       ],
       proxy: {
         '/api': {
-          target: 'https://api.stemverse.api/OCR',
+          target: 'https://api.stemverse.api/OCRtest',
           changeOrigin: true,
           secure: false,
         },

@@ -282,7 +282,7 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
         const loadSvg = async () => {
             try {
                 setLoading(true);
-                const response = await fetch('/SMD/ap-districts-map.svg');
+                const response = await fetch('/Test/ap-districts-map.svg');
                 if (!response.ok) throw new Error('Failed to load map data');
                 let text = await response.text();
                 // Inject SVG Filters for unifying fragmented regions and creating outlines

@@ -5,7 +5,7 @@
  */
 export const getApiBase = () => {
   // Browser check
-  if (typeof window === "undefined") return "/OCR";
+  if (typeof window === "undefined") return "/OCRtest";
 
   // 1️⃣ Environment variable takes highest priority
   if (import.meta.env.VITE_OCR_API_URL) {
@@ -25,14 +25,14 @@ export const getApiBase = () => {
 
   if (isLocalhost || isPrivateIP) {
     // Use local backend server on port 5004 with detected IP
-    const apiUrl = `http://${hostname}:5002/OCR`;
+    const apiUrl = `http://${hostname}:5004/OCRtest`;
     console.log(`[API Config] Using local backend: ${apiUrl}`);
     return apiUrl;
   }
 
   // 3️⃣ Production (deployed site)
   console.log(`[API Config] Using production backend`);
-  return "https://api.stemverse.app/OCR";
+  return "https://api.stemverse.app/OCRtest";
 };
 
 export const getAuthApiBase = () => {
@@ -46,11 +46,11 @@ export const getAuthApiBase = () => {
     const isPrivateIP = /^(192\.168\.|10\.|172\.1[6-9]\.|172\.2[0-9]\.|172\.3[01]\.)/.test(hostname);
 
     if (isLocalhost || isPrivateIP) {
-      return `http://${hostname}:5002/OCR`;
+      return `http://${hostname}:5004/OCRtest`;
     }
   }
 
-  return "https://api.stemverse.app/OCR";
+  return "https://api.stemverse.app/OCRtest";
 };
 
 export const API_BASE = getApiBase();
