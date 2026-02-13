@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
-    Download, FileBarChart, PieChart as PieChartIcon, Activity, Clock, CheckCircle,
+    Download, FileBarChart, ChartPie as PieChartIcon, Activity, Clock, CheckCircle,
     FileText, Filter, LayoutGrid, List, ChevronRight, AlertCircle,
     TrendingUp, Users, MapPin, Calendar, ArrowUpRight, ArrowDownRight,
     Shield, User, ChevronDown, Loader2
@@ -21,7 +21,28 @@ const formatIndianCurrency = (value) => {
     return `₹${Math.floor(value)}`;
 };
 
-const AnalyticsPage = () => {
+const AnalyticsPage = ({ filterProps }) => {
+    const {
+        selectedDistrict,
+        setSelectedDistrict,
+        selectedMandal,
+        setSelectedMandal,
+        selectedVillage,
+        setSelectedVillage,
+        filterMonth,
+        setFilterMonth,
+        filterYear,
+        setFilterYear
+    } = filterProps;
+
+    const filters = useMemo(() => ({
+        district: selectedDistrict,
+        mandal: selectedMandal,
+        village: selectedVillage,
+        month: filterMonth,
+        year: filterYear
+    }), [selectedDistrict, selectedMandal, selectedVillage, filterMonth, filterYear]);
+
     // Local Stats State
     const [summary, setSummary] = useState(null);
     const [trends, setTrends] = useState([]);
@@ -33,19 +54,11 @@ const AnalyticsPage = () => {
     const [paymentData, setPaymentData] = useState(null);
     const [paymentTrends, setPaymentTrends] = useState([]);
 
-    // Filter State
-    const [filters, setFilters] = useState({
-        district: 'all',
-        mandal: 'all',
-        village: 'all',
-        month: new Date().getMonth() + 1,
-        year: new Date().getFullYear()
-    });
-
     // UI State
     const [activeView, setActiveView] = useState('charts'); // charts, table
     const [activeMetric, setActiveMetric] = useState('totalCollections');
     const [isCollectionsExpanded, setIsCollectionsExpanded] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     // User Role Info
     const user = useMemo(() => {
@@ -88,13 +101,16 @@ const AnalyticsPage = () => {
 
                 if (sumData.success) setSummary(sumData.summary);
                 if (trendData.success) setTrends(trendData.data);
-                if (paymentResData.success) {
-                    setPaymentData(paymentResData.data);
-                }
-                if (paymentTrendData.success) {
-                    setPaymentTrends(paymentTrendData.data);
-                }
-                console.log('Payment analytics loaded');
+                if (paymentResData.success) setPaymentData(paymentResData.data);
+                if (paymentTrendData.success) setPaymentTrends(paymentTrendData.data);
+
+                // If any response is stale, set isRefreshing to true
+                setIsRefreshing(
+                    sumData.stale ||
+                    trendData.stale ||
+                    paymentResData.stale ||
+                    paymentTrendData.stale
+                );
             } catch (err) {
                 console.error("Failed to fetch analytics:", err);
             }
@@ -117,7 +133,8 @@ const AnalyticsPage = () => {
                 const data = await res.json();
 
                 if (data.success) {
-                    setTableData(data.data);
+                    setTableData(data.hierarchy || []);
+                    if (data.stale) setIsRefreshing(true);
                 }
             } catch (err) {
                 setError("Could not load detailed table data.");
@@ -159,17 +176,19 @@ const AnalyticsPage = () => {
                 <div className="w-[25rem]">
                     <h2 className="text-5xl font-black text-white px-2 tracking-tighter flex items-center gap-3 drop-shadow-2xl">
                         Analytics
+                        {isRefreshing && (
+                            <div className="flex items-center gap-2 px-3 py-1 bg-indigo-500/20 border border-indigo-500/30 rounded-full animate-pulse ml-4">
+                                <Loader2 className="w-3 h-3 text-indigo-400 animate-spin" />
+                                <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">Refreshing</span>
+                            </div>
+                        )}
                     </h2>
-                    {/* <p className="text-xs text-blue-400 font-bold mt-2 uppercase tracking-[0.3em] flex items-center gap-2 px-2 opacity-80">
-                        <Activity className="w-4 h-4 text-emerald-400" />
-                        Live System Pulse & Behavioral Intelligence
-                    </p> */}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto pr-4">
                     <div className="flex bg-white/5 backdrop-blur-xl p-1.5 rounded-2xl border border-white/10 shadow-2xl">
                         {[
-                            { id: 'charts', icon: PieChart, label: 'Performance Charts' },
+                            { id: 'charts', icon: PieChartIcon, label: 'Performance Charts' },
                             { id: 'table', icon: List, label: 'Unit Performance Details' }
                         ].map((v) => (
                             <button
@@ -197,7 +216,7 @@ const AnalyticsPage = () => {
 
             {/* Role-Adaptive Filter Bar */}
             <div className="mb-10">
-                <AnalyticsFilters filters={filters} setFilters={setFilters} user={user} />
+                <AnalyticsFilters filterProps={filterProps} user={user} />
             </div>
 
             {/* Interactive Map Section */}
@@ -215,13 +234,22 @@ const AnalyticsPage = () => {
                             ccPending: summary?.ccActions?.pending,
                             converted: summary?.conversion?.converted,
                             failed: summary?.conversion?.failed,
+                            convPending: summary?.conversion?.pending,
+                            convProcessing: summary?.conversion?.processing,
                             financeStats: paymentData?.financeStats
                         }
                     }}
                     filters={filters}
                     locked={isAPM || isCC}
-                    onDistrictSelect={(d) => setFilters(prev => ({ ...prev, district: d || 'all', mandal: 'all', village: 'all' }))}
-                    onMandalSelect={(m) => setFilters(prev => ({ ...prev, mandal: m, village: 'all' }))}
+                    onDistrictSelect={(d) => {
+                        setSelectedDistrict(d || 'all');
+                        setSelectedMandal('all');
+                        setSelectedVillage('all');
+                    }}
+                    onMandalSelect={(m) => {
+                        setSelectedMandal(m || 'all');
+                        setSelectedVillage('all');
+                    }}
                 />
             </div>
 
@@ -271,7 +299,19 @@ const AnalyticsPage = () => {
     );
 };
 
-const AnalyticsFilters = ({ filters, setFilters, user }) => {
+const AnalyticsFilters = ({ filterProps, user }) => {
+    const {
+        selectedDistrict,
+        setSelectedDistrict,
+        selectedMandal,
+        setSelectedMandal,
+        selectedVillage,
+        setSelectedVillage,
+        filterMonth,
+        setFilterMonth,
+        filterYear,
+        setFilterYear
+    } = filterProps;
     const [locations, setLocations] = useState({ districts: [], mandals: [], villages: [] });
     const role = (user.role || '').toLowerCase();
     const isAPM = role.includes('apm');
@@ -279,14 +319,15 @@ const AnalyticsFilters = ({ filters, setFilters, user }) => {
 
     // Initialize APM filters if needed
     useEffect(() => {
-        if (isAPM && user.district) {
-            setFilters(prev => ({
-                ...prev,
-                district: user.district,
-                mandal: user.mandal || 'all'
-            }));
+        if (isAPM) {
+            if (user.district && (!selectedDistrict || selectedDistrict === 'all')) {
+                setSelectedDistrict(user.district);
+            }
+            if (user.mandal && (!selectedMandal || selectedMandal === 'all')) {
+                setSelectedMandal(user.mandal);
+            }
         }
-    }, [isAPM, user.district, user.mandal, setFilters]);
+    }, [isAPM, user.district, user.mandal, setSelectedDistrict, setSelectedMandal]);
 
     // Load location logic
     useEffect(() => {
@@ -301,30 +342,30 @@ const AnalyticsFilters = ({ filters, setFilters, user }) => {
     }, []);
 
     useEffect(() => {
-        if (filters.district !== 'all') {
+        if (selectedDistrict && selectedDistrict !== 'all') {
             const loadMandals = async () => {
                 try {
-                    const res = await fetch(`${API_BASE}/api/mandals?district=${filters.district}`);
+                    const res = await fetch(`${API_BASE}/api/mandals?district=${selectedDistrict}`);
                     const data = await res.json();
                     if (data.success) setLocations(prev => ({ ...prev, mandals: data.mandals }));
                 } catch { }
             };
             loadMandals();
         }
-    }, [filters.district]);
+    }, [selectedDistrict]);
 
     useEffect(() => {
-        if (filters.mandal !== 'all') {
+        if (selectedDistrict && selectedDistrict !== 'all' && selectedMandal && selectedMandal !== 'all') {
             const loadVillages = async () => {
                 try {
-                    const res = await fetch(`${API_BASE}/api/villages?mandal=${filters.mandal}&district=${filters.district}`);
+                    const res = await fetch(`${API_BASE}/api/villages?mandal=${selectedMandal}&district=${selectedDistrict}`);
                     const data = await res.json();
                     if (data.success) setLocations(prev => ({ ...prev, villages: data.villages }));
                 } catch { }
             };
             loadVillages();
         }
-    }, [filters.mandal, filters.district]);
+    }, [selectedDistrict, selectedMandal]);
 
     const selectStyle = "w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm font-bold text-white focus:border-indigo-500/50 focus:bg-white/10 outline-none transition-all appearance-none cursor-pointer hover:bg-white/10";
     const labelStyle = "text-[10px] font-black text-indigo-400/60 uppercase tracking-[0.2em] ml-1 mb-2 block";
@@ -338,13 +379,18 @@ const AnalyticsFilters = ({ filters, setFilters, user }) => {
                 <label className={labelStyle}>Month</label>
                 <div className="relative">
                     <select
-                        value={filters.month}
-                        onChange={(e) => setFilters(prev => ({ ...prev, month: e.target.value }))}
+                        value={filterMonth}
+                        onChange={(e) => setFilterMonth(e.target.value)}
                         className={selectStyle}
                     >
-                        {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
-                            <option key={m} value={m} className="bg-[#1a1c4b] text-white">{new Date(0, m - 1).toLocaleString('default', { month: 'long' })}</option>
-                        ))}
+                        {Array.from({ length: 12 }, (_, i) => {
+                            const m = String(i + 1).padStart(2, '0');
+                            return (
+                                <option key={m} value={m} className="bg-[#1a1c4b] text-white">
+                                    {new Date(0, i).toLocaleString('default', { month: 'long' })}
+                                </option>
+                            );
+                        })}
                     </select>
                     <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400/50 pointer-events-none" />
                 </div>
@@ -354,8 +400,8 @@ const AnalyticsFilters = ({ filters, setFilters, user }) => {
                 <label className={labelStyle}>Year</label>
                 <div className="relative">
                     <select
-                        value={filters.year}
-                        onChange={(e) => setFilters(prev => ({ ...prev, year: e.target.value }))}
+                        value={filterYear}
+                        onChange={(e) => setFilterYear(e.target.value)}
                         className={selectStyle}
                     >
                         {[2024, 2025, 2026].map(y => <option key={y} value={y} className="bg-[#1a1c4b] text-white">{y}</option>)}
@@ -371,8 +417,12 @@ const AnalyticsFilters = ({ filters, setFilters, user }) => {
                         <label className={labelStyle}>District</label>
                         <div className="relative">
                             <select
-                                value={filters.district}
-                                onChange={(e) => setFilters(prev => ({ ...prev, district: e.target.value, mandal: 'all', village: 'all' }))}
+                                value={selectedDistrict}
+                                onChange={(e) => {
+                                    setSelectedDistrict(e.target.value);
+                                    setSelectedMandal('all');
+                                    setSelectedVillage('all');
+                                }}
                                 className={selectStyle}
                             >
                                 <option value="all" className="bg-[#1a1c4b] text-white">All Districts</option>
@@ -386,8 +436,11 @@ const AnalyticsFilters = ({ filters, setFilters, user }) => {
                         <label className={labelStyle}>Mandal</label>
                         <div className="relative">
                             <select
-                                value={filters.mandal}
-                                onChange={(e) => setFilters(prev => ({ ...prev, mandal: e.target.value, village: 'all' }))}
+                                value={selectedMandal}
+                                onChange={(e) => {
+                                    setSelectedMandal(e.target.value);
+                                    setSelectedVillage('all');
+                                }}
                                 className={selectStyle}
                             >
                                 <option value="all" className="bg-[#1a1c4b] text-white">All Mandals</option>
@@ -405,7 +458,7 @@ const AnalyticsFilters = ({ filters, setFilters, user }) => {
                         <div>
                             <p className="text-[10px] font-black text-indigo-300/50 uppercase tracking-widest leading-none mb-1">Scope</p>
                             <p className="text-sm font-black text-white truncate max-w-[200px]">
-                                {filters.district} {filters.mandal !== 'all' ? `• ${filters.mandal}` : ''}
+                                {selectedDistrict} {selectedMandal !== 'all' ? `• ${selectedMandal}` : ''}
                             </p>
                         </div>
                     </div>
@@ -416,8 +469,8 @@ const AnalyticsFilters = ({ filters, setFilters, user }) => {
                 <label className={labelStyle}>Village</label>
                 <div className="relative">
                     <select
-                        value={filters.village}
-                        onChange={(e) => setFilters(prev => ({ ...prev, village: e.target.value }))}
+                        value={selectedVillage}
+                        onChange={(e) => setSelectedVillage(e.target.value)}
                         className={selectStyle}
                     >
                         <option value="all" className="bg-[#1a1c4b] text-white">All Villages</option>
@@ -580,7 +633,7 @@ const TrendChart = ({ data }) => {
                 <div className="bg-indigo-600 p-2 rounded-xl shadow-lg">
                     <FileBarChart className="w-5 h-5 text-white" />
                 </div>
-                <h3 className="text-xl font-black text-gray-900 tracking-tight uppercase">Upload Ingestion Trend</h3>
+                <h3 className="text-xl font-black text-gray-900 tracking-tight uppercase">Uploads Trend</h3>
             </div>
 
             <div className="h-[350px] w-full">
@@ -621,7 +674,7 @@ const PaymentTrendChart = ({ data }) => {
                     <div className="bg-indigo-600 p-2 rounded-xl shadow-lg">
                         <TrendingUp className="w-5 h-5 text-white" />
                     </div>
-                    <h3 className="text-xl font-black text-gray-900 tracking-tight uppercase">Financial Performance Trend</h3>
+                    <h3 className="text-xl font-black text-gray-900 tracking-tight uppercase">Financial Performance</h3>
                 </div>
                 <div className="flex flex-wrap gap-4">
                     {[
@@ -690,8 +743,8 @@ const UnifiedDistributionCard = ({ data, activeMetric, level }) => {
                     <PieChartIcon className="w-4 h-4 text-white" />
                 </div>
                 <div>
-                    <h3 className="text-sm font-black text-gray-900 tracking-tight uppercase leading-none">Geographic Pulse</h3>
-                    <p className="text-[8px] font-bold text-gray-400 uppercase tracking-widest mt-1">Consolidated Distributions</p>
+                    <h3 className="text-sm font-black text-gray-900 tracking-tight uppercase leading-none">Finance Contribution</h3>
+                    <p className="text-[8px] font-bold text-gray-400 uppercase tracking-widest mt-1">Contribution of Finance</p>
                 </div>
             </div>
 
@@ -794,7 +847,8 @@ const DistributionCharts = ({ summary }) => {
     const conversionData = [
         { name: 'Done', value: summary.conversion.converted, color: '#8b5cf6' },
         { name: 'Failed', value: summary.conversion.failed, color: '#ef4444' },
-        { name: 'Pending', value: summary.conversion.pending, color: '#94a3b8' }
+        { name: 'Pending', value: summary.conversion.pending, color: '#94a3b8' },
+        { name: 'Processing', value: summary.conversion.processing, color: '#06b6d4' }
     ];
 
     return (
@@ -831,7 +885,7 @@ const DistributionCharts = ({ summary }) => {
                 </div>
 
                 <div className="space-y-4">
-                    <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest text-center">Digital Integrity</h4>
+                    <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest text-center">Conversion Status</h4>
                     <div className="h-44">
                         <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
@@ -896,6 +950,7 @@ const RowStats = ({ stats }) => (
                     <span className="text-purple-600 bg-purple-50 px-2 py-0.5 rounded-lg">{stats?.conversion?.converted || 0}C</span>
                     <span className="text-rose-500 bg-red-50 px-2 py-0.5 rounded-lg">{stats?.conversion?.failed || 0}F</span>
                     <span className="text-gray-400 bg-gray-50 px-2 py-0.5 rounded-lg">{stats?.conversion?.pending || 0}P</span>
+                    <span className="text-cyan-600 bg-cyan-50 px-2 py-0.5 rounded-lg">{stats?.conversion?.processing || 0}Pr</span>
                 </div>
             </div>
         </td>
@@ -944,11 +999,6 @@ const HierarchicalRow = ({ item, level = 0 }) => {
                     </div>
                 </td>
                 <RowStats stats={item.stats} />
-                <td className="px-8 py-6 text-right">
-                    <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${(item.stats?.uploads?.pending || 0) === 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                        {(item.stats?.uploads?.pending || 0) === 0 ? 'Optimal' : 'Active'}
-                    </span>
-                </td>
             </tr>
             {hasChildren && isExpanded && item.children.map(child => (
                 <HierarchicalRow key={child.id} item={child} level={level + 1} />
@@ -961,7 +1011,7 @@ const DetailedTable = ({ data, loading }) => {
     return (
         <div className="bg-white/80 backdrop-blur-md rounded-[32px] shadow-lg border border-white/20 overflow-hidden">
             <div className="p-8 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                <h3 className="text-lg font-black text-gray-900 uppercase tracking-tight">Performance Hierarchy (APM &gt; CC &gt; VO)</h3>
+                <h3 className="text-lg font-black text-gray-900 uppercase tracking-tight">Users</h3>
                 <div className="flex items-center gap-3">
                     <div className="flex items-center bg-white p-1.5 rounded-2xl border border-gray-200 shadow-sm">
                         <Users className="w-4 h-4 text-indigo-600 ml-2 mr-2" />
@@ -977,8 +1027,7 @@ const DetailedTable = ({ data, loading }) => {
                             <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-left">User (Hierarchy)</th>
                             <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-center">Uploads (U/P/T)</th>
                             <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-center">Approved (A/R/P)</th>
-                            <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-center">Conversion (C/F/P)</th>
-                            <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-right">Status</th>
+                            <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-center">Conversion (C/F/P/Pr)</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 bg-white">

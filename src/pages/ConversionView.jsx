@@ -15,31 +15,26 @@ import {
     Eye,
     RefreshCw,
     Loader2,
-    Filter
+    Filter,
+    X
 } from 'lucide-react';
 import { API_BASE } from '../utils/apiConfig';
 import SHGTableDetail from './SHGTableDetail';
 
-const ConversionView = ({ userId, userName, onClose }) => {
+const ConversionView = ({ userId, userName, filterProps, onClose }) => {
+    const { filterMonth, setFilterMonth, filterYear, setFilterYear } = filterProps;
     const [loading, setLoading] = useState(true);
     const [summary, setSummary] = useState({ pending: 0, processing: 0, completed: 0, failed: 0, total: 0 });
     const [results, setResults] = useState({ success: [], failed: [] });
     const [activeFolder, setActiveFolder] = useState('success');
     const [searchTerm, setSearchTerm] = useState('');
-    const [selectedSHG, setSelectedSHG] = useState(() => {
-        try {
-            const saved = localStorage.getItem('selectedSHG');
-            return saved ? JSON.parse(saved) : null;
-        } catch {
-            return null;
-        }
-    });
+    const [debouncedSearch, setDebouncedSearch] = useState('');
+    const [selectedSHG, setSelectedSHG] = useState(null);
     const [refreshing, setRefreshing] = useState(false);
+    const [previewImage, setPreviewImage] = useState(null);
 
-    // Month and Year filtering
-    // Month and Year filtering
-    const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
-    const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+
+    // Month and Year filtering are now provided via filterProps
 
     // Pagination State
     const [currentPage, setCurrentPage] = useState(1);
@@ -50,18 +45,24 @@ const ConversionView = ({ userId, userName, onClose }) => {
         if (showLoading) setLoading(true);
         try {
             const token = localStorage.getItem('token');
-            const params = new URLSearchParams({
-                month: selectedMonth,
-                year: selectedYear,
+            const statusParams = new URLSearchParams({
+                month: filterMonth,
+                year: filterYear
+            }).toString();
+
+            const resultsParams = new URLSearchParams({
+                month: filterMonth,
+                year: filterYear,
                 page: currentPage,
-                limit: limit
+                limit: limit,
+                search: debouncedSearch
             }).toString();
 
             const [statusRes, resultsRes] = await Promise.all([
-                fetch(`${API_BASE}/api/conversion/status/${userId}?${params}`, {
+                fetch(`${API_BASE}/api/conversion/status/${userId}?${statusParams}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 }),
-                fetch(`${API_BASE}/api/conversion/results/${userId}?${params}`, {
+                fetch(`${API_BASE}/api/conversion/results/${userId}?${resultsParams}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 })
             ]);
@@ -90,7 +91,7 @@ const ConversionView = ({ userId, userName, onClose }) => {
             if (showLoading) setLoading(false);
             setRefreshing(false);
         }
-    }, [userId, selectedMonth, selectedYear, currentPage, limit, activeFolder]);
+    }, [userId, filterMonth, filterYear, currentPage, limit, activeFolder, debouncedSearch]);
 
     useEffect(() => {
         if (selectedSHG) {
@@ -100,13 +101,44 @@ const ConversionView = ({ userId, userName, onClose }) => {
         }
     }, [selectedSHG]);
 
+    // Debounce search term
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearch(searchTerm);
+        }, 500);
+        return () => clearTimeout(timer);
+    }, [searchTerm]);
+
     useEffect(() => {
         fetchStatus(true);
         const interval = setInterval(() => {
             fetchStatus();
-        }, 5000);
+        }, 12000); // Further increased polling interval
         return () => clearInterval(interval);
     }, [fetchStatus]);
+
+    // Reset pagination when search or folder changes
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [debouncedSearch, activeFolder]);
+
+    // Handle Scroll Position Persistence
+    useEffect(() => {
+        const handleScroll = () => {
+            sessionStorage.setItem('conversionViewScrollPos', window.scrollY);
+        };
+        window.addEventListener('scroll', handleScroll);
+
+        // Restore scroll position
+        const savedScrollPos = sessionStorage.getItem('conversionViewScrollPos');
+        if (savedScrollPos) {
+            window.scrollTo({ top: parseInt(savedScrollPos), behavior: 'instant' });
+        }
+
+        return () => window.removeEventListener('scroll', handleScroll);
+    }, []);
+
+
 
 
     const handleRetryAll = async () => {
@@ -184,19 +216,22 @@ const ConversionView = ({ userId, userName, onClose }) => {
         }
     };
 
-    const filteredResults = results[activeFolder].filter(item => {
-        const matchesSearch = item.shgName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            item.shgID?.toLowerCase().includes(searchTerm.toLowerCase());
+    const filteredResults = results[activeFolder];
 
-        return matchesSearch;
-    });
     const getSidebarCount = (folder) => {
-        return results[folder].length;
+        return folder === 'success' ? summary.completed : summary.failed;
     };
 
     if (selectedSHG) {
-        return <SHGTableDetail uploadId={selectedSHG.uploadId} shgName={selectedSHG.shgName} onBack={() => setSelectedSHG(null)} />;
+        return (
+            <SHGTableDetail
+                uploadId={selectedSHG.uploadId}
+                shgName={selectedSHG.shgName}
+                onBack={() => setSelectedSHG(null)}
+            />
+        );
     }
+
 
     return (
         <div className="min-h-screen bg-white rounded-3xl shadow-xl p-6 lg:p-8 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -232,7 +267,7 @@ const ConversionView = ({ userId, userName, onClose }) => {
                 {/* Status Dashboard */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
                     {[
-                        { label: 'Completed', count: summary.completed, icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+                        { label: 'Success', count: summary.completed, icon: CheckCircle, color: 'text-emerald-600', bg: 'bg-emerald-50' },
                         { label: 'Failed', count: summary.failed, icon: XCircle, color: 'text-red-600', bg: 'bg-red-50' },
                         { label: 'Processing', count: summary.processing, icon: RotateCw, color: 'text-indigo-600', bg: 'bg-indigo-50', animate: summary.processing > 0 },
                         { label: 'In Queue', count: summary.pending, icon: Clock, color: 'text-amber-600', bg: 'bg-amber-50' }
@@ -320,15 +355,18 @@ const ConversionView = ({ userId, userName, onClose }) => {
                         <div className="flex gap-4">
                             <div className="relative group min-w-[140px]">
                                 <select
-                                    value={selectedMonth}
-                                    onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+                                    value={filterMonth}
+                                    onChange={(e) => setFilterMonth(e.target.value)}
                                     className="w-full appearance-none bg-white/90 backdrop-blur-md border-2 border-gray-200 rounded-[20px] px-6 py-4 focus:outline-none focus:border-indigo-500 shadow-lg transition-all font-bold text-gray-700"
                                 >
-                                    {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                                        <option key={m} value={m}>
-                                            {new Date(0, m - 1).toLocaleString('default', { month: 'short' })}
-                                        </option>
-                                    ))}
+                                    {Array.from({ length: 12 }, (_, i) => {
+                                        const m = String(i + 1).padStart(2, '0');
+                                        return (
+                                            <option key={m} value={m}>
+                                                {new Date(0, i).toLocaleString('default', { month: 'short' })}
+                                            </option>
+                                        );
+                                    })}
                                 </select>
                                 <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-hover:text-indigo-500 transition-colors">
                                     <Filter size={16} />
@@ -337,8 +375,8 @@ const ConversionView = ({ userId, userName, onClose }) => {
 
                             <div className="relative group min-w-[110px]">
                                 <select
-                                    value={selectedYear}
-                                    onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                                    value={filterYear}
+                                    onChange={(e) => setFilterYear(e.target.value)}
                                     className="w-full appearance-none bg-white/90 backdrop-blur-md border-2 border-gray-200 rounded-[20px] px-6 py-4 focus:outline-none focus:border-indigo-500 shadow-lg transition-all font-bold text-gray-700"
                                 >
                                     {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i).map((y) => (
@@ -455,10 +493,18 @@ const ConversionView = ({ userId, userName, onClose }) => {
                                                 {activeFolder === 'success' ? (
                                                     <>
                                                         <button
-                                                            onClick={() => setSelectedSHG(item)}
-                                                            className="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-black text-xs hover:bg-indigo-600 hover:text-white transition-all flex items-center justify-center gap-2 shadow-sm"
+                                                            onClick={() => setPreviewImage({ url: item.s3Url, name: item.shgName })}
+                                                            className="px-3 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-black text-xs hover:bg-indigo-600 hover:text-white transition-all flex items-center justify-center gap-2 shadow-sm"
+                                                            title="View original image"
                                                         >
                                                             <Eye className="w-4 h-4" />
+                                                            View
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setSelectedSHG(item)}
+                                                            className="px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl font-black text-xs hover:bg-emerald-600 hover:text-white transition-all flex items-center justify-center gap-2 shadow-sm"
+                                                        >
+                                                            <FileCheck className="w-4 h-4" />
                                                             View Table
                                                         </button>
                                                         <button
@@ -472,6 +518,14 @@ const ConversionView = ({ userId, userName, onClose }) => {
                                                     </>
                                                 ) : (
                                                     <>
+                                                        <button
+                                                            onClick={() => setPreviewImage({ url: item.s3Url, name: item.shgName })}
+                                                            className="px-3 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-black text-xs hover:bg-indigo-600 hover:text-white transition-all flex items-center justify-center gap-2 shadow-sm"
+                                                            title="View original image"
+                                                        >
+                                                            <Eye className="w-4 h-4" />
+                                                            View
+                                                        </button>
                                                         <button
                                                             onClick={() => handleRetrySingle(item.id)}
                                                             className="px-4 py-2 bg-red-50 text-red-600 rounded-xl font-black text-xs hover:bg-red-600 hover:text-white transition-all flex items-center justify-center gap-2 shadow-sm"
@@ -496,6 +550,7 @@ const ConversionView = ({ userId, userName, onClose }) => {
                                     </div>
                                 ))}
                             </div>
+
                         )}
 
                         {/* PAGINATION CONTROLS */}
@@ -523,6 +578,66 @@ const ConversionView = ({ userId, userName, onClose }) => {
                     </div>
                 </div>
             </div>
+
+            {/* Image Preview Modal */}
+            {previewImage && (
+                <div
+                    className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-black/90 backdrop-blur-md animate-in fade-in duration-300"
+                    onClick={() => setPreviewImage(null)}
+                >
+                    <div
+                        className="relative w-full max-w-5xl bg-white rounded-[32px] overflow-hidden shadow-2xl flex flex-col max-h-[95vh] animate-in zoom-in-95 duration-300"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {/* Close Button UI - Top Right */}
+                        <button
+                            onClick={() => setPreviewImage(null)}
+                            className="absolute top-6 right-6 z-10 p-3 bg-white/80 hover:bg-red-50 text-gray-900 hover:text-red-600 rounded-2xl transition-all shadow-xl backdrop-blur-md border border-gray-100 group"
+                        >
+                            <X size={24} className="group-hover:rotate-90 transition-transform duration-300" />
+                        </button>
+
+                        {/* Unified Scrollable Container */}
+                        <div className="flex-1 overflow-y-auto bg-gray-50 min-h-0">
+                            <div className="pt-12 pb-12 px-6 sm:px-12 flex flex-col items-center sm:items-start text-center sm:text-left">
+                                {/* Modal Header Information */}
+                                <div className="mb-8 w-full pr-12">
+                                    <h3 className="text-2xl font-black text-gray-900 tracking-tight leading-tight">
+                                        Original Record Image
+                                    </h3>
+                                    <div className="mt-2 flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                                        <span className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-[10px] font-black uppercase tracking-widest">
+                                            SHG Record
+                                        </span>
+                                        <p className="text-sm font-bold text-gray-500">
+                                            Name: <span className="text-indigo-600">{previewImage.name}</span>
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {/* Image Container */}
+                                <div className="w-full h-auto flex flex-col items-center">
+                                    {previewImage.url ? (
+                                        <div className="w-full rounded-2xl overflow-hidden shadow-2xl border-4 border-white bg-white">
+                                            <img
+                                                src={previewImage.url}
+                                                alt="Original Record"
+                                                className="w-full h-auto block"
+                                            />
+                                        </div>
+                                    ) : (
+                                        <div className="text-center p-12 bg-white rounded-3xl w-full border border-gray-100 shadow-sm">
+                                            <AlertCircle className="w-16 h-16 text-amber-500 mx-auto mb-4" />
+                                            <p className="text-gray-900 font-black uppercase tracking-widest text-sm">Image not available</p>
+                                            <p className="text-gray-500 text-xs mt-2">The S3 URL could not be generated for this record.</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

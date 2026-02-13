@@ -113,8 +113,11 @@ export default function DocumentHistory({ onClose }) {
     // Normalize URL into a single field for convenience
     const url = upload.url || upload.s3Url || upload.metadata?.s3Url || upload.metadata?.url || upload.url;
 
-    // If no direct URL (private S3 object), attempt to fetch a presigned URL from backend
-    if (!url && upload._id) {
+    // Detect if this is a direct S3 link without a signature
+    const isS3Direct = (u) => u && typeof u === 'string' && u.includes('amazonaws.com') && !u.includes('X-Amz-Signature');
+
+    // If no direct URL or it's a private S3 object, attempt to fetch a presigned URL from backend
+    if ((!url || isS3Direct(url)) && upload._id) {
       try {
         const token = localStorage.getItem('token');
         const resp = await fetch(`${API_BASE}/api/uploads/${upload._id}/presign`, {

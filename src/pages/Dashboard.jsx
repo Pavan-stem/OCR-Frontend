@@ -33,7 +33,7 @@ const AdminDashboard = () => {
     try {
       const user = JSON.parse(localStorage.getItem('user'));
       const role = (user?.role || '').toLowerCase();
-      if (role.includes('admin - apm') || role.includes('admin - cc')) {
+      if (role === 'admin - apm') {
         return user.district || 'all';
       }
       return sessionStorage.getItem('dashboardSelectedDistrict') || 'all';
@@ -45,7 +45,7 @@ const AdminDashboard = () => {
     try {
       const user = JSON.parse(localStorage.getItem('user'));
       const role = (user?.role || '').toLowerCase();
-      if (role.includes('admin - apm') || role.includes('admin - cc')) {
+      if (role === 'admin - apm') {
         return user.mandal || 'all';
       }
       return sessionStorage.getItem('dashboardSelectedMandal') || 'all';
@@ -58,6 +58,20 @@ const AdminDashboard = () => {
   const [selectedUserId, setSelectedUserId] = useState(() => localStorage.getItem('selectedUserId') || null);
   const [selectedUserName, setSelectedUserName] = useState(() => localStorage.getItem('selectedUserName') || '');
 
+  // Centralized time and search filters
+  const now = new Date();
+  const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
+  const currentYear = String(now.getFullYear());
+  const [filterMonth, setFilterMonth] = useState(() => {
+    const saved = sessionStorage.getItem('dashboardFilterMonth');
+    if (saved && !isNaN(saved) && saved.length > 0) {
+      return saved.padStart(2, '0');
+    }
+    return currentMonth;
+  });
+  const [filterYear, setFilterYear] = useState(() => sessionStorage.getItem('dashboardFilterYear') || currentYear);
+  const [searchTerm, setSearchTerm] = useState(() => sessionStorage.getItem('dashboardSearchTerm') || '');
+
   // Initial location setup based on role
   useEffect(() => {
     try {
@@ -65,7 +79,7 @@ const AdminDashboard = () => {
       if (storedUser) {
         const user = JSON.parse(storedUser);
         const role = (user?.role || '').toLowerCase();
-        if (role.includes('admin - apm') || role.includes('admin - cc')) {
+        if (role === 'admin - apm') {
           if (user.district) setSelectedDistrict(user.district);
           if (user.mandal) setSelectedMandal(user.mandal);
         }
@@ -157,6 +171,18 @@ const AdminDashboard = () => {
     sessionStorage.setItem('dashboardSelectedVillage', selectedVillage);
   }, [selectedVillage]);
 
+  useEffect(() => {
+    sessionStorage.setItem('dashboardFilterMonth', filterMonth);
+  }, [filterMonth]);
+
+  useEffect(() => {
+    sessionStorage.setItem('dashboardFilterYear', filterYear);
+  }, [filterYear]);
+
+  useEffect(() => {
+    sessionStorage.setItem('dashboardSearchTerm', searchTerm);
+  }, [searchTerm]);
+
   // Check if user is Admin and redirect if not
   useEffect(() => {
     if (userRole && !isAdmin(userRole)) {
@@ -187,7 +213,13 @@ const AdminDashboard = () => {
     setSelectedUserId,
     setSelectedUserName,
     setActiveTab,
-    userRole
+    userRole,
+    filterMonth,
+    setFilterMonth,
+    filterYear,
+    setFilterYear,
+    searchTerm,
+    setSearchTerm
   };
 
 
@@ -200,13 +232,13 @@ const AdminDashboard = () => {
       case 'users':
         return isDev || userRole.toLowerCase().includes('admin') ? <UsersTab filterProps={filterProps} /> : <DashboardTab filterProps={filterProps} />;
       case 'conversion':
-        return <ConversionView userId={selectedUserId} userName={selectedUserName} onClose={() => setActiveTab('users')} />;
+        return <ConversionView userId={selectedUserId} userName={selectedUserName} filterProps={filterProps} onClose={() => setActiveTab('users')} />;
       case 'validation':
 
         return isDev ? <OCRValidationTab /> : <DashboardTab filterProps={filterProps} />;
       case 'analytics':
         const isPrivileged = isDev || userRole.toLowerCase().includes('admin');
-        return isPrivileged ? <AnalyticsPage /> : <DashboardTab filterProps={filterProps} />;
+        return isPrivileged ? <AnalyticsPage filterProps={filterProps} /> : <DashboardTab filterProps={filterProps} />;
       case 'hierarchy':
         return isDev || userRole.toLowerCase().includes('admin') ? <HierarchyTab /> : <DashboardTab filterProps={filterProps} />;
       case 'settings':

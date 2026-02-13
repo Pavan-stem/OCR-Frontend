@@ -5,7 +5,20 @@ import { API_BASE } from '../utils/apiConfig';
 
 // DashboardTab Component with Server Status and Location Loading
 const DashboardTab = ({ filterProps }) => {
-  const { selectedDistrict, setSelectedDistrict, selectedMandal, setSelectedMandal, selectedVillage, setSelectedVillage, serverStatus, userRole } = filterProps;
+  const {
+    selectedDistrict,
+    setSelectedDistrict,
+    selectedMandal,
+    setSelectedMandal,
+    selectedVillage,
+    setSelectedVillage,
+    serverStatus,
+    userRole,
+    filterMonth,
+    setFilterMonth,
+    filterYear,
+    setFilterYear
+  } = filterProps;
 
   // Location data states
   const [districts, setDistricts] = useState([]);
@@ -19,9 +32,7 @@ const DashboardTab = ({ filterProps }) => {
   const [hoveredDistrict, setHoveredDistrict] = useState(null);
   const [tooltipPos, setTooltipPos] = useState({ x: -1, y: -1 });
 
-  // Month and Year filtering
-  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  // Month and Year filtering are now provided via filterProps
 
   // Handle auto-fill for restricted roles
   useEffect(() => {
@@ -172,8 +183,8 @@ const DashboardTab = ({ filterProps }) => {
         if (selectedDistrict !== 'all') params.append('district', selectedDistrict);
         if (selectedMandal !== 'all') params.append('mandal', selectedMandal);
         if (selectedVillage !== 'all') params.append('village', selectedVillage);
-        params.append('month', selectedMonth);
-        params.append('year', selectedYear);
+        params.append('month', filterMonth);
+        params.append('year', filterYear);
         if (params.toString()) uploadsUrl += `?${params.toString()}`;
 
         const [usersResponse, uploadsResponse] = await Promise.all([
@@ -216,13 +227,13 @@ const DashboardTab = ({ filterProps }) => {
     if (serverStatus.active) {
       loadStats();
     }
-  }, [serverStatus.active, selectedDistrict, selectedMandal, selectedVillage, selectedMonth, selectedYear]);
+  }, [serverStatus.active, selectedDistrict, selectedMandal, selectedVillage, filterMonth, filterYear]);
 
   const performanceTitle =
     selectedVillage !== 'all' ? 'Village Performance' :
       selectedMandal !== 'all' ? 'Mandal Performance' :
         selectedDistrict !== 'all' ? 'District Performance' :
-          'Overall Performance';
+          'State Performance';
 
   return (
     <div className="relative overflow-x-hidden min-h-screen">
@@ -335,7 +346,7 @@ const DashboardTab = ({ filterProps }) => {
               </div>
               <div>
                 <h3 className="text-lg sm:text-xl font-black text-gray-900 leading-tight">Data Analytics Filters</h3>
-                <p className="text-[10px] sm:text-sm text-gray-500 font-medium whitespace-nowrap overflow-hidden text-ellipsis">Refine statistics by time and location</p>
+                <p className="text-[10px] sm:text-sm text-gray-500 font-medium whitespace-nowrap overflow-hidden text-ellipsis">Filter statistics by time and location</p>
               </div>
             </div>
           </div>
@@ -347,15 +358,18 @@ const DashboardTab = ({ filterProps }) => {
                 <label className="text-sm font-bold text-gray-700 ml-1">Select Month</label>
                 <div className="relative group">
                   <select
-                    value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+                    value={filterMonth}
+                    onChange={(e) => setFilterMonth(e.target.value)}
                     className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 group-hover:bg-white"
                   >
-                    {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
-                      <option key={m} value={m}>
-                        {new Date(0, m - 1).toLocaleString('default', { month: 'long' })}
-                      </option>
-                    ))}
+                    {Array.from({ length: 12 }, (_, i) => {
+                      const m = String(i + 1).padStart(2, '0');
+                      return (
+                        <option key={m} value={m}>
+                          {new Date(0, i).toLocaleString('default', { month: 'long' })}
+                        </option>
+                      );
+                    })}
                   </select>
                   <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-hover:text-indigo-500 transition-colors">
                     <Filter className="w-4 h-4" />
@@ -367,8 +381,8 @@ const DashboardTab = ({ filterProps }) => {
                 <label className="text-xs sm:text-sm font-bold text-gray-700 ml-1">Select Year</label>
                 <div className="relative group">
                   <select
-                    value={selectedYear}
-                    onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                    value={filterYear}
+                    onChange={(e) => setFilterYear(e.target.value)}
                     className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-xl sm:rounded-2xl px-4 sm:px-5 py-2.5 sm:py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 group-hover:bg-white text-sm sm:text-base"
                   >
                     {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i).map((y) => (
@@ -498,7 +512,7 @@ const DashboardTab = ({ filterProps }) => {
                 <div className="bg-blue-600 p-2 rounded-xl shadow-lg">
                   <BarChart className="w-5 h-5 text-white" />
                 </div>
-                <h3 className="text-xl font-black text-gray-900 leading-tight">Upload Trends</h3>
+                <h3 className="text-xl font-black text-gray-900 leading-tight">Upload Dates</h3>
               </div>
               <div className="flex bg-gray-100 p-1 rounded-xl sm:rounded-2xl self-start">
                 {[10, 15, 30].map((days) => (

@@ -11,9 +11,11 @@ const OCRValidationTab = () => {
   const [viewMode, setViewMode] = useState('original'); // 'original' or 'digitized'
   const [dragActive, setDragActive] = useState(false);
   const [activeCell, setActiveCell] = useState(null);
-  const [showCellDetails, setShowCellDetails] = useState(true);
+  const [showCellDetails, setShowCellDetails] = useState(false);
+  const [developerMode, setDeveloperMode] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(null);
   const [downloading, setDownloading] = useState(false);
+
 
   const handleDrag = (e) => {
     e.preventDefault();
@@ -253,26 +255,29 @@ const OCRValidationTab = () => {
           </div>
         </div>
 
-        <div className="flex items-center justify-end mb-4">
-          <p className="text-xs font-bold text-gray-900 mr-2">Debug Cell details:</p>
-          <button
-            onClick={() => setShowCellDetails(!showCellDetails)}
-            className="flex items-center gap-1 px-2 py-1 text-xs font-bold text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors"
-            title={showCellDetails ? "Hide panel" : "Show panel"}
-          >
-            {showCellDetails ? (
-              <>
-                <EyeOff className="w-3 h-3" />
-                Hide
-              </>
-            ) : (
-              <>
-                <Eye className="w-3 h-3" />
-                Show
-              </>
-            )}
-          </button>
-        </div>
+        {developerMode && (
+          <div className="flex items-center justify-end mb-4">
+            <p className="text-xs font-bold text-gray-900 mr-2">Debug Cell details:</p>
+            <button
+              onClick={() => setShowCellDetails(!showCellDetails)}
+              className="flex items-center gap-1 px-2 py-1 text-xs font-bold text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 transition-colors"
+              title={showCellDetails ? "Hide panel" : "Show panel"}
+            >
+              {showCellDetails ? (
+                <>
+                  <EyeOff className="w-3 h-3" />
+                  Hide
+                </>
+              ) : (
+                <>
+                  <Eye className="w-3 h-3" />
+                  Show
+                </>
+              )}
+            </button>
+          </div>
+        )}
+
 
         <div className="lg:grid-cols-4 gap-6 relative">
           <div className="width-full overflow-x-auto">
@@ -341,11 +346,12 @@ const OCRValidationTab = () => {
                             <div className={`font-medium break-words ${isActive ? 'text-indigo-900' : 'text-gray-900'} ${isLeftAligned ? 'text-left' : 'text-center'}`}>
                               {cell.text || '-'}
                             </div>
-                            {cell.confidence !== undefined && cell.confidence > 0 && (
+                            {developerMode && cell.confidence !== undefined && cell.confidence > 0 && (
                               <div className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${getConfidenceColor(cell.confidence)} `}>
                                 {(cell.confidence * 100).toFixed(0)}%
                               </div>
                             )}
+
                           </div>
                         </td>
                       );
@@ -427,18 +433,25 @@ const OCRValidationTab = () => {
                         <p className="text-xl font-black text-indigo-900 break-words">{activeCell.text || 'Empty'}</p>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="bg-gray-50 rounded-xl p-3">
-                          <p className="text-[10px] font-bold text-gray-400 uppercase">Confidence</p>
-                          <p className={`text-lg font-black ${activeCell.confidence >= 0.7 ? 'text-green-600' : 'text-red-600'}`}>
-                            {(activeCell.confidence * 100).toFixed(1)}%
-                          </p>
+                      {developerMode ? (
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="bg-gray-50 rounded-xl p-3">
+                            <p className="text-[10px] font-bold text-gray-400 uppercase">Confidence</p>
+                            <p className={`text-lg font-black ${activeCell.confidence >= 0.7 ? 'text-green-600' : 'text-red-600'}`}>
+                              {(activeCell.confidence * 100).toFixed(1)}%
+                            </p>
+                          </div>
+                          <div className="bg-gray-50 rounded-xl p-3">
+                            <p className="text-[10px] font-bold text-gray-400 uppercase">Debug ID</p>
+                            <p className="text-lg font-black text-gray-900">#{activeCell.debug_id ?? 'N/A'}</p>
+                          </div>
                         </div>
-                        <div className="bg-gray-50 rounded-xl p-3">
-                          <p className="text-[10px] font-bold text-gray-400 uppercase">Debug ID</p>
-                          <p className="text-lg font-black text-gray-900">#{activeCell.debug_id ?? 'N/A'}</p>
+                      ) : (
+                        <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100">
+                          <p className="text-xs text-gray-500 font-medium">Diagnostic information is hidden</p>
                         </div>
-                      </div>
+                      )}
+
                     </div>
                   </div>
                 ) : (
@@ -454,31 +467,49 @@ const OCRValidationTab = () => {
           )}
         </div>
 
-        <div className="mt-4 flex items-center gap-4 text-xs text-gray-500">
-          <span className="flex items-center gap-1">
-            <div className="w-3 h-3 rounded-full bg-green-500"></div>
-            High Confidence (≥90%)
-          </span>
-          <span className="flex items-center gap-1">
-            <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-            Medium (70-90%)
-          </span>
-          <span className="flex items-center gap-1">
-            <div className="w-3 h-3 rounded-full bg-red-500"></div>
-            Low (&lt;70%)
-          </span>
-        </div>
+        {developerMode && (
+          <div className="mt-4 flex items-center gap-4 text-xs text-gray-500">
+            <span className="flex items-center gap-1">
+              <div className="w-3 h-3 rounded-full bg-green-500"></div>
+              High Confidence (≥90%)
+            </span>
+            <span className="flex items-center gap-1">
+              <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+              Medium (70-90%)
+            </span>
+            <span className="flex items-center gap-1">
+              <div className="w-3 h-3 rounded-full bg-red-500"></div>
+              Low (&lt;70%)
+            </span>
+          </div>
+        )}
+
       </div >
     );
   };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div>
-        <h2 className="text-3xl font-black text-gray-900 tracking-tight">OCR Validation Engine</h2>
-        <p className="text-sm text-gray-500 font-bold mt-1 uppercase tracking-wider">
-          Upload SHG form images for OCR processing and validation
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-3xl font-black text-gray-900 tracking-tight">OCR Validation Engine</h2>
+          <p className="text-sm text-gray-500 font-bold mt-1 uppercase tracking-wider">
+            Upload SHG form images for OCR processing and validation
+          </p>
+        </div>
+        <button
+          onClick={() => {
+            const newVal = !developerMode;
+            setDeveloperMode(newVal);
+            if (!newVal) setShowCellDetails(false);
+          }}
+          className={`px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-widest transition-all ${developerMode
+            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200'
+            : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+            }`}
+        >
+          {developerMode ? 'Developer Mode: ON' : 'Developer Mode: OFF'}
+        </button>
       </div>
 
       {/* Upload Area */}

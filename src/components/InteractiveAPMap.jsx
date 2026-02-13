@@ -138,7 +138,11 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
                 }
             }
         });
-        return minOrientDist < 1200 ? bestDistrict : null;
+        const finalMatch = minOrientDist < 1200 ? bestDistrict : null;
+        if (!finalMatch && cat !== 'BORDER') {
+            // console.log("Path classification failed for:", fill, tx, ty);
+        }
+        return finalMatch;
     }, [manualMapping, getColorCategory, DISTRICT_CENTROIDS, hexToRgb]);
 
     const updateMapping = useCallback((newMapping) => {
@@ -170,14 +174,27 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
             const paths = svgRef.current.querySelectorAll('path');
             paths.forEach(p => p.removeAttribute('data-selected'));
         }
+        console.log("zoomToDistrict called for:", district);
         if (!district) {
             setViewBox("0 0 3509 2482");
             return;
         }
+        // Increased timeout to 150ms to ensure SVG is layouted and getBBox is reliable
         setTimeout(() => {
             const container = svgRef.current;
-            if (!container) return;
+            if (!container) {
+                console.warn("zoomToDistrict: container is null");
+                return;
+            }
+            // Target the actual SVG element as well as its paths
+            const svgEl = container.querySelector('svg');
+            if (!svgEl) {
+                console.warn("zoomToDistrict: svgEl not found");
+                return;
+            }
+
             const paths = Array.from(container.querySelectorAll('path'));
+            console.log(`zoomToDistrict: found ${paths.length} paths`);
 
             const components = [];
             paths.forEach(p => {
@@ -209,6 +226,8 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
                     p.removeAttribute('data-selected');
                 }
             });
+
+            console.log(`zoomToDistrict: found ${components.length} components for ${district}`);
 
             if (components.length > 0) {
                 // Determine Principal Landmass (the largest path)
@@ -247,9 +266,11 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
                 }
 
                 setViewBox(`${centerX - viewWidth / 2} ${centerY - viewHeight / 2} ${viewWidth} ${viewHeight}`);
+                // Proactively set the attribute as well to bypass React lifecycle delays for the SVG element
+                svgEl.setAttribute('viewBox', `${centerX - viewWidth / 2} ${centerY - viewHeight / 2} ${viewWidth} ${viewHeight}`);
             }
-        }, 50);
-    }, [classifyPath, editMode]); // Added editMode to dependencies
+        }, 150);
+    }, [classifyPath, editMode]);
 
     useEffect(() => {
         if (svgRef.current) {
@@ -282,7 +303,7 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
         const loadSvg = async () => {
             try {
                 setLoading(true);
-                const response = await fetch('/Test/ap-districts-map.svg');
+                const response = await fetch('/ap-districts-map.svg');
                 if (!response.ok) throw new Error('Failed to load map data');
                 let text = await response.text();
                 // Inject SVG Filters for unifying fragmented regions and creating outlines
@@ -1055,7 +1076,7 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
                             {/* Digital Conversion Section */}
                             <div className="bg-purple-50 rounded-2xl p-5">
                                 <h4 className="text-xs font-black text-purple-900 uppercase mb-3">Digital Conversion</h4>
-                                <div className="grid grid-cols-2 gap-3">
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                                     <div className="bg-white/80 p-3 rounded-xl">
                                         <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Converted</span>
                                         <span className="text-lg font-black text-purple-600">{summary[selectedDistrict]?.converted || 0}</span>
@@ -1063,6 +1084,14 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
                                     <div className="bg-white/80 p-3 rounded-xl">
                                         <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Failed</span>
                                         <span className="text-lg font-black text-red-600">{summary[selectedDistrict]?.failed || 0}</span>
+                                    </div>
+                                    <div className="bg-white/80 p-3 rounded-xl">
+                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Pending</span>
+                                        <span className="text-lg font-black text-amber-600">{summary[selectedDistrict]?.convPending || 0}</span>
+                                    </div>
+                                    <div className="bg-white/80 p-3 rounded-xl">
+                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Proc.</span>
+                                        <span className="text-lg font-black text-cyan-600">{summary[selectedDistrict]?.convProcessing || 0}</span>
                                     </div>
                                 </div>
                             </div>
@@ -1141,7 +1170,7 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
                             {/* State Level Digital Conversion Section */}
                             <div className="bg-purple-50 rounded-2xl p-5">
                                 <h4 className="text-xs font-black text-purple-900 uppercase mb-3">Statewide Digital Conversion</h4>
-                                <div className="grid grid-cols-2 gap-3">
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                                     <div className="bg-white/80 p-3 rounded-xl">
                                         <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Converted</span>
                                         <span className="text-lg font-black text-purple-600">{summary.all?.converted || 0}</span>
@@ -1149,6 +1178,14 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
                                     <div className="bg-white/80 p-3 rounded-xl">
                                         <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Failed</span>
                                         <span className="text-lg font-black text-red-600">{summary.all?.failed || 0}</span>
+                                    </div>
+                                    <div className="bg-white/80 p-3 rounded-xl">
+                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Pending</span>
+                                        <span className="text-lg font-black text-amber-600">{summary.all?.convPending || 0}</span>
+                                    </div>
+                                    <div className="bg-white/80 p-3 rounded-xl">
+                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Proc.</span>
+                                        <span className="text-lg font-black text-cyan-600">{summary.all?.convProcessing || 0}</span>
                                     </div>
                                 </div>
                             </div>

@@ -46,6 +46,8 @@ const SHGUploadSection = ({
   const [isCameraCapture, setIsCameraCapture] = useState(false);
   const [showSmartCamera, setShowSmartCamera] = useState(false);
   const [cameraTarget, setCameraTarget] = useState({ id: null, name: null });
+  const [permanentlyUploadedFiles, setPermanentlyUploadedFiles] = useState([]);
+  const [isViewingPermanent, setIsViewingPermanent] = useState(false);
   // Action Sheet removed
 
   // Detect if device is mobile/tablet
@@ -98,6 +100,13 @@ const SHGUploadSection = ({
     }
 
     const generateSmartPreview = async () => {
+      // Don't generate smart previews for files already on the server
+      if (previewFile.fromServer) {
+        setSmartPreviewUrl(previewFile.previewUrl);
+        setIsProcessingPreview(false);
+        return;
+      }
+
       console.log('📸 Generating smart preview for:', previewFile.fileName);
       setSmartPreviewUrl(null); // Clear old to show loader
       setIsProcessingPreview(true);
@@ -150,6 +159,289 @@ const SHGUploadSection = ({
 
     initializeData();
   }, [user?.voID, selectedMonth, selectedYear]);
+
+  // Fetch permanently uploaded files for direct viewing
+  const fetchPermanentlyUploadedFiles = async () => {
+    if (!selectedMonth || !selectedYear) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      // Updated: Pass month, year and voID to minimize data and support Admin viewing
+      const voIdParam = user?.voID ? `&voID=${user.voID}` : '';
+      const url = `${API_BASE}/api/uploads?month=${selectedMonth}&year=${selectedYear}${voIdParam}`;
+
+      const resp = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        const files = Array.isArray(data.files) ? data.files : Array.isArray(data) ? data : [];
+        setPermanentlyUploadedFiles(files);
+      }
+    } catch (e) {
+      console.error('Failed to fetch permanent uploads', e);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedMonth && selectedYear) {
+      fetchPermanentlyUploadedFiles();
+    }
+  }, [selectedMonth, selectedYear, user?.voID, serverProgress?.uploadedShgIds]);
+
+  const handleViewPermanentlyUploadedFile = async (shgId) => {
+    // Normalization helper: trim and remove leading zeros
+    const normalize = (id) => {
+      if (!id) return '';
+      // String cast, trim, remove quotes, and then lstrip 0
+      return String(id).trim().replace(/['"]/g, '');
+    };
+    const targetId = normalize(shgId);
+
+    const findUpload = (files) => {
+      console.log(`[findUpload] Searching for targetId: "${targetId}" in ${files.length} files`);
+
+      // 1. Get all matches for this SHG ID
+      const shgMatches = files.filter(u => {
+        const uId = normalize(u.shgID || u.shgId || u.metadata?.shgID || u.metadata?.shgId);
+
+        // ROBUST MATCH: Compare preserved AND stripped versions
+        const strippedUId = uId.replace(/^0+/, '');
+        const strippedTargetId = targetId.replace(/^0+/, '');
+
+        const match = uId === targetId || (strippedUId !== '' && strippedUId === strippedTargetId);
+
+        if (match) console.log(`[findUpload] Found ID match: ${uId} (Target: ${targetId})`);
+        return match;
+      });
+
+      if (shgMatches.length === 0) {
+        console.log(`[findUpload] No SHG ID matches for "${targetId}"`);
+        if (files.length > 0) {
+          console.log(`[findUpload] Available IDs in results:`, files.map(f => normalize(f.shgID || f.shgId || f.metadata?.shgID || f.metadata?.shgId)).slice(0, 10));
+        }
+        return null;
+      }
+
+      console.log(`[findUpload] Found ${shgMatches.length} ID matches for "${targetId}". Checking date: ${selectedMonth}/${selectedYear}`);
+
+      // 2. Filter these by the CURRENTLY SELECTED month/year using timestamp (MATCH DocumentHistory.jsx)
+      const matches = shgMatches.filter(u => {
+        const rawDate = u.date || u.uploadTimestamp;
+        let sanitizedDate = rawDate;
+
+        // Handle ISO date sanitization as in DocumentHistory
+        if (typeof rawDate === 'string' && rawDate.includes('T') && !rawDate.endsWith('Z') && !rawDate.includes('+')) {
+          sanitizedDate = rawDate + 'Z';
+        }
+
+        const uploadDate = new Date(sanitizedDate);
+        if (isNaN(uploadDate.getTime())) return false;
+
+        const uploadMonth = String(uploadDate.getMonth() + 1).padStart(2, '0');
+        const uploadYear = String(uploadDate.getFullYear());
+
+        const dateMatch = uploadMonth === selectedMonth && uploadYear === selectedYear;
+        if (dateMatch) console.log(`[findUpload] Found Date match via timestamp: ${uploadMonth}/${uploadYear}`);
+        return dateMatch;
+      });
+
+      // 3. If we have matches, return the most recent one (files are already sorted by date desc)
+      if (matches.length > 0) return matches[0];
+
+      console.log(`[findUpload] No timestamp match for ${selectedMonth}/${selectedYear}. Checking tags...`);
+
+      // 4. Fallback: if no date match for THIS month, try matching by explicit tags if they exist
+      const tagMatch = shgMatches.find(u => {
+        const uM = String(u.month || u.metadata?.month || '').padStart(2, '0');
+        const uY = String(u.year || u.metadata?.year || '');
+        const match = uM === selectedMonth && uY === selectedYear;
+        if (match) console.log(`[findUpload] Found Date match via Tags: ${uM}/${uY}`);
+        return match;
+      });
+
+      if (!tagMatch) console.log(`[findUpload] No tag match found for ${selectedMonth}/${selectedYear}`);
+
+      return tagMatch || null;
+    };
+
+    let upload = findUpload(permanentlyUploadedFiles);
+
+    if (!upload) {
+      const availableIds = permanentlyUploadedFiles.map(u => normalize(u.shgID || u.shgId || u.metadata?.shgID || u.metadata?.shgId)).slice(0, 5).join(', ');
+      console.log(`SHG ${shgId} (norm: ${targetId}) not found in current filtered list. Available norm IDs: ${availableIds}`);
+
+      // Try fetching matching uploads for THIS month/year/VO as fallback (Fallback 1)
+      try {
+        const token = localStorage.getItem('token');
+        const voIdParam = user?.voID ? `&voID=${user.voID}` : '';
+        const url = `${API_BASE}/api/uploads?month=${selectedMonth}&year=${selectedYear}${voIdParam}`;
+
+        const response = await fetch(url, {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const allFiles = Array.isArray(data.files) ? data.files : [];
+          upload = findUpload(allFiles);
+          if (upload) {
+            setPermanentlyUploadedFiles(prev => {
+              if (prev.some(p => p._id === upload._id)) return prev;
+              return [...prev, upload];
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Fallback fetch 1 failed:', err);
+      }
+    }
+
+    // NEW: DIRECT FALLBACK (Fallback 2: Search by shgID directly across all VO uploads)
+    if (!upload) {
+      console.log(`[findUpload] Fallback 2: Direct search for shgID: ${targetId}`);
+      try {
+        const token = localStorage.getItem('token');
+        const voIdParam = user?.voID ? `&voID=${user.voID}` : '';
+        // Note: Backend now supports shgID query param for robust multi-format match
+        const url = `${API_BASE}/api/uploads?month=${selectedMonth}&year=${selectedYear}${voIdParam}&shgID=${targetId}`;
+
+        const response = await fetch(url, {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const allFiles = Array.isArray(data.files) ? data.files : [];
+          // Even though backend filtered, we use findUpload for final validation
+          upload = findUpload(allFiles);
+          if (upload) {
+            console.log(`[findUpload] Fallback 2 Found upload! S3 Key: ${upload.s3Key}`);
+            setPermanentlyUploadedFiles(prev => {
+              if (prev.some(p => p._id === upload._id)) return prev;
+              return [...prev, upload];
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Fallback fetch 2 (direct shgID) failed:', err);
+      }
+    }
+
+    // ROBUST FALLBACK (Path requested by user: voID -> userId -> uploads -> shgID)
+    if (!upload && user?.voID) {
+      console.log(`[ROBUST FALLBACK] Starting for VO ${user.voID}, SHG ${targetId}`);
+      try {
+        const token = localStorage.getItem('token');
+        const isAdmin = user?.role?.toLowerCase().includes('admin') || user?.role?.toLowerCase().includes('developer');
+
+        if (isAdmin && token) {
+          // 1. Resolve voID to userId
+          const resolveResp = await fetch(`${API_BASE}/api/users/resolve-by-void/${user.voID}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+
+          if (resolveResp.ok) {
+            const resolveData = await resolveResp.json();
+            const targetUserId = resolveData.userId;
+            console.log(`[ROBUST FALLBACK] Resolved VO ${user.voID} to userId ${targetUserId}`);
+
+            // 2. Fetch specific upload using the admin user uploads API
+            const uploadUrl = `${API_BASE}/api/admin/users/${targetUserId}/uploads?month=${selectedMonth}&year=${selectedYear}&shgID=${targetId}`;
+            const uploadResp = await fetch(uploadUrl, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (uploadResp.ok) {
+              const uploadData = await uploadResp.json();
+              if (uploadData.success && uploadData.uploads && uploadData.uploads.length > 0) {
+                // Return the first match (most recent)
+                upload = uploadData.uploads[0];
+                console.log(`[ROBUST FALLBACK] Found upload! S3 Key: ${upload.s3Key}`);
+
+                // Add to list so it shows up in UI
+                setPermanentlyUploadedFiles(prev => {
+                  if (prev.some(p => p._id === upload._id)) return prev;
+                  return [...prev, upload];
+                });
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[ROBUST FALLBACK] Failed:', err);
+      }
+    }
+
+    if (!upload) {
+      const msg = t?.('upload.fileNotFound') || 'Upload information not found for this SHG';
+
+      // Get detailed diagnostic info for the first failure
+      let diag = `Target ID: ${targetId}\nSelected Period: ${selectedMonth}/${selectedYear}\n\n`;
+
+      if (permanentlyUploadedFiles.length > 0) {
+        const first = permanentlyUploadedFiles[0];
+        const fId = normalize(first.shgID || first.shgId || first.metadata?.shgID || first.metadata?.shgId);
+        const fMonth = String(first.month || first.metadata?.month || '').padStart(2, '0');
+        const fYear = String(first.year || first.metadata?.year || '');
+        const sfId = fId.replace(/^0+/, '');
+        const stId = targetId.replace(/^0+/, '');
+        const robustMatch = fId === targetId || (sfId !== '' && sfId === stId);
+
+        diag += `Found File: ${first.originalFilename || 'unnamed'}\n`;
+        diag += `File SHG ID: ${fId}\n`;
+        diag += `Target SHG ID: ${targetId}\n`;
+        diag += `ID Match (Robust): ${robustMatch ? 'YES' : 'NO'}\n`;
+        if (robustMatch) {
+          diag += `Month Match: ${String(first.month).padStart(2, '0') === selectedMonth ? 'YES' : 'NO'}\n`;
+          diag += `Year Match: ${String(first.year) === selectedYear ? 'YES' : 'NO'}\n`;
+        }
+      } else {
+        diag += "The file list returned from the server is empty.";
+      }
+
+      alert(`${msg}\n\n--- DIAGNOSTICS ---\n${diag}`);
+      return;
+    }
+
+    setIsViewingPermanent(true);
+    let url = upload.url || upload.s3Url || upload.metadata?.s3Url || upload.metadata?.url;
+
+    // Detect if this is a direct S3 link without a signature
+    const isS3Direct = (u) => u && typeof u === 'string' && u.includes('amazonaws.com') && !u.includes('X-Amz-Signature');
+
+    if ((!url || isS3Direct(url)) && upload._id) {
+      try {
+        const token = localStorage.getItem('token');
+        const resp = await fetch(`${API_BASE}/api/uploads/${upload._id}/presign`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data && data.url) {
+            url = data.url;
+          }
+        }
+      } catch (e) {
+        console.error('Presign fetch failed', e);
+      }
+    }
+
+    if (!url) {
+      alert(t?.('upload.viewError') || 'Could not retrieve image URL');
+      setIsViewingPermanent(false);
+      return;
+    }
+
+    setPreviewFile({
+      fileName: upload.filename || 'Uploaded Document',
+      previewUrl: url,
+      id: shgId,
+      shgId: shgId,
+      shgName: upload.shgName || upload.metadata?.shgName || 'Unknown SHG',
+      fromServer: true
+    });
+    setPreviewRotation(0);
+    setIsViewingPermanent(false);
+  };
 
   // Load failed uploads
   useEffect(() => {
@@ -416,7 +708,8 @@ const SHGUploadSection = ({
       console.log(`✓ Token found: ${token.substring(0, 20)}...`);
       console.log(`📍 User VO ID: ${user?.voID}`);
 
-      const requestUrl = `${API_BASE}/api/shg-list?month=${selectedMonth}&year=${selectedYear}`;
+      const voIdParam = user?.voID ? `&voID=${user.voID}` : '';
+      const requestUrl = `${API_BASE}/api/shg-list?month=${selectedMonth}&year=${selectedYear}${voIdParam}`;
       console.log(`🔗 Request URL: ${requestUrl}`);
 
       const response = await fetch(requestUrl, {
@@ -1500,15 +1793,30 @@ const SHGUploadSection = ({
               </div>
             )
           ) : isPermanentlyUploaded ? (
-            /* 🔒 FINAL LOCKED STATE */
-            <div className="flex flex-col items-center justify-center py-0.5 text-green-700">
-              <CheckCircle size={24} className="mb-1" />
-              <p className="font-bold text-xs sm:text-sm text-center">
-                {t?.('upload.successfullyUploaded') || 'Successfully Uploaded'}
-              </p>
-              <p className="text-[10px] sm:text-xs text-gray-600 mt-0.5">
-                {selectedMonth} / {selectedYear}
-              </p>
+            /* 🔒 FINAL LOCKED STATE WITH VIEW OPTION */
+            <div className="flex flex-col items-center justify-center py-0.5 space-y-2">
+              <div className="flex flex-col items-center justify-center text-green-700">
+                <CheckCircle size={24} className="mb-1" />
+                <p className="font-bold text-xs sm:text-sm text-center">
+                  {t?.('upload.successfullyUploaded') || 'Successfully Uploaded'}
+                </p>
+                <p className="text-[10px] sm:text-xs text-gray-600 mt-0.5">
+                  {selectedMonth} / {selectedYear}
+                </p>
+              </div>
+
+              <button
+                onClick={() => handleViewPermanentlyUploadedFile(shg.shgId)}
+                disabled={isViewingPermanent}
+                className="w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-semibold text-xs transition-all shadow-sm active:scale-95 disabled:bg-gray-400"
+              >
+                {isViewingPermanent ? (
+                  <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent"></div>
+                ) : (
+                  <Eye size={14} />
+                )}
+                <span>{t?.('upload.view') || 'View'}</span>
+              </button>
             </div>
           ) : !isTempUploaded ? (
             /* 🟦 INITIAL STATE */
@@ -1991,33 +2299,56 @@ const SHGUploadSection = ({
       )}
       {/* Preview Modal - Use Portal to ensure full screen coverage */}
       {previewFile && createPortal(
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[9999] p-2 sm:p-4 animate-in fade-in duration-300">
-          <div className="bg-white rounded-xl sm:rounded-2xl max-w-5xl w-full max-h-[95vh] sm:max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
+        <div className={`fixed inset-0 flex items-center justify-center z-[9999] p-2 sm:p-4 animate-in fade-in duration-300 ${previewFile.fromServer ? 'bg-slate-900/90 backdrop-blur-sm' : 'bg-black/80 backdrop-blur-sm'
+          }`}>
+          <div className={`bg-white rounded-xl sm:rounded-2xl w-full flex flex-col shadow-2xl overflow-hidden ${previewFile.fromServer ? 'max-w-4xl max-h-[90vh]' : 'max-w-5xl max-h-[95vh] sm:max-h-[90vh]'
+            }`}>
             {/* Modal Header */}
-            <div className="flex items-center justify-between p-3 sm:p-4 border-b">
+            <div className={`flex items-center justify-between p-3 sm:p-4 ${previewFile.fromServer
+              ? 'bg-gradient-to-r from-blue-700 to-blue-800 text-white px-6'
+              : 'border-b bg-white'
+              }`}>
               <div className="flex-1 min-w-0 mr-2">
-                <h3 className="font-bold text-sm sm:text-lg truncate">{previewFile.fileName}</h3>
+                <h3 className="font-bold text-sm sm:text-lg truncate">
+                  {previewFile.fromServer ? (
+                    <>
+                      {previewFile.shgName} <span className={previewFile.fromServer ? 'text-blue-100/80 font-normal ml-1' : ''}>({previewFile.shgId})</span>
+                    </>
+                  ) : previewFile.fileName}
+                </h3>
+                {previewFile.fromServer && (
+                  <p className="text-xs text-blue-100 truncate mt-0.5 opacity-80">
+                    {previewFile.fileName}
+                  </p>
+                )}
               </div>
               <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-                <button
-                  onClick={() => rotatePreviewImage('left')}
-                  className="p-1.5 sm:p-2 bg-gray-200 hover:bg-gray-300 rounded-lg"
-                  title="Rotate Left"
-                >
-                  <RotateCcw size={18} className="sm:hidden" />
-                  <RotateCcw size={20} className="hidden sm:block" />
-                </button>
-                <button
-                  onClick={() => rotatePreviewImage('right')}
-                  className="p-1.5 sm:p-2 bg-gray-200 hover:bg-gray-300 rounded-lg"
-                  title="Rotate Right"
-                >
-                  <RotateCw size={18} className="sm:hidden" />
-                  <RotateCw size={20} className="hidden sm:block" />
-                </button>
+                {!previewFile.fromServer && (
+                  <>
+                    <button
+                      onClick={() => rotatePreviewImage('left')}
+                      className="p-1.5 sm:p-2 bg-gray-200 hover:bg-gray-300 rounded-lg"
+                      title="Rotate Left"
+                    >
+                      <RotateCcw size={18} className="sm:hidden" />
+                      <RotateCcw size={20} className="hidden sm:block" />
+                    </button>
+                    <button
+                      onClick={() => rotatePreviewImage('right')}
+                      className="p-1.5 sm:p-2 bg-gray-200 hover:bg-gray-300 rounded-lg"
+                      title="Rotate Right"
+                    >
+                      <RotateCw size={18} className="sm:hidden" />
+                      <RotateCw size={20} className="hidden sm:block" />
+                    </button>
+                  </>
+                )}
                 <button
                   onClick={closePreview}
-                  className="p-1.5 sm:p-2 bg-red-500 hover:bg-red-600 text-white rounded-lg"
+                  className={`p-1.5 sm:p-2 rounded-lg transition-colors ${previewFile.fromServer
+                    ? 'hover:bg-white/10 text-white'
+                    : 'bg-red-500 hover:bg-red-600 text-white'
+                    }`}
                   title={t?.('common.close') || 'Close'}
                 >
                   <X size={18} className="sm:hidden" />
@@ -2027,38 +2358,40 @@ const SHGUploadSection = ({
             </div>
 
             {/* Modal Body */}
-            <div className="flex-1 overflow-auto bg-gray-100 flex flex-col relative p-2 sm:p-4 min-h-[300px]">
-              {isProcessingPreview && !smartPreviewUrl ? (
-                <div className="m-auto flex flex-col items-center gap-3">
-                  <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent"></div>
-                  <p className="font-semibold text-gray-600 text-sm">{t?.('upload.processing') || 'Smart Processing...'}</p>
-                </div>
-              ) : smartPreviewUrl ? (
-                <img
-                  src={smartPreviewUrl}
-                  alt={previewFile.fileName}
-                  className="max-w-full max-h-full object-contain m-auto bg-white transition-opacity duration-300"
-                  onError={() => {
-                    console.warn('⚠️ Preview image failed to load, using fallback');
-                    setSmartPreviewUrl(previewFile.previewUrl);
-                  }}
-                />
-              ) : previewFile.previewUrl ? (
+            {previewFile.fromServer ? (
+              <div className="flex-1 overflow-auto bg-slate-50 p-4">
                 <img
                   src={previewFile.previewUrl}
-                  alt={previewFile.fileName}
-                  className="max-w-full max-h-full object-contain m-auto bg-white transition-opacity duration-300"
-                  onError={() => {
-                    console.error('❌ Fallback preview also failed to load');
-                  }}
+                  alt="Document"
+                  className="max-w-full mx-auto border rounded shadow"
                 />
-              ) : (
-                <div className="m-auto text-center flex flex-col gap-2 items-center">
-                  <p className="text-gray-400 text-sm">Preview not available</p>
-                  <p className="text-xs text-gray-500">File: {previewFile.fileName}</p>
-                </div>
-              )}
-            </div>
+              </div>
+            ) : (
+              <div className="flex-1 overflow-auto bg-gray-100 flex flex-col relative p-2 sm:p-4 min-h-[300px]">
+                {isProcessingPreview && !smartPreviewUrl ? (
+                  <div className="m-auto flex flex-col items-center gap-3">
+                    <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent"></div>
+                    <p className="font-semibold text-gray-600 text-sm">{t?.('upload.processing') || 'Smart Processing...'}</p>
+                  </div>
+                ) : smartPreviewUrl ? (
+                  <img
+                    src={smartPreviewUrl}
+                    alt={previewFile.fileName}
+                    className="max-w-full max-h-full object-contain m-auto bg-white transition-opacity duration-300"
+                    onError={() => {
+                      console.warn('⚠️ Preview image failed to load, using fallback');
+                      setSmartPreviewUrl(previewFile.previewUrl);
+                    }}
+                  />
+                ) : (
+                  <img
+                    src={previewFile.previewUrl}
+                    alt={previewFile.fileName}
+                    className="max-w-full max-h-full object-contain m-auto bg-white transition-opacity duration-300"
+                  />
+                )}
+              </div>
+            )}
           </div>
         </div>,
         document.body

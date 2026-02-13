@@ -1603,13 +1603,20 @@ export default function EnhancedTableOCRSystem() {
       <div className="h-full overflow-y-auto">
         <div className="max-w-7xl mx-auto p-4 lg:p-6">
           {/* Header */}
-          <div className="text-center mb-6">
-            <h2 className="text-2xl lg:text-4xl font-extrabold mb-2 bg-gradient-to-r from-yellow-300 via-orange-300 to-yellow-300 bg-clip-text text-transparent">
-              SOCIETY FOR ELIMINATION OF RURAL POVERTY
-            </h2>
-            <h3 className="text-lg lg:text-2xl font-semibold text-blue-200">
-              Department of Rural Development, Government of Andhra Pradesh
-            </h3>
+          <div className="flex flex-col md:flex-row items-center justify-center gap-6 mb-8">
+            <img
+              src={`${import.meta.env.BASE_URL}AP_Emblem.png`}
+              alt="AP Emblem"
+              className="w-20 h-20 md:w-28 md:h-28 object-contain drop-shadow-xl"
+            />
+            <div className="text-center md:text-left">
+              <h2 className="text-2xl lg:text-4xl font-extrabold mb-2 bg-gradient-to-r from-yellow-300 via-orange-300 to-yellow-300 bg-clip-text text-transparent transform hover:scale-105 transition-transform duration-300">
+                SOCIETY FOR ELIMINATION OF RURAL POVERTY
+              </h2>
+              <h3 className="text-lg lg:text-2xl font-bold text-blue-100/90 tracking-wide">
+                Department of Rural Development, Government of Andhra Pradesh
+              </h3>
+            </div>
           </div>
 
           {/* Main Header */}

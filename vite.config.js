@@ -8,7 +8,8 @@ export default defineConfig(({ command, mode }) => {
 
   let base = '/';
   if (isGitHubPages) base = '/OCR-Frontend/';
-  else if (isDev || mode === 'Test') base = '/Test/';
+  // Removed: else if (isDev || mode === 'Test') base = '/Test/';
+  // Dev mode should use root path for proper public asset serving
 
   return {
     base,
