@@ -238,42 +238,32 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
     const headers = tableData.column_headers || [];
     const rows = tableData.data_rows || [];
 
-    // Validation: Check if column totals match
-    const validateColumnTotals = () => {
-        if (!rows || rows.length === 0) return {};
+    // Extract SHG ID from table data (backend now provides this as shg_id)
+    const extractedSHGID = tableData.shg_id || tableData.shg_mbk_id || data.shgID;
 
-        const columnMismatches = {};
+    // Check if SHG ID matches
+    const isSHGIDMismatch = extractedSHGID && data.shgID && extractedSHGID !== data.shgID;
 
-        // Calculate totals for each column (skip first two columns: ID and Name)
+    // Calculate totals for each column
+    const calculateColumnTotals = () => {
+        const totals = {};
+        if (!rows || rows.length === 0) return totals;
+
         for (let colIdx = 2; colIdx < (rows[0]?.cells?.length || 0); colIdx++) {
             const calculatedTotal = rows.reduce((sum, row) => {
                 const cellText = row.cells[colIdx]?.text || '';
                 const numValue = parseFloat(cellText.replace(/[^0-9.-]/g, ''));
                 return !isNaN(numValue) ? sum + numValue : sum;
             }, 0);
-
-            // Store calculated totals for comparison
-            // For now, we mark mismatches if any row has invalid data
-            // You can extend this to compare against expected totals if available
-            columnMismatches[colIdx] = false; // Set to true when mismatch is detected
+            totals[colIdx] = calculatedTotal;
         }
-
-        return columnMismatches;
+        return totals;
     };
 
-    // Validation: Check if SHG ID cells match expected format or value
-    const validateSHGID = (rowIdx, cellText) => {
-        // Check if the SHG ID (typically in column 0 as member ID) 
-        // matches expected format or if it's been flagged as invalid
-        // For now, we check if it's empty or doesn't match digit pattern
-        if (!cellText || cellText.trim() === '') return true; // Empty is a mismatch
+    const calculatedTotals = calculateColumnTotals();
 
-        // Additional validation logic can be added here
-        // For example, checking against a list of valid IDs
-        return false; // No mismatch
-    };
-
-    const columnMismatches = validateColumnTotals();
+    // Get OCR-extracted totals from backend (debug cells 264-277)
+    const extractedTotals = tableData.totals_row?.cells || [];
 
     return (
         <div className="min-h-screen bg-white rounded-3xl shadow-xl p-6 lg:p-8 space-y-8 animate-in fade-in slide-in-from-bottom-8 duration-700">
@@ -303,7 +293,10 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                         </div>
 
                         <div className="flex flex-wrap items-center gap-3 sm:gap-4 mt-2">
-                            <span className="text-[10px] sm:text-[11px] font-black text-indigo-600 bg-indigo-50/50 px-2.5 sm:px-3 py-1 rounded-lg sm:rounded-xl uppercase tracking-widest border border-indigo-100/50">
+                            <span className={`text-[10px] sm:text-[11px] font-black px-2.5 sm:px-3 py-1 rounded-lg sm:rounded-xl uppercase tracking-widest ${isSHGIDMismatch
+                                ? 'text-red-700 bg-red-50 border-2 border-red-500'
+                                : 'text-indigo-600 bg-indigo-50/50 border border-indigo-100/50'
+                                }`}>
                                 {padSHGId(data.shgID)}
                             </span>
 
@@ -359,7 +352,6 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                         </>
                     )}
                 </div>
-
             </div>
 
             {/* Main Table Vessel with Image Overlay */}
@@ -503,27 +495,15 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                                 {rows.map((row, rIdx) => (
                                     <tr key={rIdx} className="hover:bg-indigo-50/30 transition-all duration-200 group">
                                         {row.cells.map((cell, cIdx) => {
-                                            // Validation checks
-                                            const isSHGIDMismatch = cIdx === 0 && validateSHGID(rIdx, cell.text);
-                                            const isColumnMismatch = columnMismatches[cIdx] === true;
-
-                                            // Determine cell background color
-                                            let cellBgClass = '';
-                                            if (isSHGIDMismatch) {
-                                                cellBgClass = 'bg-red-100 border-red-300'; // Red for SHG ID mismatch
-                                            } else if (isColumnMismatch) {
-                                                cellBgClass = 'bg-yellow-100 border-yellow-300'; // Yellow for column total mismatch
-                                            }
-
                                             return (
-                                                <td key={cIdx} className={`px-6 py-4 text-sm font-semibold text-gray-700 border-r border-gray-100/50 group-last:border-r-0 min-w-[150px] ${cellBgClass}`}>
+                                                <td key={cIdx} className="px-6 py-4 text-sm font-semibold text-gray-700 border-r border-gray-100/50 group-last:border-r-0 min-w-[150px]">
                                                     <div className="flex flex-col">
                                                         {isEditing ? (
                                                             <input
                                                                 type="text"
                                                                 value={cell.text}
                                                                 onChange={(e) => handleCellChange(rIdx, cIdx, e.target.value)}
-                                                                className={`w-full border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-gray-800 ${isSHGIDMismatch ? 'bg-red-50 border-red-300' : isColumnMismatch ? 'bg-yellow-50 border-yellow-300' : 'bg-indigo-50/50 border-indigo-200'}`}
+                                                                className="w-full bg-indigo-50/50 border border-indigo-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-gray-800"
                                                             />
                                                         ) : (
                                                             <span>{cIdx === 0 ? padMBKId(cell.text) : cell.text}</span>
@@ -552,16 +532,27 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                                             } else if (cellIdx === 1) {
                                                 return null;
                                             } else {
-                                                const columnTotal = rows.reduce((sum, row) => {
-                                                    const cellText = row.cells[cellIdx]?.text || '';
-                                                    const numValue = parseFloat(cellText.replace(/[^0-9.-]/g, ''));
-                                                    return !isNaN(numValue) ? sum + numValue : sum;
-                                                }, 0);
+                                                const columnTotal = calculatedTotals[cellIdx] || 0;
+
+                                                // Find extracted total for this column from OCR (debug cells 264-277)
+                                                const extractedTotalCell = extractedTotals.find(
+                                                    t => t.col_index === cellIdx
+                                                );
+                                                const extractedValue = extractedTotalCell
+                                                    ? parseFloat(extractedTotalCell.text?.replace(/[^0-9.-]/g, ''))
+                                                    : null;
+
+                                                // Check if there's a mismatch (tolerance of 0.01 for floating point)
+                                                const hasMismatch = extractedValue !== null &&
+                                                    Math.abs(extractedValue - columnTotal) > 0.01;
 
                                                 return (
                                                     <td
                                                         key={cellIdx}
-                                                        className="px-6 py-4 text-sm font-black text-indigo-900 border-r border-gray-100/50 text-center"
+                                                        className={`px-6 py-4 text-sm font-black border-r border-gray-100/50 text-center ${hasMismatch
+                                                            ? 'text-yellow-900 bg-yellow-50 border-2 border-yellow-500'
+                                                            : 'text-indigo-900'
+                                                            }`}
                                                     >
                                                         {columnTotal > 0 ? columnTotal.toFixed(2) : '-'}
                                                     </td>

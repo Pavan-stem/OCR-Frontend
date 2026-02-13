@@ -349,9 +349,9 @@ const ApMap = ({
       return null;
     }
 
-      const labels = svgContainerRef.current.querySelectorAll(
-        'text.district-label[data-district-id]'
-      );
+    const labels = svgContainerRef.current.querySelectorAll(
+      'text.district-label[data-district-id]'
+    );
     if (!labels.length) return null;
 
     const pathRect = pathElement.getBoundingClientRect();
@@ -428,9 +428,10 @@ const ApMap = ({
 
   // Load SVG content (new 26-district map)
   useEffect(() => {
+    const basePath = import.meta.env.BASE_URL || '/';
     const svgPaths = [
-      '/andhra-pradesh-map.svg',
-      '/OCR/andhra-pradesh-map.svg',
+      `${basePath}andhra-pradesh-map.svg`,
+      `${basePath}OCR/andhra-pradesh-map.svg`,
     ];
 
     let currentPathIndex = 0;
@@ -643,9 +644,9 @@ const ApMap = ({
       : 'Loan Balances & New Loans';
 
   return (
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Map Section */}
-        <div className="lg:col-span-2 bg-gradient-to-br from-gray-50 to-gray-100 rounded-3xl shadow-2xl p-6 flex items-center justify-center border-2 border-gray-200 max-h-[640px] overflow-hidden">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Map Section */}
+      <div className="lg:col-span-2 bg-gradient-to-br from-gray-50 to-gray-100 rounded-3xl shadow-2xl p-6 flex items-center justify-center border-2 border-gray-200 max-h-[640px] overflow-hidden">
         <div
           className="w-full h-auto max-w-4xl flex items-center justify-center cursor-pointer"
           role="img"

@@ -4,11 +4,12 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig(({ command, mode }) => {
   const isGitHubPages = mode === 'github';
+  const isSMD = mode === 'smd';
   const isDev = command === 'serve';
 
   let base = '/';
   if (isGitHubPages) base = '/OCR-Frontend/';
-  // Removed: else if (isDev || mode === 'Test') base = '/Test/';
+  else if (isSMD) base = '/Test/';  // SMD deployment path
   // Dev mode should use root path for proper public asset serving
 
   return {

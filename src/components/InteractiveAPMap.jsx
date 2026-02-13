@@ -303,7 +303,8 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
         const loadSvg = async () => {
             try {
                 setLoading(true);
-                const response = await fetch('/ap-districts-map.svg');
+                const basePath = import.meta.env.BASE_URL || '/';
+                const response = await fetch(`${basePath}ap-districts-map.svg`);
                 if (!response.ok) throw new Error('Failed to load map data');
                 let text = await response.text();
                 // Inject SVG Filters for unifying fragmented regions and creating outlines
