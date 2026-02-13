@@ -463,7 +463,7 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                                                     key={cIdx}
                                                     colSpan={cell.col_span || 1}
                                                     rowSpan={cell.row_span || 1}
-                                                    className={`bg-indigo-50/50 border-b border-r border-indigo-100/50 px-6 py-4 text-[11px] font-black text-indigo-900 transition-colors uppercase tracking-wider ${isLastLevel ? 'bg-indigo-100/30' : ''} ${isSHGIDHeader ? 'text-left' : 'text-center'}`}
+                                                    className={`bg-indigo-50/50 border-b border-r border-indigo-100/50 px-6 py-4 text-[11px] font-black text-indigo-900 transition-colors uppercase tracking-wider ${isLastLevel ? 'bg-indigo-100/30' : ''} ${isSHGIDHeader ? 'text-left' : 'text-center'} ${isSHGIDHeader && isSHGIDMismatch ? 'border-4 border-red-500' : ''}`}
                                                 >
                                                     {isSHGIDHeader && isEditing ? (
                                                         <input
