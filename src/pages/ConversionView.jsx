@@ -151,7 +151,7 @@ const ConversionView = ({ userId, userName, filterProps, onClose }) => {
             });
             const data = await res.json();
             if (data.success) {
-                fetchStatus();
+                fetchStatus(true); // Force refresh summary cards
             }
         } catch (err) {
             console.error('Error retrying all:', err);
@@ -169,7 +169,7 @@ const ConversionView = ({ userId, userName, filterProps, onClose }) => {
             });
             const data = await res.json();
             if (data.success) {
-                fetchStatus();
+                fetchStatus(true); // Force refresh summary cards
             }
         } catch (err) {
             console.error('Error retrying item:', err);

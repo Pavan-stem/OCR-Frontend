@@ -234,9 +234,102 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
         );
     }
 
+
+    // ===================================================================
+    // V2.0 STATIC HEADERS - Never stored in database
+    // ===================================================================
+    // These Telugu labels are identical for ALL SHG tables, so v2.0 schema
+    // doesn't store them in MongoDB (saves ~10-12KB per document).
+    // Instead, frontend loads them from these static constants.
+
+    const SHG_COLUMN_HEADERS_V2 = [
+        { index: 0, key: "member_mbk_id", label: "సభ్యురాలి MBK ID" },
+        { index: 1, key: "member_name", label: "సభ్యురాలు పేరు" },
+        { index: 2, key: "savings_this_month", label: "ఈ నెల పొదుపు" },
+        { index: 3, key: "shg_internal_loan_total", label: "SHG అంతర్గత అప్పు కట్టిన మొత్తం" },
+        { index: 4, key: "bank_loan_total", label: "బ్యాంక్ అప్పు కట్టిన మొత్తం" },
+        { index: 5, key: "streenidhi_micro_loan_total", label: "స్త్రీనిధి మైక్రో అప్పు కట్టిన మొత్తం" },
+        { index: 6, key: "streenidhi_tenni_loan_total", label: "స్త్రీనిధి టెన్నీ అప్పు కట్టిన మొత్తం" },
+        { index: 7, key: "unnathi_scsp_loan_total", label: "ఉన్నతి (SCSP) అప్పు కట్టిన మొత్తం" },
+        { index: 8, key: "unnathi_tsp_loan_total", label: "ఉన్నతి (TSP) అప్పు కట్టిన మొత్తం" },
+        { index: 9, key: "cif_loan_total", label: "CIF అప్పు కట్టిన మొత్తం" },
+        { index: 10, key: "vo_internal_loan_total", label: "VO అంతర్గత అప్పు కట్టిన మొత్తం" },
+        { index: 11, key: "loan_type", label: "అప్పు రకం" },
+        { index: 12, key: "loan_type_amount", label: "మొత్తం" },
+        { index: 13, key: "penalty_amount", label: "జరిమానా రకం" },
+        { index: 14, key: "returned_to_members", label: "సభ్యులకు తిరిగి ఇచ్చిన మొత్తం" },
+        { index: 15, key: "other_savings_total", label: "సభ్యుల ఇతర పొదుపు (విరాళం ఇతరములు)" },
+    ];
+
+    // Base multi-level header rows template (same for all documents)
+    const BASE_SHG_HEADER_ROWS_V2 = [
+        // Row 1: Title row spanning all columns
+        [
+            { label: "………......................... స్వయం సహయక సంఘ  ................. తేదిన జరిగిన సమావేశ ఆర్థిక లావాదేవీలు వివరములు (అనుభందం - II)", col_span: 16, row_span: 1 }
+        ],
+        // Row 2: SHG MBK ID row (ID is injected dynamically)
+        [
+            { label: "SHG MBK ID", col_span: 1, row_span: 1, align: "left" },
+            { label: "", col_span: 15, row_span: 1, align: "left" } // Dynamic SHG ID goes here
+        ],
+        // Row 3: Financial transactions header
+        [
+            { label: "సభ్యుల స్థాయిలో జరిగిన ఆర్థిక లావాదేవీలు", col_span: 16, row_span: 1 }
+        ],
+        // Row 4: Main category headers
+        [
+            { label: "సభ్యురాలి MBK ID", col_span: 1, row_span: 2 },
+            { label: "సభ్యురాలు పేరు", col_span: 1, row_span: 2 },
+            { label: "ఈ నెల పొదుపు", col_span: 1, row_span: 2 },
+            { label: "అప్పు రికార్డు వివరములు", col_span: 8, row_span: 1 },
+            { label: "కొత్త అప్పు వివరాలు", col_span: 2, row_span: 1 },
+            { label: "జరిమానా రకం", col_span: 1, row_span: 2 },
+            { label: "సభ్యులకు తిరిగి ఇచ్చిన మొత్తం", col_span: 1, row_span: 2 },
+            { label: "సభ్యుల ఇతర పొదుపు (విరాళం ఇతరములు)", col_span: 1, row_span: 2 },
+        ],
+        // Row 5: Sub-headers (only appears under row 4's middle columns)
+        [
+            { label: "SHG అంతర్గత అప్పు కట్టిన మొత్తం", col_span: 1, row_span: 1 },
+            { label: "బ్యాంక్ అప్పు కట్టిన మొత్తం", col_span: 1, row_span: 1 },
+            { label: "స్త్రీనిధి మైక్రో అప్పు కట్టిన మొత్తం", col_span: 1, row_span: 1 },
+            { label: "స్త్రీనిధి టెన్నీ అప్పు కట్టిన మొత్తం", col_span: 1, row_span: 1 },
+            { label: "ఉన్నతి (SCSP) అప్పు కట్టిన మొత్తం", col_span: 1, row_span: 1 },
+            { label: "ఉన్నతి (TSP) అప్పు కట్టిన మొత్తం", col_span: 1, row_span: 1 },
+            { label: "CIF అప్పు కట్టిన మొత్తం", col_span: 1, row_span: 1 },
+            { label: "VO అంతర్గత అప్పు కట్టిన మొత్తం", col_span: 1, row_span: 1 },
+            { label: "అప్పు రకం", col_span: 1, row_span: 1 },
+            { label: "మొత్తం", col_span: 1, row_span: 1 },
+        ],
+    ];
+
     const tableData = data.table_data;
-    const headers = tableData.column_headers || [];
+    const schemaVersion = tableData.schema_version || "1.0"; // Default to v1.0 for old data
+
+    // V2.0: Use static headers, V1.0: Use headers from database
+    const headers = schemaVersion === "2.0" ? SHG_COLUMN_HEADERS_V2 : (tableData.column_headers || []);
+
+    // V2.0: Build header rows with dynamic SHG ID injection
+    let headerRows;
+    if (schemaVersion === "2.0") {
+        headerRows = JSON.parse(JSON.stringify(BASE_SHG_HEADER_ROWS_V2)); // Deep copy
+        // Inject dynamic SHG ID into row 2, cell 2
+        headerRows[1][1].label = tableData.shg_mbk_id || data.shgID || "";
+        headerRows[1][1].text = tableData.shg_mbk_id || data.shgID || "";
+    } else {
+        headerRows = tableData.header_rows || [];
+    }
+
     const rows = tableData.data_rows || [];
+
+    // Helper: Get cell text (works for both v1.0 and v2.0)
+    const getCellText = (cell) => {
+        return cell?.text || '';
+    };
+
+    // Helper: Get cell confidence (works for both v1.0 and v2.0)
+    const getCellConfidence = (cell) => {
+        return cell?.confidence || 0.0;
+    };
 
     // Extract SHG ID from table data (backend now provides this as shg_id)
     const extractedSHGID = tableData.shg_id || tableData.shg_mbk_id || data.shgID;
@@ -449,11 +542,11 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                     <div className="inline-block min-w-full align-top">
                         <table className="w-full border-collapse">
                             <thead>
-                                {/* Complex Headers from backend */}
-                                {tableData.header_rows && tableData.header_rows.map((row, rIdx) => (
+                                {/* Complex Headers - v2.0 uses static template, v1.0 uses database */}
+                                {headerRows && headerRows.map((row, rIdx) => (
                                     <tr key={rIdx}>
                                         {row.map((cell, cIdx) => {
-                                            const isLastLevel = (rIdx + (cell.row_span || 1)) === tableData.header_rows.length;
+                                            const isLastLevel = (rIdx + (cell.row_span || 1)) === headerRows.length;
                                             const isSHGIDHeader = (cell.col_span === 15 && cell.row_span === 1);
                                             return (
                                                 <th
@@ -477,8 +570,8 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                                         })}
                                     </tr>
                                 ))}
-                                {/* Fallback Simple Header */}
-                                {!tableData.header_rows && (
+                                {/* Fallback Simple Header - Only if no complex headers available */}
+                                {(!headerRows || headerRows.length === 0) && (
                                     <tr className="bg-indigo-50/50">
                                         {headers.map((header, idx) => (
                                             <th key={idx} className="border-b border-r border-indigo-100/50 px-6 py-4 text-xs font-black text-indigo-900 text-left whitespace-nowrap uppercase tracking-widest">
@@ -532,14 +625,19 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                                                 const columnTotal = calculatedTotals[cellIdx] || 0;
 
                                                 // Find extracted total for this column from OCR
+                                                // v1.0: totals cells have col_index field
+                                                // v2.0: totals cells don't have col_index, use array position
                                                 // Backend: col_index 0-13 (14 totals, renumbered starting from 0)
                                                 // Frontend: cellIdx 0-1 (label), 2-15 (data columns)
                                                 // Mapping: backend col_index + 2 = frontend cellIdx
                                                 // So: col_index 0 → cellIdx 2, col_index 1 → cellIdx 3, etc.
                                                 const expectedColIndex = cellIdx - 2;
-                                                const extractedTotalCell = extractedTotals.find(
-                                                    t => t.col_index === expectedColIndex
-                                                );
+
+                                                // v2.0: use array index directly, v1.0: find by col_index
+                                                const extractedTotalCell = schemaVersion === "2.0"
+                                                    ? extractedTotals[expectedColIndex]  // v2.0: array position
+                                                    : extractedTotals.find(t => t.col_index === expectedColIndex);  // v1.0: lookup by col_index
+
                                                 const extractedText = extractedTotalCell?.text || '';
                                                 const extractedValue = extractedText
                                                     ? parseFloat(extractedText.replace(/[^0-9.-]/g, ''))
