@@ -531,9 +531,15 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                                             } else {
                                                 const columnTotal = calculatedTotals[cellIdx] || 0;
 
-                                                // Find extracted total for this column from OCR (debug cells 263, 265, 266-275)
+                                                // Find extracted total for this column from OCR
+                                                // Backend now renumbers totals starting from 0 (skipping label):
+                                                // col_index 0 = First total (cellIdx 2: This Month Savings)
+                                                // col_index 1 = Second total (cellIdx 3: Total Savings)
+                                                // col_index 2-10 = Rest (cellIdx 4-12)
+                                                // So: backend_col_index = cellIdx - 2
+                                                const expectedColIndex = cellIdx - 2;
                                                 const extractedTotalCell = extractedTotals.find(
-                                                    t => t.col_index === cellIdx
+                                                    t => t.col_index === expectedColIndex
                                                 );
                                                 const extractedText = extractedTotalCell?.text || '';
                                                 const extractedValue = extractedText
