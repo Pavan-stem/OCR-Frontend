@@ -532,11 +532,13 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                                                 const columnTotal = calculatedTotals[cellIdx] || 0;
 
                                                 // Find extracted total for this column from OCR
-                                                // Backend keeps original col_index: 2, 3, 4...12 (skips 0=label, 1=name)
-                                                // Frontend cellIdx: 0-1 (label), 2, 3, 4...12 (data)
-                                                // Direct match: cellIdx === col_index for columns 2-12
+                                                // Backend: col_index 0-13 (14 totals, renumbered starting from 0)
+                                                // Frontend: cellIdx 0-1 (label), 2-15 (data columns)
+                                                // Mapping: backend col_index + 2 = frontend cellIdx
+                                                // So: col_index 0 → cellIdx 2, col_index 1 → cellIdx 3, etc.
+                                                const expectedColIndex = cellIdx - 2;
                                                 const extractedTotalCell = extractedTotals.find(
-                                                    t => t.col_index === cellIdx
+                                                    t => t.col_index === expectedColIndex
                                                 );
                                                 const extractedText = extractedTotalCell?.text || '';
                                                 const extractedValue = extractedText
