@@ -293,10 +293,7 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                         </div>
 
                         <div className="flex flex-wrap items-center gap-3 sm:gap-4 mt-2">
-                            <span className={`text-[10px] sm:text-[11px] font-black px-2.5 sm:px-3 py-1 rounded-lg sm:rounded-xl uppercase tracking-widest ${isSHGIDMismatch
-                                ? 'text-red-700 bg-red-50 border-2 border-red-500'
-                                : 'text-indigo-600 bg-indigo-50/50 border border-indigo-100/50'
-                                }`}>
+                            <span className="text-[10px] sm:text-[11px] font-black px-2.5 sm:px-3 py-1 rounded-lg sm:rounded-xl uppercase tracking-widest text-indigo-600 bg-indigo-50/50 border border-indigo-100/50">
                                 {padSHGId(data.shgID)}
                             </span>
 
@@ -463,7 +460,7 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                                                     key={cIdx}
                                                     colSpan={cell.col_span || 1}
                                                     rowSpan={cell.row_span || 1}
-                                                    className={`bg-indigo-50/50 border-b border-r border-indigo-100/50 px-6 py-4 text-[11px] font-black text-indigo-900 transition-colors uppercase tracking-wider ${isLastLevel ? 'bg-indigo-100/30' : ''} ${isSHGIDHeader ? 'text-left' : 'text-center'} ${isSHGIDHeader && isSHGIDMismatch ? 'border-4 border-red-500' : ''}`}
+                                                    className={`bg-indigo-50/50 border-b border-r border-indigo-100/50 px-6 py-4 text-[11px] font-black transition-colors uppercase tracking-wider ${isLastLevel ? 'bg-indigo-100/30' : ''} ${isSHGIDHeader ? 'text-left' : 'text-center'} ${isSHGIDHeader && isSHGIDMismatch ? 'text-red-600 bg-red-50/50' : 'text-indigo-900'}`}
                                                 >
                                                     {isSHGIDHeader && isEditing ? (
                                                         <input
@@ -534,12 +531,13 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                                             } else {
                                                 const columnTotal = calculatedTotals[cellIdx] || 0;
 
-                                                // Find extracted total for this column from OCR (debug cells 264-277)
+                                                // Find extracted total for this column from OCR (debug cells 263, 265, 266-275)
                                                 const extractedTotalCell = extractedTotals.find(
                                                     t => t.col_index === cellIdx
                                                 );
-                                                const extractedValue = extractedTotalCell
-                                                    ? parseFloat(extractedTotalCell.text?.replace(/[^0-9.-]/g, ''))
+                                                const extractedText = extractedTotalCell?.text || '';
+                                                const extractedValue = extractedText
+                                                    ? parseFloat(extractedText.replace(/[^0-9.-]/g, ''))
                                                     : null;
 
                                                 // Check if there's a mismatch (tolerance of 0.01 for floating point)
@@ -550,11 +548,12 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                                                     <td
                                                         key={cellIdx}
                                                         className={`px-6 py-4 text-sm font-black border-r border-gray-100/50 text-center ${hasMismatch
-                                                            ? 'text-yellow-900 bg-yellow-50 border-2 border-yellow-500'
+                                                            ? 'text-orange-600 bg-orange-50/50'
                                                             : 'text-indigo-900'
                                                             }`}
+                                                        title={hasMismatch ? `OCR: ${extractedText} | Calculated: ${columnTotal.toFixed(2)}` : ''}
                                                     >
-                                                        {columnTotal > 0 ? columnTotal.toFixed(2) : '-'}
+                                                        {extractedText || '-'}
                                                     </td>
                                                 );
                                             }

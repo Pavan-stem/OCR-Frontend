@@ -206,7 +206,8 @@ const ConversionView = ({ userId, userName, filterProps, onClose }) => {
                     ...prev,
                     [folder === 'success' ? 'completed' : 'failed']: Math.max(0, prev[folder === 'success' ? 'completed' : 'failed'] - 1)
                 }));
-                fetchStatus();
+                // Delay refetch to allow backend to process deletion
+                setTimeout(() => fetchStatus(), 1000);
             } else {
                 alert(data.message || 'Failed to reject upload');
             }
@@ -488,60 +489,72 @@ const ConversionView = ({ userId, userName, filterProps, onClose }) => {
                                                 </div>
                                             </div>
 
-                                            {/* ACTION */}
-                                            <div className="flex gap-2">
+                                            {/* ACTIONS */}
+                                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                                                 {activeFolder === 'success' ? (
                                                     <>
-                                                        <button
-                                                            onClick={() => setPreviewImage({ url: item.s3Url, name: item.shgName })}
-                                                            className="px-3 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-black text-xs hover:bg-indigo-600 hover:text-white transition-all flex items-center justify-center gap-2 shadow-sm"
-                                                            title="View original image"
-                                                        >
-                                                            <Eye className="w-4 h-4" />
-                                                            View
-                                                        </button>
+                                                        {/* Primary Action */}
                                                         <button
                                                             onClick={() => setSelectedSHG(item)}
-                                                            className="px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl font-black text-xs hover:bg-emerald-600 hover:text-white transition-all flex items-center justify-center gap-2 shadow-sm"
+                                                            className="px-5 py-3 bg-emerald-600 text-white rounded-xl font-bold text-sm hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
                                                         >
                                                             <FileCheck className="w-4 h-4" />
                                                             View Table
                                                         </button>
-                                                        <button
-                                                            onClick={() => handleRejectSingle(item, 'success')}
-                                                            className="px-4 py-2 bg-gray-50 text-gray-600 rounded-xl font-black text-xs hover:bg-gray-600 hover:text-white transition-all flex items-center justify-center gap-2 shadow-sm"
-                                                            title="Reject and send back to VO"
-                                                        >
-                                                            <XCircle className="w-4 h-4" />
-                                                            Reject
-                                                        </button>
+
+                                                        {/* Secondary Actions */}
+                                                        <div className="flex gap-2">
+                                                            <button
+                                                                onClick={() => setPreviewImage({ url: item.s3Url, name: item.shgName })}
+                                                                className="p-2.5 bg-white border-2 border-gray-200 text-gray-600 rounded-lg hover:border-indigo-500 hover:text-indigo-600 transition-all"
+                                                                title="View original image"
+                                                            >
+                                                                <Eye className="w-4 h-4" />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleRetrySingle(item.id)}
+                                                                className="p-2.5 bg-white border-2 border-gray-200 text-gray-600 rounded-lg hover:border-amber-500 hover:text-amber-600 transition-all"
+                                                                title="Retry conversion"
+                                                            >
+                                                                <RefreshCw className="w-4 h-4" />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleRejectSingle(item, 'success')}
+                                                                className="p-2.5 bg-white border-2 border-gray-200 text-gray-600 rounded-lg hover:border-red-500 hover:text-red-600 transition-all"
+                                                                title="Reject and send back to VO"
+                                                            >
+                                                                <XCircle className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
                                                     </>
                                                 ) : (
                                                     <>
-                                                        <button
-                                                            onClick={() => setPreviewImage({ url: item.s3Url, name: item.shgName })}
-                                                            className="px-3 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-black text-xs hover:bg-indigo-600 hover:text-white transition-all flex items-center justify-center gap-2 shadow-sm"
-                                                            title="View original image"
-                                                        >
-                                                            <Eye className="w-4 h-4" />
-                                                            View
-                                                        </button>
+                                                        {/* Primary Action */}
                                                         <button
                                                             onClick={() => handleRetrySingle(item.id)}
-                                                            className="px-4 py-2 bg-red-50 text-red-600 rounded-xl font-black text-xs hover:bg-red-600 hover:text-white transition-all flex items-center justify-center gap-2 shadow-sm"
-                                                            title="Retry Conversion"
+                                                            className="px-5 py-3 bg-red-600 text-white rounded-xl font-bold text-sm hover:bg-red-700 transition-all flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
                                                         >
                                                             <RefreshCw className="w-4 h-4" />
                                                             Retry
                                                         </button>
-                                                        <button
-                                                            onClick={() => handleRejectSingle(item, 'failed')}
-                                                            className="px-4 py-2 bg-gray-50 text-gray-600 rounded-xl font-black text-xs hover:bg-gray-600 hover:text-white transition-all flex items-center justify-center gap-2 shadow-sm"
-                                                            title="Reject and send back to VO"
-                                                        >
-                                                            <XCircle className="w-4 h-4" />
-                                                            Reject
-                                                        </button>
+
+                                                        {/* Secondary Actions */}
+                                                        <div className="flex gap-2">
+                                                            <button
+                                                                onClick={() => setPreviewImage({ url: item.s3Url, name: item.shgName })}
+                                                                className="p-2.5 bg-white border-2 border-gray-200 text-gray-600 rounded-lg hover:border-indigo-500 hover:text-indigo-600 transition-all"
+                                                                title="View original image"
+                                                            >
+                                                                <Eye className="w-4 h-4" />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleRejectSingle(item, 'failed')}
+                                                                className="p-2.5 bg-white border-2 border-gray-200 text-gray-600 rounded-lg hover:border-red-500 hover:text-red-600 transition-all"
+                                                                title="Reject and send back to VO"
+                                                            >
+                                                                <XCircle className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
                                                     </>
                                                 )}
                                             </div>
