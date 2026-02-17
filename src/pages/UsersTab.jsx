@@ -140,76 +140,236 @@ const UsersTab = ({ filterProps }) => {
     document.body.removeChild(link);
   };
 
-  const downloadSummaryExcel = (user) => {
+  const downloadSummaryExcel = async (user) => {
     try {
-      const children = user.vos || [];
-      if (children.length === 0) {
-        alert('No children data available for download');
-        return;
+      const roleLower = (user.role || '').toLowerCase();
+      const isAPM = roleLower.includes('apm');
+      const isCC = roleLower.includes('cc');
+
+      // 1. Prepare hierarchy data
+      const token = localStorage.getItem('token');
+      const fetchChildren = async (parentId, parentRole) => {
+        const params = new URLSearchParams();
+        params.append('parentId', parentId);
+        params.append('parentRole', parentRole);
+        if (filterMonth) params.append('month', filterMonth);
+        if (filterYear) params.append('year', filterYear);
+        const res = await fetch(`${API_BASE}/api/users?${params.toString()}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        return data.success ? data.users : [];
+      };
+
+      let ccs = [];
+      let vos = [];
+
+      if (isAPM) {
+        setLoadingNodes(prev => new Set(prev).add(user._id));
+        ccs = user.ccs || [];
+        if (ccs.length === 0) {
+          ccs = await fetchChildren(user._id, user.role);
+        }
+        // Deep fetch VOs for each CC
+        ccs = await Promise.all(ccs.map(async (cc) => {
+          let ccVos = cc.vos || [];
+          if (ccVos.length === 0) {
+            ccVos = await fetchChildren(cc._id, cc.role);
+          }
+          return { ...cc, vos: ccVos };
+        }));
+        setLoadingNodes(prev => { const next = new Set(prev); next.delete(user._id); return next; });
+      } else if (isCC) {
+        vos = user.vos || [];
+        if (vos.length === 0) {
+          setLoadingNodes(prev => new Set(prev).add(user._id));
+          vos = await fetchChildren(user._id, user.role);
+          setLoadingNodes(prev => { const next = new Set(prev); next.delete(user._id); return next; });
+        }
       }
 
-      const rows = children.map(child => {
-        const perf = child.performanceStats || {
-          uploads: { approved: 0, rejected: 0, pending: 0 },
-          conversion: { success: 0, failed: 0, pending: 0, processing: 0 }
-        };
+      // 2. Generate HTML content for styling (colors/merges)
+      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const monthNameShort = monthNames[parseInt(filterMonth) - 1] || filterMonth;
 
-        return {
-          'Name': child.voName || child.name || child.userName || child.clusterName || 'Unknown',
-          'ID': child.voID || child.clusterID || child.userID || 'N/A',
-          'District': child.district || 'N/A',
-          'Mandal': child.mandal || 'N/A',
-          'Village': child.village || 'N/A',
-          'Uploaded': child.uploadedFiles || 0,
-          'Pending': child.pendingFiles || 0,
-          'Total': child.totalFiles || 0,
-          'CC Approved': perf.uploads.approved || 0,
-          'CC Rejected': perf.uploads.rejected || 0,
-          'Conversion Success': perf.conversion.success || 0,
-          'Conversion Failed': perf.conversion.failed || 0
-        };
-      });
+      const now = new Date();
+      const dd = String(now.getDate()).padStart(2, '0');
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const yy = String(now.getFullYear()).slice(-2);
+      const hh = String(now.getHours() % 12 || 12).padStart(2, '0');
+      const min = String(now.getMinutes()).padStart(2, '0');
+      const ampm = now.getHours() >= 12 ? 'PM' : 'AM';
+      const generatingTime = `${dd}.${mm}.${yy}: ${hh}.${min} ${ampm}`;
 
-      // Calculate totals
-      const totals = rows.reduce((acc, row) => {
-        acc['Uploaded'] += row['Uploaded'];
-        acc['Pending'] += row['Pending'];
-        acc['Total'] += row['Total'];
-        acc['CC Approved'] += row['CC Approved'];
-        acc['CC Rejected'] += row['CC Rejected'];
-        acc['Conversion Success'] += row['Conversion Success'];
-        acc['Conversion Failed'] += row['Conversion Failed'];
-        return acc;
-      }, {
-        'Name': 'TOTAL',
-        'ID': '',
-        'District': '',
-        'Mandal': '',
-        'Village': '',
-        'Uploaded': 0,
-        'Pending': 0,
-        'Total': 0,
-        'CC Approved': 0,
-        'CC Rejected': 0,
-        'Conversion Success': 0,
-        'Conversion Failed': 0
-      });
+      const headerTitle = `Annexure - II Capturing ${monthNameShort}-${filterYear} Month status report as on ${generatingTime}`;
 
-      rows.push(totals);
+      // Standard Office Palette (Professional/Compatible)
+      const colors = {
+        header: '#D9D9D9',      // Light Gray
+        subHeader: '#F2F2F2',   // Lighter Gray
+        apm: '#D9E1F2',         // Light Blue
+        cc: '#FFF2CC',          // Light Yellow
+        border: '#000000',      // High contrast black border
+        // Pending Status (Saturated Palette)
+        green: '#E2EFDA',       // 0%
+        lime: '#F2F7E5',        // <= 10%
+        yellow: '#FFF9C4',      // <= 25%
+        orange: '#FFCC99',      // <= 50%
+        red: '#FF4D4D'          // > 50% (Saturated True Red)
+      };
 
-      const worksheet = XLSX.utils.json_to_sheet(rows);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Summary');
+      const commonStyle = 'border: .5pt solid windowtext; padding: 6px; text-align: center; mso-number-format:"\\@"; font-family: Calibri, Arial, sans-serif; font-size: 10pt;';
+      const titleStyle = 'border: .5pt solid windowtext; padding: 10px; text-align: center; font-family: Calibri, Arial, sans-serif; font-size: 14pt; font-weight: bold;';
 
-      // Set column widths
-      worksheet['!cols'] = [
-        { wch: 30 }, { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 15 },
-        { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 15 }, { wch: 15 }, { wch: 20 }, { wch: 20 }
-      ];
+      const getPendingBg = (pending, total) => {
+        if (!total || pending === 0) return colors.green;
+        const ratio = pending / total;
+        if (ratio <= 0.10) return colors.lime;
+        if (ratio <= 0.25) return colors.yellow;
+        if (ratio <= 0.50) return colors.orange;
+        return colors.red;
+      };
 
-      const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-      const monthName = monthNames[parseInt(filterMonth) - 1] || filterMonth;
-      XLSX.writeFile(workbook, `${user.voName || user.name || 'User'}_Summary_${monthName}_${filterYear}.xlsx`);
+      const getPerf = (u) => u.performanceStats || { uploads: { approved: 0 }, conversion: { success: 0 } };
+
+      let html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta http-equiv="content-type" content="application/vnd.ms-excel; charset=UTF-8">
+        <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Summary</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+        <style>
+          table { border-collapse: collapse; table-layout: fixed; border: .5pt solid windowtext; }
+          td, th { border: .5pt solid windowtext; mso-number-format:"\\@"; text-align: center; }
+        </style>
+      </head>
+      <body>
+        <table border="1" style="width: 100%;">
+          <colgroup>
+            <col width="80"><col width="250"><col width="150"><col width="100"><col width="100"><col width="100"><col width="100"><col width="120">
+          </colgroup>
+      `;
+
+      // Main Header
+      html += `<tr><th colspan="8" bgcolor="${colors.header}" style="${titleStyle}">${headerTitle}</th></tr>`;
+
+      // Column Headers
+      const subHeaderStyle = `bgcolor="${colors.subHeader}" style="${commonStyle} font-weight: bold;"`;
+      html += `<tr>
+        <th ${subHeaderStyle}>Type</th>
+        <th ${subHeaderStyle}>Name</th>
+        <th ${subHeaderStyle}>Mandal</th>
+        <th ${subHeaderStyle}>Total SHGs</th>
+        <th ${subHeaderStyle}>Uploaded</th>
+        <th ${subHeaderStyle}>Approved</th>
+        <th ${subHeaderStyle}>Converted</th>
+        <th ${subHeaderStyle}>Pending at VOA</th>
+      </tr>`;
+
+      if (isAPM) {
+        // APM Top Row
+        const apmPerf = getPerf(user);
+        const apmStyle = `bgcolor="${colors.apm}" style="${commonStyle} font-weight: bold;"`;
+
+        html += `<tr>
+          <td ${apmStyle}>APM</td>
+          <td ${apmStyle}>${user.voName || user.name || 'MS Co-Ordinator'}</td>
+          <td ${apmStyle}>${user.mandal || ''}</td>
+          <td ${apmStyle}>${user.totalFiles || 0}</td>
+          <td ${apmStyle}>${user.uploadedFiles || 0}</td>
+          <td ${apmStyle}>${apmPerf.uploads.approved || 0}</td>
+          <td ${apmStyle}>${apmPerf.conversion.success || 0}</td>
+          <td ${apmStyle}>${user.pendingFiles || 0}</td>
+        </tr>`;
+
+        // Empty spacing row
+        html += '<tr><td colspan="8" style="height: 10px; border: none;"></td></tr>';
+
+        ccs.forEach(cc => {
+          const ccPerf = getPerf(cc);
+          const ccStyle = `bgcolor="${colors.cc}" style="${commonStyle} font-weight: bold;"`;
+
+          html += `<tr>
+            <td ${ccStyle}>CC</td>
+            <td ${ccStyle}>${cc.voName || cc.name}</td>
+            <td ${ccStyle}>${cc.mandal || ''}</td>
+            <td ${ccStyle}>${cc.totalFiles || 0}</td>
+            <td ${ccStyle}>${cc.uploadedFiles || 0}</td>
+            <td ${ccStyle}>${ccPerf.uploads.approved || 0}</td>
+            <td ${ccStyle}>${ccPerf.conversion.success || 0}</td>
+            <td ${ccStyle}>${cc.pendingFiles || 0}</td>
+          </tr>`;
+
+          (cc.vos || []).forEach(vo => {
+            const voPerf = getPerf(vo);
+            const voStyle = `style="${commonStyle}"`;
+            const pendingCell = `bgcolor="${getPendingBg(vo.pendingFiles, vo.totalFiles)}" style="${commonStyle}"`;
+
+            html += `<tr>
+              <td ${voStyle}>VO</td>
+              <td ${voStyle}>${vo.voName || vo.name}</td>
+              <td ${voStyle}>${vo.mandal || ''}</td>
+              <td ${voStyle}>${vo.totalFiles || 0}</td>
+              <td ${voStyle}>${vo.uploadedFiles || 0}</td>
+              <td ${voStyle}>${voPerf.uploads.approved || 0}</td>
+              <td ${voStyle}>${voPerf.conversion.success || 0}</td>
+              <td ${pendingCell}>${vo.pendingFiles || 0}</td>
+            </tr>`;
+          });
+          html += '<tr><td colspan="8" style="height: 10px; border: none;"></td></tr>';
+        });
+      } else {
+        const topRow = user;
+        const topPerf = getPerf(topRow);
+        const childrenList = isCC ? vos : [];
+        const topBg = isCC ? colors.cc : '';
+        const topStyle = `bgcolor="${topBg}" style="${commonStyle} ${isCC ? 'font-weight: bold;' : ''}"`;
+        const topPendingStyle = isCC ? topStyle : `bgcolor="${getPendingBg(topRow.pendingFiles, topRow.totalFiles)}" style="${commonStyle}"`;
+
+        html += `<tr>
+          <td ${topStyle}>${isCC ? 'CC' : 'VO'}</td>
+          <td ${topStyle}>${topRow.voName || topRow.name}</td>
+          <td ${topStyle}>${topRow.mandal || ''}</td>
+          <td ${topStyle}>${topRow.totalFiles || 0}</td>
+          <td ${topStyle}>${topRow.uploadedFiles || 0}</td>
+          <td ${topStyle}>${topPerf.uploads.approved || 0}</td>
+          <td ${topStyle}>${topPerf.conversion.success || 0}</td>
+          <td ${topPendingStyle}>${topRow.pendingFiles || 0}</td>
+        </tr>`;
+
+        if (isCC && childrenList.length > 0) {
+          html += '<tr><td colspan="8" style="height: 10px; border: none;"></td></tr>';
+          childrenList.forEach(vo => {
+            const voPerf = getPerf(vo);
+            const voStyle = `style="${commonStyle}"`;
+            const pendingCell = `bgcolor="${getPendingBg(vo.pendingFiles, vo.totalFiles)}" style="${commonStyle}"`;
+
+            html += `<tr>
+              <td ${voStyle}>VO</td>
+              <td ${voStyle}>${vo.voName || vo.name}</td>
+              <td ${voStyle}>${vo.mandal || ''}</td>
+              <td ${voStyle}>${vo.totalFiles || 0}</td>
+              <td ${voStyle}>${vo.uploadedFiles || 0}</td>
+              <td ${voStyle}>${voPerf.uploads.approved || 0}</td>
+              <td ${voStyle}>${voPerf.conversion.success || 0}</td>
+              <td ${pendingCell}>${vo.pendingFiles || 0}</td>
+            </tr>`;
+          });
+        }
+      }
+
+      html += '</table></body></html>';
+
+      // 3. Download as .xls (Excel interprets HTML tables as sheets)
+      const fileName = `${user.voName || user.name || 'User'}_Report_${monthNameShort}_${filterYear}.xls`;
+      const blob = new Blob(['\ufeff', html], { type: 'application/vnd.ms-excel' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
     } catch (err) {
       console.error('Error generating Excel:', err);
       alert('Failed to generate Excel report');
@@ -978,8 +1138,9 @@ const UsersTab = ({ filterProps }) => {
   const openEditModal = (user) => {
     setCurrentUser(user);
     const roleRaw = user.role || 'VO';
-    const baseRole = roleRaw.split(' - ')[0];
     const isDeveloper = roleRaw.toUpperCase().includes('DEVELOPER');
+    // Correctly extract base role by removing " - Developer" suffix if it exists
+    const baseRole = isDeveloper ? roleRaw.replace(/ - Developer$/i, '') : roleRaw;
 
     setFormData({
       voName: user.voName || '',
