@@ -202,6 +202,15 @@ const AdminDashboard = () => {
     );
   }
 
+  // Hierarchy persistence states
+  const [users, setUsers] = useState([]);
+  const [staffUsers, setStaffUsers] = useState([]);
+  const [totalPages, setTotalPages] = useState(0);
+  const [totalUsers, setTotalUsers] = useState(0);
+  const [userCounts, setUserCounts] = useState({ admin: 0, vo: 0, developer: 0, apm: 0, cc: 0, total: 0 });
+  const [expandedRows, setExpandedRows] = useState(new Set());
+  const [loadingNodes, setLoadingNodes] = useState(new Set());
+
   const filterProps = {
     selectedDistrict,
     setSelectedDistrict,
@@ -219,7 +228,22 @@ const AdminDashboard = () => {
     filterYear,
     setFilterYear,
     searchTerm,
-    setSearchTerm
+    setSearchTerm,
+    // Hierarchy persistence props
+    users,
+    setUsers,
+    staffUsers,
+    setStaffUsers,
+    totalPages,
+    setTotalPages,
+    totalUsers,
+    setTotalUsers,
+    userCounts,
+    setUserCounts,
+    expandedRows,
+    setExpandedRows,
+    loadingNodes,
+    setLoadingNodes
   };
 
 

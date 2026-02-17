@@ -59,6 +59,7 @@ const AnalyticsPage = ({ filterProps }) => {
     const [activeMetric, setActiveMetric] = useState('totalCollections');
     const [isCollectionsExpanded, setIsCollectionsExpanded] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [refreshKey, setRefreshKey] = useState(0);
 
     // User Role Info
     const user = useMemo(() => {
@@ -117,7 +118,7 @@ const AnalyticsPage = ({ filterProps }) => {
         };
 
         fetchGlobalStats();
-    }, [filters]);
+    }, [filters, refreshKey]);
 
     // Fetch Table Data
     useEffect(() => {
@@ -144,7 +145,18 @@ const AnalyticsPage = ({ filterProps }) => {
         };
 
         fetchTable();
-    }, [filters]);
+    }, [filters, refreshKey]);
+
+    // Polling Logic: If data is stale/refreshing, re-fetch every 10 seconds
+    useEffect(() => {
+        let interval;
+        if (isRefreshing) {
+            interval = setInterval(() => {
+                setRefreshKey(prev => prev + 1);
+            }, 5000); // 5 seconds
+        }
+        return () => clearInterval(interval);
+    }, [isRefreshing]);
 
     const handleDownload = async () => {
         try {

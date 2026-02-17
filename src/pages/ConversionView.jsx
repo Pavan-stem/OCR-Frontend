@@ -16,7 +16,8 @@ import {
     RefreshCw,
     Loader2,
     Filter,
-    X
+    X,
+    BookCheck
 } from 'lucide-react';
 import { API_BASE } from '../utils/apiConfig';
 import SHGTableDetail from './SHGTableDetail';
@@ -467,8 +468,11 @@ const ConversionView = ({ userId, userName, filterProps, onClose }) => {
                                                 </div>
 
                                                 <div>
-                                                    <h5 className="text-sm sm:text-base font-black text-gray-900 leading-tight">
-                                                        {item.shgName}
+                                                    <h5 className="text-sm sm:text-base font-black text-gray-900 leading-tight flex items-center gap-2 flex-wrap">
+                                                        <span className="truncate">{item.shgName}</span>
+                                                        {item.isSynced && (
+                                                            <BookCheck className="w-4 h-4 text-emerald-500 shrink-0" title="Sent to DB" />
+                                                        )}
                                                     </h5>
 
                                                     <div className="flex flex-wrap items-center gap-2 mt-1 text-[10px] text-gray-400 font-bold uppercase tracking-widest">

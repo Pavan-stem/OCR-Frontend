@@ -149,7 +149,9 @@ const DashboardTab = ({ filterProps }) => {
     filesUploaded: 0,
     filesPending: 0,
     validated: 0,
-    loading: true
+    loading: true,
+    isColdStart: false,
+    isRefreshing: false
   });
 
   // Chart data states
@@ -205,18 +207,29 @@ const DashboardTab = ({ filterProps }) => {
           uploadsResponse.json()
         ]);
 
+        const isColdStart = uploadsData.isColdStart || false;
+
         setStats({
           totalUsers: usersData.count || 0,
           totalSHGs: uploadsData.totalSHGs || 0,
           filesUploaded: uploadsData.uploaded || 0,
           filesPending: uploadsData.pending || 0,
           validated: uploadsData.validated || 0,
-          loading: false
+          loading: false,
+          isColdStart: isColdStart,
+          isRefreshing: isColdStart
         });
 
         // Set chart data
         setUploadTrends(uploadsData.dailyTrends || []);
         setDistrictStats(uploadsData.districtBreakdown || []);
+
+        // If cold start, trigger a background refresh in 10 seconds
+        if (isColdStart) {
+          setTimeout(() => {
+            loadStats();
+          }, 10000);
+        }
 
       } catch (error) {
         console.error('Failed to load stats:', error);
@@ -237,6 +250,18 @@ const DashboardTab = ({ filterProps }) => {
 
   return (
     <div className="relative overflow-x-hidden min-h-screen">
+      {/* Background Refresh Indicator */}
+      {stats.isRefreshing && (
+        <div className="fixed top-20 right-4 z-50 animate-in slide-in-from-right duration-500">
+          <div className="bg-indigo-600/90 backdrop-blur-md text-white px-4 py-2 rounded-full shadow-2xl flex items-center gap-2 border border-white/20">
+            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+            <span className="text-xs font-black uppercase tracking-widest">
+              {stats.isColdStart ? 'Updating fresh data...' : 'Refreshing...'}
+            </span>
+          </div>
+        </div>
+      )}
+
       <div className="space-y-4 sm:space-y-8 animate-in fade-in duration-500 pb-10">
         {/* KPI Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">

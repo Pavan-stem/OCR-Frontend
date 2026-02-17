@@ -287,12 +287,27 @@ const UsersTab = ({ filterProps }) => {
     filterYear,
     setFilterYear,
     searchTerm,
-    setSearchTerm
+    setSearchTerm,
+    // [ADD]: New shared states for persistence
+    users,
+    setUsers,
+    staffUsers,
+    setStaffUsers,
+    totalPages,
+    setTotalPages,
+    totalUsers,
+    setTotalUsers,
+    userCounts,
+    setUserCounts,
+    expandedRows,
+    setExpandedRows,
+    loadingNodes,
+    setLoadingNodes,
+    userRole
   } = filterProps;
 
 
-  const [users, setUsers] = useState([]);
-  const [staffUsers, setStaffUsers] = useState([]);
+  // [MOVED TO PROPS]: users, staffUsers, totalPages, totalUsers, userCounts, expandedRows, loadingNodes
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -309,17 +324,10 @@ const UsersTab = ({ filterProps }) => {
   const isAutoFilling = useRef(true);
   const isFirstRender = useRef(true);
   const [limit] = useState(10);
-  const [totalPages, setTotalPages] = useState(0);
-  const [totalUsers, setTotalUsers] = useState(0);
-  const [userCounts, setUserCounts] = useState({ admin: 0, vo: 0, developer: 0, total: 0 });
   const [isTransitioning, setIsTransitioning] = useState(false);
 
   // Search state
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm);
-
-  // Sorting state
-  const [sortBy, setSortBy] = useState([]);
-  const [sortOrders, setSortOrders] = useState({ pending: 'desc', uploaded: 'desc' });
 
   // User uploads modal states
   const [selectedUser, setSelectedUser] = useState(null);
@@ -406,35 +414,70 @@ const UsersTab = ({ filterProps }) => {
   const [isConnected, setIsConnected] = useState(true);
   const [updatingMaintenance, setUpdatingMaintenance] = useState(false);
   const [isMaintenanceCollapsed, setIsMaintenanceCollapsed] = useState(true);
-  const [expandedRows, setExpandedRows] = useState(new Set());
+  // [MOVED TO PROPS]: expandedRows, loadingNodes
 
-  const toggleSort = (id) => {
-    const isActive = sortBy.includes(id);
-    if (!isActive) {
-      setSortBy(prev => [...prev, id]); // Add to sort order
-      setSortOrders(prev => ({ ...prev, [id]: 'desc' }));
-    } else {
-      setSortOrders(prev => {
-        const current = prev[id] || 'desc';
-        if (current === 'desc') return { ...prev, [id]: 'asc' };
-        // If it was asc, remove it from sortBy and sortOrders
-        setSortBy(prevSort => prevSort.filter(s => s !== id));
-        const newSortOrders = { ...prev };
-        delete newSortOrders[id];
-        return newSortOrders;
+  // Helper to update children in a nested tree
+  const updateTreeWithChildren = (parentId, children) => {
+    const updateNodes = (list) => {
+      if (!list) return [];
+      return list.map(node => {
+        if (node._id === parentId) {
+          const role = (node.role || '').toLowerCase();
+          if (role.includes('apm')) return { ...node, ccs: children };
+          if (role.includes('cc')) return { ...node, vos: children };
+          return { ...node, vos: children }; // fallback
+        }
+        if (node.ccs) return { ...node, ccs: updateNodes(node.ccs) };
+        if (node.vos) return { ...node, vos: updateNodes(node.vos) };
+        return node;
       });
-    }
-    setPage(1);
+    };
+    setUsers(prev => updateNodes(prev));
   };
 
-  const toggleRow = (userId) => {
-    const newExpanded = new Set(expandedRows);
-    if (newExpanded.has(userId)) {
-      newExpanded.delete(userId);
-    } else {
-      newExpanded.add(userId);
+  const toggleRow = async (user) => {
+    const userId = typeof user === 'string' ? user : user._id;
+    const isExpanding = !expandedRows.has(userId);
+
+    if (isExpanding && typeof user === 'object' && user.isHierarchical) {
+      const hasChildren = (user.ccs && user.ccs.length > 0) || (user.vos && user.vos.length > 0);
+
+      if (!hasChildren) {
+        setLoadingNodes(prev => new Set(prev).add(userId));
+        try {
+          const token = localStorage.getItem('token');
+          const params = new URLSearchParams();
+          params.append('parentId', userId);
+          params.append('parentRole', user.role);
+          if (filterMonth) params.append('month', filterMonth);
+          if (filterYear) params.append('year', filterYear);
+          if (debouncedSearchTerm) params.append('search', debouncedSearchTerm);
+
+          const res = await fetch(`${API_BASE}/api/users?${params.toString()}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await res.json();
+          if (data.success && data.users) {
+            updateTreeWithChildren(userId, data.users);
+          }
+        } catch (err) {
+          console.error("Lazy Load Error:", err);
+        } finally {
+          setLoadingNodes(prev => {
+            const next = new Set(prev);
+            next.delete(userId);
+            return next;
+          });
+        }
+      }
     }
-    setExpandedRows(newExpanded);
+
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
   };
 
   // Check if logged in user is a developer
@@ -622,21 +665,55 @@ const UsersTab = ({ filterProps }) => {
       if (debouncedSearchTerm) params.append('search', debouncedSearchTerm);
       params.append('page', page);
       params.append('limit', limit);
-      if (sortBy.length > 0) {
-        params.append('sortBy', sortBy.join(','));
-        // Send orders for each active sort field
-        const activeOrders = sortBy.map(id => sortOrders[id] || 'desc');
-        params.append('sortOrder', activeOrders.join(','));
-      }
       if (filterMonth) params.append('month', filterMonth);
       if (filterYear) params.append('year', filterYear);
+
+      // Add lazy flag for initial load or non-search loads to speed up API
+      if (!debouncedSearchTerm) {
+        params.append('lazy', 'true');
+        // [UI STATE PERSISTENCE]: Don't reset expansions when returning to root view 
+        // to preserve state from ConversionView navigation back.
+        // if (!options.isBackground) {
+        //   setExpandedRows(new Set());
+        // }
+      }
 
       const res = await fetch(`${API_BASE}/api/users?${params.toString()}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
       if (data.success) {
-        setUsers(data.users);
+        // [REFRESH/PERSISTENCE FIX]: Always attempt to preserve existing children if IDs match
+        setUsers(prevUsers => {
+          const childMap = {}; // parentId -> children
+          const collectChildren = (list) => {
+            if (!list) return;
+            list.forEach(u => {
+              const children = u.ccs || u.vos;
+              if (children && children.length > 0) {
+                childMap[u._id] = children;
+                collectChildren(children);
+              }
+            });
+          };
+          collectChildren(prevUsers);
+
+          const reInjectChildren = (list) => {
+            if (!list) return [];
+            return list.map(u => {
+              const existingChildren = childMap[u._id];
+              if (existingChildren) {
+                const role = (u.role || '').toLowerCase();
+                if (role.includes('apm')) return { ...u, ccs: reInjectChildren(existingChildren) };
+                if (role.includes('cc')) return { ...u, vos: reInjectChildren(existingChildren) };
+                return { ...u, vos: reInjectChildren(existingChildren) };
+              }
+              return u;
+            });
+          };
+          return reInjectChildren(data.users);
+        });
+
         setStaffUsers(data.staff || []);
         setTotalPages(data.pagination.pages);
         setTotalUsers(data.pagination.total);
@@ -712,7 +789,7 @@ const UsersTab = ({ filterProps }) => {
   useEffect(() => {
     fetchUsers();
     fetchUserCounts();
-  }, [serverStatus.active, page, limit, debouncedSearchTerm, selectedDistrict, selectedMandal, selectedVillage, sortBy, sortOrders, filterMonth, filterYear]);
+  }, [serverStatus.active, page, limit, debouncedSearchTerm, selectedDistrict, selectedMandal, selectedVillage, filterMonth, filterYear]);
 
   // Periodic refresh for users list (to update online status dots)
   useEffect(() => {
@@ -724,7 +801,7 @@ const UsersTab = ({ filterProps }) => {
     }, 30000); // Every 30 seconds
 
     return () => clearInterval(interval);
-  }, [serverStatus.active, page, limit, debouncedSearchTerm, selectedDistrict, selectedMandal, selectedVillage, sortBy, sortOrders, filterMonth, filterYear]);
+  }, [serverStatus.active, page, limit, debouncedSearchTerm, selectedDistrict, selectedMandal, selectedVillage, filterMonth, filterYear]);
 
   // Handle auto-fill for restricted roles
   useEffect(() => {
@@ -1153,9 +1230,32 @@ const UsersTab = ({ filterProps }) => {
 
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white rounded-3xl p-4 sm:p-6 shadow-md border border-gray-100">
           <div>
-            <h2 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">VO Management</h2>
+            <h2 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight">User Management</h2>
             <p className="text-[10px] sm:text-sm text-gray-500 font-bold mt-1">
-              Managing <span className="text-indigo-600 font-black">{userCounts.vo}</span> VOs across <span className="text-indigo-600 font-black">{totalPages}</span> pages
+              {(() => {
+                const counts = [
+                  { key: 'apm', label: 'APMs' },
+                  { key: 'cc', label: 'CCs' },
+                  { key: 'vo', label: 'VOs' }
+                ];
+                const activeCounts = counts.filter(c => userCounts[c.key] > 0);
+
+                if (activeCounts.length === 0) return "No users found";
+
+                return (
+                  <>
+                    Managing {activeCounts.map((c, idx) => (
+                      <React.Fragment key={c.key}>
+                        <span className="text-indigo-600 font-black">{userCounts[c.key]}</span> {c.label}
+                        {idx < activeCounts.length - 2 ? ', ' : idx === activeCounts.length - 2 ? ' and ' : ''}
+                      </React.Fragment>
+                    ))}
+                    {totalPages > 1 && (
+                      <> across <span className="text-indigo-600 font-black">{totalPages}</span> pages</>
+                    )}
+                  </>
+                );
+              })()}
             </p>
           </div>
           {(() => {
@@ -1344,7 +1444,7 @@ const UsersTab = ({ filterProps }) => {
                 >
                   <Filter className={`w-5 h-5 transition-transform duration-300 ${showFilters ? 'rotate-180' : ''}`} />
                   <span>{showFilters ? 'Hide Filters' : 'Show Filters'}</span>
-                  {!showFilters && (sortBy.length > 0 || selectedDistrict !== 'all') && (
+                  {!showFilters && (selectedDistrict !== 'all') && (
                     <div className="w-2 h-2 bg-indigo-600 rounded-full animate-pulse border-2 border-white"></div>
                   )}
                 </button>
@@ -1353,79 +1453,8 @@ const UsersTab = ({ filterProps }) => {
 
             {/* Collapsible Filters Section */}
             <div className={`space-y-6 sm:space-y-8 transition-all duration-500 ease-in-out overflow-hidden ${showFilters ? 'max-h-[1000px] opacity-100 mt-6 pt-6 sm:mt-8 sm:pt-8 border-t border-gray-100' : 'max-h-0 opacity-0'}`}>
-              {/* Sort Controls Row */}
-              <div className="">
-                <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-amber-100 p-2 rounded-xl">
-                      <Filter className="w-5 h-5 text-amber-600" />
-                    </div>
-                    <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">Sorting using performance</h3>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-4">
-                    <div className="flex flex-wrap gap-6">
-                      {[
-                        { group: 'Uploads', items: [{ id: 'uploaded', label: 'U' }, { id: 'pending', label: 'P' }, { id: 'total', label: 'T' }] },
-                        { group: 'Approvals', items: [{ id: 'approved', label: 'A' }, { id: 'rejected', label: 'R' }, { id: 'p_pending', label: 'P' }] },
-                        { group: 'Conversion', items: [{ id: 'success', label: 'Success' }, { id: 'integrity', label: 'In Que' }] }
-                      ].map(section => (
-                        <div key={section.group} className="flex flex-col gap-2">
-                          <span className="text-[10px] font-black text-gray-400 uppercase tracking-tighter ml-1">{section.group} (Sort)</span>
-                          <div className="flex flex-wrap gap-2">
-                            {section.items.map(option => {
-                              const active = sortBy.includes(option.id);
-                              const currentOrder = sortOrders[option.id] || 'desc';
-
-                              return (
-                                <div key={option.id} className="flex bg-gray-50 p-1 rounded-xl border border-gray-100 items-center gap-1 group/item">
-                                  <button
-                                    onClick={() => toggleSort(option.id)}
-                                    className={`px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-black transition-all ${active
-                                      ? 'bg-indigo-600 text-white shadow-md'
-                                      : 'bg-white text-gray-500 hover:text-gray-700 border border-gray-100'
-                                      }`}
-                                  >
-                                    {option.label}
-                                  </button>
-
-                                  {active && (
-                                    <div className="flex bg-white/50 p-1 rounded-lg gap-1 border border-gray-100 items-center">
-                                      {sortBy.length > 1 && (
-                                        <span className="text-[8px] font-black bg-indigo-100 text-indigo-600 px-1 rounded-md">
-                                          #{sortBy.indexOf(option.id) + 1}
-                                        </span>
-                                      )}
-                                      <span className="px-2 py-0.5 text-[9px] font-black text-indigo-600 uppercase">
-                                        {currentOrder === 'desc' ? 'High' : 'Low'}
-                                      </span>
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    {sortBy.length > 0 && (
-                      <button
-                        onClick={() => {
-                          setSortBy([]);
-                          setPage(1);
-                        }}
-                        className="px-4 py-2.5 text-xs font-black text-red-500 hover:bg-red-50 rounded-xl transition-all flex items-center gap-2"
-                      >
-                        <X className="w-4 h-4" /> Clear Sorting
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-
               {/* Period Filters row */}
-              <div className="pt-8 border-t border-gray-100/50">
+              <div className="">
                 <div className="flex items-center gap-3 mb-6">
                   <div className="bg-amber-100 p-2 rounded-xl">
                     <Calendar className="w-5 h-5 text-amber-600" />
@@ -1561,10 +1590,12 @@ const UsersTab = ({ filterProps }) => {
                               <div className="flex items-center gap-4">
                                 {u.isHierarchical ? (
                                   <button
-                                    onClick={() => toggleRow(u._id)}
+                                    onClick={() => toggleRow(u)}
                                     className="p-1 hover:bg-white rounded-lg transition-all shadow-sm border border-gray-100 group/btn"
                                   >
-                                    {isExpanded ? (
+                                    {loadingNodes.has(u._id) ? (
+                                      <div className="w-4 h-4 border-2 border-indigo-600/30 border-t-indigo-600 rounded-full animate-spin" />
+                                    ) : isExpanded ? (
                                       <ChevronDown className="w-4 h-4 text-indigo-600" />
                                     ) : (
                                       <ChevronRight className="w-4 h-4 text-gray-400 group-hover/btn:text-indigo-500" />
@@ -1883,6 +1914,7 @@ const UsersTab = ({ filterProps }) => {
                   {users.map((user) => {
                     const renderCardTree = (u, isNested = false) => {
                       const isExpanded = expandedRows.has(u._id);
+                      const isLoading = loadingNodes.has(u._id);
                       const uRoleLower = (u.role || '').toLowerCase();
                       const uIsAPM = uRoleLower.includes('admin - apm');
                       const uIsCC = uRoleLower.includes('admin - cc');
@@ -1932,8 +1964,12 @@ const UsersTab = ({ filterProps }) => {
                                   </div>
                                 </div>
                                 {u.isHierarchical && (
-                                  <button onClick={() => toggleRow(u._id)} className="p-2 bg-indigo-50 text-indigo-600 rounded-xl transition-all">
-                                    <ChevronRight className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                                  <button onClick={() => toggleRow(u)} className="p-2 bg-indigo-50 text-indigo-600 rounded-xl transition-all">
+                                    {isLoading ? (
+                                      <div className="w-4 h-4 border-2 border-indigo-600/30 border-t-indigo-600 rounded-full animate-spin" />
+                                    ) : (
+                                      <ChevronRight className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                                    )}
                                   </button>
                                 )}
                               </div>

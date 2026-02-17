@@ -17,7 +17,8 @@ import {
     X,
     Image as ImageIcon,
     Eye,
-    EyeOff
+    EyeOff,
+    BookCheck
 } from 'lucide-react';
 import { API_BASE } from '../utils/apiConfig';
 
@@ -92,7 +93,11 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    table_data: data.table_data,
+                    table_data: {
+                        ...data.table_data,
+                        header_rows: headerRows,
+                        column_headers: headers
+                    },
                     shg_mbk_id: padSHGId(data.shgID) || 'Unknown',
                     month: new Date(data.convertedAt).getMonth() + 1,
                     year: new Date(data.convertedAt).getFullYear()
@@ -119,6 +124,28 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
     const handleSave = async () => {
         setSaving(true);
         try {
+            const updatedTableData = (() => {
+                const updated = JSON.parse(JSON.stringify(data.table_data));
+                // For v2.0 or when totals are explicitly editable/present
+                if (updated.schema_version === "2.0" || (updated.totals_row && updated.totals_row.cells)) {
+                    // Totals are already updated by handleTotalChange
+                } else if (!updated.totals_row || !updated.totals_row.cells || updated.totals_row.cells.length === 0) {
+                    // For old versions where totals are missing, inject calculated ones
+                    const totalsCells = [];
+                    for (let i = 0; i < 14; i++) {
+                        const frontendIdx = i + 2;
+                        const val = calculatedTotals[frontendIdx] || 0;
+                        totalsCells.push({
+                            col_index: i,
+                            text: val > 0 ? val.toFixed(2) : '',
+                            confidence: 1.0
+                        });
+                    }
+                    updated.totals_row = { cells: totalsCells };
+                }
+                return updated;
+            })();
+
             const token = localStorage.getItem('token');
             const res = await fetch(`${API_BASE}/api/conversion/detail/${uploadId}`, {
                 method: 'PUT',
@@ -127,13 +154,16 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    table_data: data.table_data,
+                    table_data: updatedTableData,
                     shgID: data.shgID
                 })
             });
             const result = await res.json();
             if (result.success) {
-                setOriginalData(JSON.parse(JSON.stringify(data)));
+                // Update local state with the same data we sent to server
+                const newData = { ...data, table_data: updatedTableData, isSynced: true };
+                setData(newData);
+                setOriginalData(JSON.parse(JSON.stringify(newData)));
                 setIsEditing(false);
             } else {
                 alert(result.message || 'Failed to save changes');
@@ -159,6 +189,7 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
             });
             const result = await res.json();
             if (result.success) {
+                setData(prev => ({ ...prev, isSynced: true }));
                 alert(result.message);
             } else {
                 alert(result.message || 'Failed to save data');
@@ -182,16 +213,39 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
         setData(newData);
     };
 
+    const handleTotalChange = (cellIdx, val) => {
+        const newData = { ...data };
+        const expectedColIndex = cellIdx - 2;
+
+        if (!newData.table_data.totals_row) {
+            newData.table_data.totals_row = { cells: [] };
+        }
+
+        // Ensure the cells array is populated up to the required index
+        while (newData.table_data.totals_row.cells.length < 14) {
+            newData.table_data.totals_row.cells.push({ col_index: newData.table_data.totals_row.cells.length, text: '', confidence: 1.0 });
+        }
+
+        newData.table_data.totals_row.cells[expectedColIndex].text = val;
+        setData(newData);
+    };
+
     const handleSHGIDChange = (val) => {
         const newData = { ...data };
-        newData.shgID = val;
 
-        // Also update the label in header_rows if it exists to show live update
-        if (newData.table_data && newData.table_data.header_rows) {
+        // Ensure table_data exists
+        if (!newData.table_data) newData.table_data = {};
+
+        // Update the SHG ID used for sync and display in the table
+        newData.table_data.shg_mbk_id = val;
+
+        // Also update the label in header_rows if it exists to show live update in the table
+        if (newData.table_data.header_rows) {
             newData.table_data.header_rows.forEach(row => {
                 row.forEach(cell => {
                     if (cell.col_span === 15 && cell.row_span === 1) {
                         cell.label = val;
+                        cell.text = val;
                     }
                 });
             });
@@ -380,8 +434,11 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                     {/* INFO */}
                     <div className="flex-1 min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="text-lg sm:text-2xl font-black text-gray-900 tracking-tight truncate">
+                            <h3 className="text-lg sm:text-2xl font-black text-gray-900 tracking-tight truncate flex items-center gap-2">
                                 {shgName}
+                                {data?.isSynced && (
+                                    <BookCheck className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-500 shrink-0" title="Sent to DB" />
+                                )}
                             </h3>
                         </div>
 
@@ -558,7 +615,7 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                                                     {isSHGIDHeader && isEditing ? (
                                                         <input
                                                             type="text"
-                                                            value={cell.label}
+                                                            value={tableData.shg_mbk_id || cell.label}
                                                             onChange={(e) => handleSHGIDChange(e.target.value)}
                                                             className="w-full bg-white border border-black/30 rounded px-2 py-1 text-indigo-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-bold"
                                                         />
@@ -643,8 +700,11 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                                                     ? parseFloat(extractedText.replace(/[^0-9.-]/g, ''))
                                                     : null;
 
+                                                const hasExtractedTotal = !!extractedText;
+                                                const displayText = hasExtractedTotal ? extractedText : (columnTotal > 0 ? columnTotal.toFixed(2) : '-');
+
                                                 // Check if there's a mismatch (tolerance of 0.01 for floating point)
-                                                const hasMismatch = extractedValue !== null &&
+                                                const hasMismatch = hasExtractedTotal && extractedValue !== null &&
                                                     Math.abs(extractedValue - columnTotal) > 0.01;
 
                                                 return (
@@ -652,11 +712,22 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                                                         key={cellIdx}
                                                         className={`px-6 py-4 text-sm font-black border-r border-gray-100/50 text-center ${hasMismatch
                                                             ? 'text-orange-600 bg-orange-50/50'
-                                                            : 'text-indigo-900'
+                                                            : !hasExtractedTotal
+                                                                ? 'text-gray-500' // normal color for fallback
+                                                                : 'text-indigo-900'
                                                             }`}
-                                                        title={hasMismatch ? `OCR: ${extractedText} | Calculated: ${columnTotal.toFixed(2)}` : ''}
+                                                        title={hasMismatch ? `OCR: ${extractedText} | Calculated: ${columnTotal.toFixed(2)}` : !hasExtractedTotal ? 'Calculated Total (OCR missing)' : ''}
                                                     >
-                                                        {extractedText || '-'}
+                                                        {isEditing ? (
+                                                            <input
+                                                                type="text"
+                                                                value={displayText === '-' ? '' : displayText}
+                                                                onChange={(e) => handleTotalChange(cellIdx, e.target.value)}
+                                                                className="w-full bg-white border border-indigo-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-indigo-500 font-black text-indigo-900"
+                                                            />
+                                                        ) : (
+                                                            displayText
+                                                        )}
                                                     </td>
                                                 );
                                             }
