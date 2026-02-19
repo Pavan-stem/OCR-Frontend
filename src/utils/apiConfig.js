@@ -24,10 +24,9 @@ export const getApiBase = () => {
   const isPrivateIP = /^(192\.168\.|10\.|172\.1[6-9]\.|172\.2[0-9]\.|172\.3[01]\.)/.test(hostname);
 
   if (isLocalhost || isPrivateIP) {
-    // Use local backend server on port 5004 with detected IP
-    const apiUrl = `http://${hostname}:5004/OCRtest`;
-    console.log(`[API Config] Using local backend: ${apiUrl}`);
-    return apiUrl;
+    // Zero-Firewall Method: Use relative path so Vite proxies to 5004 internally
+    console.log(`[API Config] Local/Private network detected. Using relative proxy.`);
+    return "";
   }
 
   // 3️⃣ Production (deployed site)
@@ -46,7 +45,7 @@ export const getAuthApiBase = () => {
     const isPrivateIP = /^(192\.168\.|10\.|172\.1[6-9]\.|172\.2[0-9]\.|172\.3[01]\.)/.test(hostname);
 
     if (isLocalhost || isPrivateIP) {
-      return `http://${hostname}:5004/OCRtest`;
+      return "";
     }
   }
 

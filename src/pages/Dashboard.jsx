@@ -432,6 +432,14 @@ const AdminDashboard = () => {
     }, 1500);
   };
 
+  const getPanelTitle = () => {
+    const roleLower = userRole.toLowerCase();
+    if (roleLower.includes('developer')) return 'SMD SHG Developers Panel';
+    if (roleLower.includes('apm')) return 'SMD SHG APM Panel';
+    if (roleLower.includes('cc')) return 'SMD SHG CC Panel';
+    return 'SMD SHG Admin Panel';
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-blue-900 to-blue-700">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -449,7 +457,7 @@ const AdminDashboard = () => {
 
                 <div>
                   <h1 className="text-lg sm:text-2xl lg:text-3xl font-extrabold text-white tracking-tight">
-                    SMD SHG Admin Panel
+                    {getPanelTitle()}
                   </h1>
 
                   <p className="text-xs sm:text-sm text-blue-100 font-medium">

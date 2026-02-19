@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { Upload, CheckCircle, X, FileText, Search, AlertCircle, Eye, Filter, RotateCw, RotateCcw, Camera, AlertTriangle, Activity, ScanLine } from 'lucide-react';
 import { API_BASE } from './utils/apiConfig';
 import { analyzeImage } from './utils/imageQualityCheck';
+import SmartCamera from './smartcamera';
 
 const SHGUploadSection = ({
   selectedMonth,
@@ -87,7 +88,7 @@ const SHGUploadSection = ({
     }
   };
 
-  const isDeveloper = user?.role?.toLowerCase().includes('developer');
+  const isDeveloper = user?.role?.toLowerCase().includes('developer') || (user?.voID && String(user.voID).length === 4);
   const isTestMode = window.location.pathname.startsWith('/Test');
   const hasAIFeatures = isTestMode && isDeveloper;
 
@@ -920,7 +921,19 @@ const SHGUploadSection = ({
     }
   };
 
-  /* Smart Camera handler removed */
+  /* Smart Camera handler re-enabled */
+  const handleSmartCameraCapture = async (file, shgId, shgName) => {
+    // Process the captured file using the existing handleFileSelect logic
+    const fakeEvent = {
+      target: {
+        files: [file]
+      }
+    };
+
+    // Pass the file to handleFileSelect
+    handleFileSelect(shgId, shgName, fakeEvent);
+    setShowSmartCamera(false);
+  };
 
 
   const handleFileSelect = async (shgId, shgName, event, analysisResults = null) => {
@@ -1691,22 +1704,24 @@ const SHGUploadSection = ({
                 />
 
                 <div className="flex flex-col gap-2">
-                  {isMobileDevice ? (
+                  <button
+                    onClick={() => fileInputRefs.current[shg.shgId]?.click()}
+                    className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-transparent active:scale-95"
+                  >
+                    <Upload size={18} />
+                    <span>{t?.('upload.uploadFile') || 'Upload File'}</span>
+                  </button>
+
+                  {isDeveloper && isMobileDevice && (
                     <button
-                      onClick={() => nativeCameraInputRefs.current[shg.shgId]?.click()}
-                      className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-transparent active:scale-95"
+                      onClick={() => {
+                        setCameraTarget({ id: shg.shgId, name: shg.shgName });
+                        setShowSmartCamera(true);
+                      }}
+                      className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white border-transparent active:scale-95"
                     >
-                      <Camera size={18} />
-                      <span>{t?.('Upload File') || 'Upload File'}</span>
-                    </button>
-                  ) : (
-                    /* Desktop: Standard Upload */
-                    <button
-                      onClick={() => fileInputRefs.current[shg.shgId]?.click()}
-                      className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-semibold cursor-pointer transition-all border shadow-sm text-xs sm:text-sm bg-blue-50 hover:bg-blue-100 text-blue-600 border-blue-200"
-                    >
-                      <Upload size={16} />
-                      <span>{t?.('Upload File') || 'Upload File'}</span>
+                      <ScanLine size={18} />
+                      <span>Camera Scan</span>
                     </button>
                   )}
                 </div>
@@ -1853,22 +1868,24 @@ const SHGUploadSection = ({
                 </button>
               ) : (
                 <div className="flex flex-col gap-2">
-                  {isMobileDevice ? (
+                  <button
+                    onClick={() => fileInputRefs.current[shg.shgId]?.click()}
+                    className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-transparent active:scale-95"
+                  >
+                    <Upload size={18} />
+                    <span>{t?.('upload.uploadFile') || 'Upload File'}</span>
+                  </button>
+
+                  {isDeveloper && isMobileDevice && (
                     <button
-                      onClick={() => nativeCameraInputRefs.current[shg.shgId]?.click()}
-                      className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-transparent active:scale-95"
+                      onClick={() => {
+                        setCameraTarget({ id: shg.shgId, name: shg.shgName });
+                        setShowSmartCamera(true);
+                      }}
+                      className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white border-transparent active:scale-95"
                     >
-                      <Camera size={18} />
-                      <span>{t?.('upload.takePhoto') || 'Take Photo'}</span>
-                    </button>
-                  ) : (
-                    /* Desktop: Standard Upload */
-                    <button
-                      onClick={() => fileInputRefs.current[shg.shgId]?.click()}
-                      className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-semibold cursor-pointer transition-all border shadow-sm text-xs sm:text-sm bg-blue-50 hover:bg-blue-100 text-blue-600 border-blue-200"
-                    >
-                      <Upload size={16} />
-                      <span>{t?.('upload.uploadFile') || 'Upload File'}</span>
+                      <ScanLine size={18} />
+                      <span>Camera Scan</span>
                     </button>
                   )}
                 </div>
@@ -2396,7 +2413,18 @@ const SHGUploadSection = ({
         </div>,
         document.body
       )}
-      {/* SmartCamera Removed */}
+      {/* SmartCamera Portal */}
+      {showSmartCamera && createPortal(
+        <SmartCamera
+          open={showSmartCamera}
+          onCapture={(file) => handleSmartCameraCapture(file, cameraTarget.id, cameraTarget.name)}
+          onClose={() => setShowSmartCamera(false)}
+          shgId={cameraTarget.id}
+          shgName={cameraTarget.name}
+          debugMode={true}
+        />,
+        document.body
+      )}
 
       {/* Action Sheet Modal */}
       {/* Action Sheet Removed */}

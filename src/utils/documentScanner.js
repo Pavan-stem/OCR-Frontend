@@ -588,10 +588,10 @@ export const warpPerspective = (canvas, points) => {
 
     // Sort points: TL, TR, BR, BL - handled by caller or basic 4-point transform
     const srcCoords = cv.matFromArray(4, 1, cv.CV_32FC2, [
-        points[0].x, points[0].y,
-        points[1].x, points[1].y,
-        points[2].x, points[2].y,
-        points[3].x, points[3].y
+        parseFloat(points[0].x), parseFloat(points[0].y),
+        parseFloat(points[1].x), parseFloat(points[1].y),
+        parseFloat(points[2].x), parseFloat(points[2].y),
+        parseFloat(points[3].x), parseFloat(points[3].y)
     ]);
 
     // Calculate destination dimensions
@@ -603,11 +603,15 @@ export const warpPerspective = (canvas, points) => {
     const heightRight = Math.hypot(points[2].x - points[1].x, points[2].y - points[1].y);
     const maxHeight = Math.max(heightLeft, heightRight);
 
+    // Safety Expansion (1.5% Margin) to prevent edge cut-offs during movement
+    const marginW = maxWidth * 0.015;
+    const marginH = maxHeight * 0.015;
+
     const dstCoords = cv.matFromArray(4, 1, cv.CV_32FC2, [
-        0, 0,
-        maxWidth - 1, 0,
-        maxWidth - 1, maxHeight - 1,
-        0, maxHeight - 1
+        marginW, marginH,               // TL
+        maxWidth - marginW, marginH,        // TR
+        maxWidth - marginW, maxHeight - marginH, // BR
+        marginW, maxHeight - marginH        // BL
     ]);
 
     const M = cv.getPerspectiveTransform(srcCoords, dstCoords);
@@ -623,45 +627,46 @@ export const warpPerspective = (canvas, points) => {
     return outputCanvas;
 };
 
-/* ===================== IMAGE ENHANCEMENT (Sharpen & Brighten) ===================== */
+/* ===================== IMAGE ENHANCEMENT (Native-Grade UHD Scan v8) ===================== */
 export const enhanceImage = (canvas) => {
     if (!cvReady()) return canvas;
 
     const src = cv.imread(canvas);
-    const dst = new cv.Mat();
+    const gray = new cv.Mat();
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
-    // 1. Sharpening filter
-    let kernel = cv.matFromArray(3, 3, cv.CV_32F, [
-        0, -1, 0,
-        -1, 5, -1,
-        0, -1, 0
-    ]);
-    cv.filter2D(src, dst, cv.CV_8U, kernel);
+    // 1. Pro Background Normalization (Extreme Smooth Lighting)
+    const background = new cv.Mat();
+    // Very large kernel (101x101) for UHD density ensures no local halos
+    cv.GaussianBlur(gray, background, new cv.Size(101, 101), 0);
+    const normalized = new cv.Mat();
+    cv.divide(gray, background, normalized, 255);
 
-    // 2. Adjust contrast and brightness automatically using CLAHE on L channel
-    cv.cvtColor(dst, dst, cv.COLOR_RGBA2RGB);
-    cv.cvtColor(dst, dst, cv.COLOR_RGB2Lab);
+    // 2. High-Precision Contrast (Natural Stretching)
+    const stretched = new cv.Mat();
+    // 1.1x contrast with subtle offset for professional depth
+    normalized.convertTo(stretched, cv.CV_8U, 1.1, -10);
 
-    let planes = new cv.MatVector();
-    cv.split(dst, planes);
+    // 3. Multi-Radius Sharpening (Natural Pro v11)
+    // Step A: Structures (Bold lines)
+    const blurStructure = new cv.Mat();
+    cv.GaussianBlur(stretched, blurStructure, new cv.Size(15, 15), 0);
+    const midResult = new cv.Mat();
+    cv.addWeighted(stretched, 1.2, blurStructure, -0.2, 0, midResult);
 
-    let clahe;
-    try {
-        clahe = new cv.CLAHE(2.0, new cv.Size(8, 8));
-        clahe.apply(planes.get(0), planes.get(0));
-    } catch (e) {
-        console.warn("CLAHE not available, using simple normalization");
-        cv.normalize(planes.get(0), planes.get(0), 0, 255, cv.NORM_MINMAX);
-    }
-
-    cv.merge(planes, dst);
-    cv.cvtColor(dst, dst, cv.COLOR_Lab2RGB);
-    cv.cvtColor(dst, dst, cv.COLOR_RGB2RGBA);
+    // Step B: Natural Fine Text (Subtle strokes)
+    const blurText = new cv.Mat();
+    cv.GaussianBlur(midResult, blurText, new cv.Size(5, 5), 0);
+    const finalResult = new cv.Mat();
+    cv.addWeighted(midResult, 1.1, blurText, -0.1, 0, finalResult);
 
     const outputCanvas = document.createElement("canvas");
-    cv.imshow(outputCanvas, dst);
+    cv.imshow(outputCanvas, finalResult);
 
-    src.delete(); dst.delete(); kernel.delete(); planes.delete();
-    if (clahe) clahe.delete();
+    // Cleanup
+    src.delete(); gray.delete(); background.delete(); normalized.delete();
+    stretched.delete(); blurStructure.delete(); midResult.delete();
+    blurText.delete(); finalResult.delete();
+
     return outputCanvas;
 };

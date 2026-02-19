@@ -25,12 +25,12 @@ export default defineConfig(({ command, mode }) => {
       allowedHosts: [
         'localhost',
         '127.0.0.1',
-        '192.168.1.6',    // Your IP - add this
+        '192.168.1.19',   // Current IP
         '192.168.1.*',    // Allow any 192.168.1.x
       ],
       proxy: {
         '/api': {
-          target: 'https://api.stemverse.api/OCRtest',
+          target: 'http://localhost:5004/OCRtest',
           changeOrigin: true,
           secure: false,
         },

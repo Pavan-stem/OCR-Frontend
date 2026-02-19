@@ -1137,13 +1137,19 @@ const UsersTab = ({ filterProps }) => {
 
   const openEditModal = (user) => {
     setCurrentUser(user);
-    const roleRaw = user.role || 'VO';
+    // Explicitly handle "None" or missing roles
+    const roleRaw = (user.role && user.role.toLowerCase() !== 'none') ? user.role : 'VO';
     const isDeveloper = roleRaw.toUpperCase().includes('DEVELOPER');
     // Correctly extract base role by removing " - Developer" suffix if it exists
-    const baseRole = isDeveloper ? roleRaw.replace(/ - Developer$/i, '') : roleRaw;
+    let baseRole = isDeveloper ? roleRaw.replace(/ - Developer$/i, '') : roleRaw;
+
+    // Normalize baseRole to match dropdown values (VO, Admin, Admin - CC, Admin - APM)
+    const knownRoles = ['VO', 'Admin', 'Admin - CC', 'Admin - APM'];
+    const matchedRole = knownRoles.find(r => r.toLowerCase() === baseRole.toLowerCase());
+    if (matchedRole) baseRole = matchedRole;
 
     setFormData({
-      voName: user.voName || '',
+      voName: user.voName || user.userName || user.name || '',
       phone: user.phone || '',
       password: '', // Don't show password
       role: baseRole,
@@ -1156,7 +1162,7 @@ const UsersTab = ({ filterProps }) => {
       clusterID: user.clusterID || '',
       clusterName: user.clusterName || '',
       userID: user.userID || '',
-      userName: user.userName || ''
+      userName: user.userName || user.voName || ''
     });
     setShowEditModal(true);
   };
@@ -1704,38 +1710,380 @@ const UsersTab = ({ filterProps }) => {
               </div>
             </div>
           </div>
-        </div>
 
-        {/* User Table Card */}
-        <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/30 overflow-hidden">
-          {loading && users.length === 0 ? (
-            <div className="p-24 flex flex-col items-center justify-center space-y-6">
-              <div className="relative">
-                <div className="w-16 h-16 border-4 border-indigo-100 rounded-full"></div>
-                <div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin absolute top-0"></div>
+          {/* User Table Card */}
+          <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/30 overflow-hidden">
+            {loading && users.length === 0 ? (
+              <div className="p-24 flex flex-col items-center justify-center space-y-6">
+                <div className="relative">
+                  <div className="w-16 h-16 border-4 border-indigo-100 rounded-full"></div>
+                  <div className="w-16 h-16 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin absolute top-0"></div>
+                </div>
+                <p className="text-gray-500 font-black uppercase tracking-widest text-xs">Syncing user directory...</p>
               </div>
-              <p className="text-gray-500 font-black uppercase tracking-widest text-xs">Syncing user directory...</p>
-            </div>
-          ) : users.length === 0 ? (
-            <div className="p-24 text-center">
-              <div className="bg-gray-50 w-24 h-24 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-inner">
-                <User className="w-12 h-12 text-gray-300" />
+            ) : users.length === 0 ? (
+              <div className="p-24 text-center">
+                <div className="bg-gray-50 w-24 h-24 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-inner">
+                  <User className="w-12 h-12 text-gray-300" />
+                </div>
+                <h3 className="text-xl font-black text-gray-900 mb-2">No users identified</h3>
+                <p className="text-gray-500 font-medium">Try adjusting your filters or search criteria.</p>
               </div>
-              <h3 className="text-xl font-black text-gray-900 mb-2">No users identified</h3>
-              <p className="text-gray-500 font-medium">Try adjusting your filters or search criteria.</p>
-            </div>
-          ) : (
-            <>
-              {/* Desktop Table View */}
-              <div className={`hidden lg:block custom-scrollbar transition-opacity duration-300 ${isTransitioning ? 'opacity-50' : 'opacity-100'}`}>
-                <div className="overflow-x-auto">
-                  {(() => {
-                    const renderUserList = (userList, title, isOperational = true) => {
-                      const renderUserRow = (u, isNested = false, depth = 0) => {
+            ) : (
+              <>
+                {/* Desktop Table View */}
+                <div className={`hidden lg:block custom-scrollbar transition-opacity duration-300 ${isTransitioning ? 'opacity-50' : 'opacity-100'}`}>
+                  <div className="overflow-x-auto">
+                    {(() => {
+                      const renderUserList = (userList, title, isOperational = true) => {
+                        const renderUserRow = (u, isNested = false, depth = 0) => {
+                          const isExpanded = expandedRows.has(u._id);
+                          const uRoleRaw = u.role || 'VO';
+                          const uRoleLower = (uRoleRaw.toLowerCase() === 'none') ? 'vo' : uRoleRaw.toLowerCase();
+                          const uIsDev = uRoleLower.includes('developer');
+                          const uIsAdmin = uRoleLower.includes('admin') && !uIsDev && !uRoleLower.includes('apm') && !uRoleLower.includes('cc');
+                          const uIsAPM = uRoleLower.includes('admin - apm');
+                          const uIsCC = uRoleLower.includes('admin - cc');
+                          const uIsVO = uRoleLower.startsWith('vo') || uRoleLower === 'none' || !u.role;
+
+                          const perf = u.performanceStats || {
+                            uploads: { approved: 0, rejected: 0, pending: 0 },
+                            conversion: { success: 0, failed: 0, pending: 0, processing: 0 }
+                          };
+
+                          return (
+                            <tr key={u._id} className={`hover:bg-indigo-50/30 transition-all group ${isNested ? 'bg-indigo-50/10' : ''}`}>
+                              <td className="px-4 py-6 whitespace-nowrap">
+                                <div className="flex items-center gap-4">
+                                  {u.isHierarchical ? (
+                                    <button
+                                      onClick={() => toggleRow(u)}
+                                      className="p-1 hover:bg-white rounded-lg transition-all shadow-sm border border-gray-100 group/btn"
+                                    >
+                                      {loadingNodes.has(u._id) ? (
+                                        <div className="w-4 h-4 border-2 border-indigo-600/30 border-t-indigo-600 rounded-full animate-spin" />
+                                      ) : isExpanded ? (
+                                        <ChevronDown className="w-4 h-4 text-indigo-600" />
+                                      ) : (
+                                        <ChevronRight className="w-4 h-4 text-gray-400 group-hover/btn:text-indigo-500" />
+                                      )}
+                                    </button>
+                                  ) : (
+                                    <div className="w-[34px]" />
+                                  )}
+                                  {depth > 0 && (
+                                    <div className="flex" style={{ marginLeft: `${(depth - 1) * 24}px` }}>
+                                      <div className="w-px h-12 bg-indigo-200/50 mr-2"></div>
+                                    </div>
+                                  )}
+
+                                  <div className="flex flex-col items-center gap-2 min-w-[48px]">
+                                    <div className={`relative w-10 h-10 rounded-2xl flex items-center justify-center shadow-lg transition-transform group-hover:scale-110 ${uIsDev
+                                      ? 'bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-amber-100'
+                                      : (uIsAdmin || uIsAPM || uIsCC)
+                                        ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-indigo-100'
+                                        : 'bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-blue-100'
+                                      }`}>
+                                      {uIsDev ? <Lock className="w-4 h-4" /> : (uIsAdmin || uIsAPM || uIsCC) ? <Shield className="w-4 h-4" /> : <User className="w-4 h-4" />}
+                                      <div className={`absolute -bottom-1 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-md text-[7px] font-black uppercase tracking-tighter border shadow-sm ${uIsDev
+                                        ? 'bg-amber-50 text-amber-600 border-amber-200'
+                                        : (uIsAdmin || uIsAPM || uIsCC)
+                                          ? 'bg-purple-100 text-purple-700 border-purple-200'
+                                          : 'bg-blue-100 text-blue-700 border-blue-200'
+                                        }`}>
+                                        {((u.role && u.role.toLowerCase() !== 'none') ? u.role : 'VO').split(' - ').pop()}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex flex-col gap-1">
+                                    <div
+                                      className="text-base font-black text-gray-900 leading-tight cursor-pointer hover:underline flex items-center gap-2"
+                                      onClick={() => uIsVO && handleViewUserUploads(u)}
+                                    >
+                                      {u.voName}
+                                      {u.isOnline && (
+                                        <span className="flex h-2.5 w-2.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse" title="Online"></span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <MapPin className="w-3.5 h-3.5 text-gray-400" />
+                                      <span className="text-xs font-bold text-gray-500">
+                                        {u.village ? `${u.village}, ` : ''}{u.mandal}, {u.district}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-4 mt-1">
+                                      {(u.voID || u.userID || u.clusterID) && (
+                                        <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md uppercase tracking-tighter">
+                                          ID: {u.voID || u.userID || u.clusterID}
+                                        </span>
+                                      )}
+                                      <div className="flex items-center gap-1.5">
+                                        <Clock className="w-3 h-3 text-gray-300" />
+                                        <span className="text-[9px] font-bold text-gray-400 uppercase">Active {formatLastActive(u.lastActiveAt)}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-4 py-6 text-center border-r border-gray-50">
+                                {(uIsAdmin || uIsDev) ? (
+                                  <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest italic">N/A</span>
+                                ) : (
+                                  <div className="flex flex-col gap-2">
+                                    <div className="flex justify-center items-center gap-4">
+                                      <div className="flex flex-col items-center">
+                                        <span className="text-xs font-black text-green-600 leading-none">{u.uploadedFiles || 0}</span>
+                                        <span className="text-[8px] font-black text-green-600/60 uppercase tracking-tighter mt-1">Uploaded</span>
+                                      </div>
+                                      <div className="flex flex-col items-center">
+                                        <span className="text-xs font-black text-orange-500 leading-none">{u.pendingFiles || 0}</span>
+                                        <span className="text-[8px] font-black text-orange-400 uppercase tracking-tighter mt-1">Pending</span>
+                                      </div>
+                                      <div className="flex flex-col items-center">
+                                        <span className="text-xs font-black text-black leading-none">{u.totalFiles || 0}</span>
+                                        <span className="text-[8px] font-black text-gray-400 uppercase tracking-tighter mt-1">Total</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </td>
+                              <td className="px-4 py-6 text-center border-r border-gray-50">
+                                {(uIsAdmin || uIsDev) ? (
+                                  <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest italic">N/A</span>
+                                ) : (
+                                  <div className="flex flex-col gap-2">
+                                    <div className="flex justify-center items-center gap-4">
+                                      <div className="flex flex-col items-center">
+                                        <span className="text-xs font-black text-green-600 leading-none">{perf.uploads.approved}</span>
+                                        <span className="text-[8px] font-black text-green-600/60 uppercase tracking-tighter mt-1">Approved</span>
+                                      </div>
+                                      <div className="flex flex-col items-center">
+                                        <span className="text-xs font-black text-red-600 leading-none">{perf.uploads.rejected}</span>
+                                        <span className="text-[8px] font-black text-red-400 uppercase tracking-tighter mt-1">Rejected</span>
+                                      </div>
+                                      <div className="flex flex-col items-center">
+                                        <span className="text-xs font-black text-orange-500 leading-none">{perf.uploads.pending}</span>
+                                        <span className="text-[8px] font-black text-orange-400 uppercase tracking-tighter mt-1">Pending</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </td>
+                              <td className="px-4 py-6 text-center border-r border-gray-50">
+                                {(uIsAdmin || uIsDev) ? (
+                                  <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest italic">N/A</span>
+                                ) : (
+                                  <div className="flex flex-col gap-2">
+                                    <div className="flex justify-center items-center gap-4">
+                                      <div className="flex flex-col items-center">
+                                        <span className="text-xs font-black text-green-600 leading-none">{perf.conversion.success}</span>
+                                        <span className="text-[8px] font-black text-green-600/60 uppercase tracking-tighter mt-1">Success</span>
+                                      </div>
+                                      <div className="flex flex-col items-center">
+                                        <span className="text-xs font-black text-red-600 leading-none">{perf.conversion.failed}</span>
+                                        <span className="text-[8px] font-black text-red-400 uppercase tracking-tighter mt-1">Failed</span>
+                                      </div>
+                                      <div className="flex flex-col items-center">
+                                        <span className="text-xs font-black text-orange-500 leading-none">{perf.conversion.pending + perf.conversion.processing}</span>
+                                        <span className="text-[8px] font-black text-orange-400 uppercase tracking-tighter mt-1">In Que</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </td>
+                              <td className="px-4 py-6 whitespace-nowrap text-right">
+                                <div className="flex justify-end gap-2 transition-opacity">
+                                  {(uIsAPM || uIsCC) && (
+                                    <button
+                                      onClick={() => downloadSummaryExcel(u)}
+                                      className="p-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-lg transition-all shadow-sm"
+                                      title="Download Performance Summary (Excel)"
+                                    >
+                                      <Download className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                  {canViewUserUploads(u) && (
+                                    <button
+                                      onClick={() => {
+                                        setSelectedUserId(u._id);
+                                        setSelectedUserName(u.voName);
+                                        setActiveTab('conversion');
+                                      }}
+                                      className="p-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-lg transition-all shadow-sm"
+                                      title="View Converted SHGs"
+                                    >
+                                      <FileSymlink className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                  {canEditUser(u) && (
+                                    <button
+                                      onClick={() => openEditModal(u)}
+                                      className="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg transition-all shadow-sm"
+                                      title="Edit User"
+                                    >
+                                      <Edit className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                  {canDeleteUser(u) && (
+                                    <button
+                                      onClick={() => handleDeleteUser(u._id)}
+                                      className="p-1.5 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white rounded-lg transition-all shadow-sm"
+                                      title="Delete User"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        };
+
+                        return (
+                          <div className="mb-10 last:mb-0">
+                            {/* Section Title removed per user request */}
+                            <table className="w-full text-left border-collapse min-w-[1000px]">
+                              <thead>
+                                <tr className="bg-indigo-700 text-white">
+                                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest border-r border-white/10 w-[35%]">
+                                    {currentUserRole.includes('admin - apm')
+                                      ? 'CC Profile'
+                                      : currentUserRole.includes('admin - cc')
+                                        ? 'VO Profile'
+                                        : 'APM Profile'
+                                    }
+                                  </th>
+                                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest border-r border-white/10 text-center w-[18%]">
+                                    Uploads (U/P/T)
+                                  </th>
+                                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest border-r border-white/10 text-center w-[18%]">
+                                    Approvals (A/R/P)
+                                  </th>
+                                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest border-r border-white/10 text-center w-[18%]">
+                                    Conversion
+                                  </th>
+                                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest text-right w-[11%]">Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody key={page} className="divide-y divide-gray-100">
+                                {userList.map((user) => {
+                                  const renderUserTree = (u, depth = 0) => {
+                                    const isExpandedLocal = expandedRows.has(u._id);
+                                    return (
+                                      <React.Fragment key={u._id}>
+                                        {renderUserRow(u, depth > 0, depth)}
+                                        {isExpandedLocal && (
+                                          <>
+                                            {u.ccs && u.ccs.length > 0 && u.ccs.map(child => renderUserTree(child, depth + 1))}
+                                            {u.vos && u.vos.length > 0 && u.vos.map(child => renderUserTree(child, depth + 1))}
+                                          </>
+                                        )}
+                                      </React.Fragment>
+                                    );
+                                  };
+                                  return renderUserTree(user);
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        );
+                      };
+
+                      return (
+                        <div className="space-y-4">
+                          {renderUserList(users, "Operational Hierarchy (APM > CC > VO)", true)}
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Technical Staff Section (Table View) - Moved to bottom */}
+                  {staffUsers.length > 0 && (
+                    <div className="mt-3 mb-10 border-t border-gray-100 pt-10">
+                      <div className="flex items-center gap-3 px-8 py-6 bg-amber-50/50 border-b border-gray-100">
+                        <div className="bg-amber-100 p-2 rounded-xl">
+                          <Lock className="w-5 h-5 text-amber-600" />
+                        </div>
+                        <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">Technical & Administrative Staff</h3>
+                      </div>
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-indigo-700/90 text-white">
+                            <th className="px-8 py-4 text-[10px] font-black uppercase tracking-widest border-r border-white/10 w-[80%]">Staff Profile & Identity</th>
+                            <th className="px-8 py-4 text-[10px] font-black uppercase tracking-widest text-right w-[20%]">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 bg-white">
+                          {staffUsers.map(s => {
+                            const rLower = (s.role || '').toLowerCase();
+                            const sIsDev = rLower.includes('developer');
+                            return (
+                              <tr key={s._id} className="hover:bg-amber-50/20 transition-all group">
+                                <td className="px-8 py-5 whitespace-nowrap">
+                                  <div className="flex items-center gap-6">
+                                    <div className={`relative w-12 h-12 rounded-2xl flex items-center justify-center shadow-md transition-transform group-hover:scale-105 ${sIsDev ? 'bg-gradient-to-br from-amber-500 to-orange-600 text-white' : 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white'
+                                      }`}>
+                                      {sIsDev ? <Lock className="w-5 h-5" /> : <Shield className="w-5 h-5" />}
+                                      <div className={`absolute -bottom-1 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-md text-[7px] font-black uppercase tracking-tighter border shadow-sm ${sIsDev ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-purple-100 text-purple-700 border-purple-200'
+                                        }`}>
+                                        {(s.role || 'Admin').split(' - ').pop()}
+                                      </div>
+                                    </div>
+                                    <div className="flex flex-col gap-0.5">
+                                      <span className="text-base font-black text-gray-900 leading-tight">{s.voName || s.name}</span>
+                                      <div className="flex items-center gap-4 mt-1">
+                                        {(s.voID || s.userID || s.clusterID) && (
+                                          <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md uppercase tracking-tighter">
+                                            ID: {s.voID || s.userID || s.clusterID}
+                                          </span>
+                                        )}
+                                        <div className="flex items-center gap-1.5">
+                                          <Clock className="w-3 h-3 text-gray-300" />
+                                          <span className="text-[9px] font-bold text-gray-400 uppercase">Active {formatLastActive(s.lastActiveAt)}</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="px-8 py-5 whitespace-nowrap text-right">
+                                  <div className="flex justify-end gap-3 lg:opacity-0 group-hover:opacity-100 transition-opacity">
+                                    {canEditUser(s) && (
+                                      <button onClick={() => openEditModal(s)} className="p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all shadow-sm">
+                                        <Edit className="w-5 h-5" />
+                                      </button>
+                                    )}
+                                    {canDeleteUser(s) && (
+                                      <button onClick={() => handleDeleteUser(s._id)} className="p-2.5 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white rounded-xl transition-all shadow-sm">
+                                        <Trash2 className="w-5 h-5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* Mobile/Tablet Card View */}
+                <div className="lg:hidden p-4 space-y-8">
+
+                  {/* Mobile Ground Hierarchy */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 px-2">
+                      <div className="w-1.5 h-4 bg-indigo-600 rounded-full"></div>
+                      <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest text-xs">Ground Operational Hierarchy</h3>
+                    </div>
+                    {users.map((user) => {
+                      const renderCardTree = (u, isNested = false) => {
                         const isExpanded = expandedRows.has(u._id);
-                        const uRoleLower = (u.role || '').toLowerCase();
-                        const uIsDev = uRoleLower.includes('developer');
-                        const uIsAdmin = uRoleLower.includes('admin') && !uIsDev && !uRoleLower.includes('apm') && !uRoleLower.includes('cc');
+                        const isLoading = loadingNodes.has(u._id);
+                        const uRoleRaw = u.role || 'VO';
+                        const uRoleLower = (uRoleRaw.toLowerCase() === 'none') ? 'vo' : uRoleRaw.toLowerCase();
                         const uIsAPM = uRoleLower.includes('admin - apm');
                         const uIsCC = uRoleLower.includes('admin - cc');
                         const uIsVO = uRoleLower.startsWith('vo') || uRoleLower === 'none' || !u.role;
@@ -1746,1252 +2094,925 @@ const UsersTab = ({ filterProps }) => {
                         };
 
                         return (
-                          <tr key={u._id} className={`hover:bg-indigo-50/30 transition-all group ${isNested ? 'bg-indigo-50/10' : ''}`}>
-                            <td className="px-4 py-6 whitespace-nowrap">
-                              <div className="flex items-center gap-4">
-                                {u.isHierarchical ? (
-                                  <button
-                                    onClick={() => toggleRow(u)}
-                                    className="p-1 hover:bg-white rounded-lg transition-all shadow-sm border border-gray-100 group/btn"
-                                  >
-                                    {loadingNodes.has(u._id) ? (
-                                      <div className="w-4 h-4 border-2 border-indigo-600/30 border-t-indigo-600 rounded-full animate-spin" />
-                                    ) : isExpanded ? (
-                                      <ChevronDown className="w-4 h-4 text-indigo-600" />
-                                    ) : (
-                                      <ChevronRight className="w-4 h-4 text-gray-400 group-hover/btn:text-indigo-500" />
-                                    )}
-                                  </button>
-                                ) : (
-                                  <div className="w-[34px]" />
-                                )}
-                                {depth > 0 && (
-                                  <div className="flex" style={{ marginLeft: `${(depth - 1) * 24}px` }}>
-                                    <div className="w-px h-12 bg-indigo-200/50 mr-2"></div>
-                                  </div>
-                                )}
-
-                                <div className="flex flex-col items-center gap-2 min-w-[48px]">
-                                  <div className={`relative w-10 h-10 rounded-2xl flex items-center justify-center shadow-lg transition-transform group-hover:scale-110 ${uIsDev
-                                    ? 'bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-amber-100'
-                                    : (uIsAdmin || uIsAPM || uIsCC)
-                                      ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-indigo-100'
-                                      : 'bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-blue-100'
-                                    }`}>
-                                    {uIsDev ? <Lock className="w-4 h-4" /> : (uIsAdmin || uIsAPM || uIsCC) ? <Shield className="w-4 h-4" /> : <User className="w-4 h-4" />}
-                                    <div className={`absolute -bottom-1 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-md text-[7px] font-black uppercase tracking-tighter border shadow-sm ${uIsDev
-                                      ? 'bg-amber-50 text-amber-600 border-amber-200'
+                          <div key={u._id} className="space-y-2">
+                            <div className={`${isNested ? 'bg-indigo-50/30' : 'bg-white'} rounded-3xl border border-gray-100 shadow-sm overflow-hidden`}>
+                              <div className="p-4 space-y-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="flex flex-col items-center gap-1 shrink-0">
+                                    <div className={`relative ${isNested ? 'w-10 h-10' : 'w-11 h-11'} rounded-2xl flex items-center justify-center shadow-md ${uIsDev
+                                      ? 'bg-gradient-to-br from-amber-500 to-orange-600 text-white'
                                       : (uIsAdmin || uIsAPM || uIsCC)
-                                        ? 'bg-purple-100 text-purple-700 border-purple-200'
-                                        : 'bg-blue-100 text-blue-700 border-blue-200'
+                                        ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white'
+                                        : 'bg-gradient-to-br from-blue-500 to-blue-600 text-white'
                                       }`}>
-                                      {(u.role || 'VO').split(' - ').pop()}
+                                      {uIsDev ? <Lock className="w-4 h-4" /> : (uIsAdmin || uIsAPM || uIsCC) ? <Shield className="w-4 h-4" /> : <User className="w-4 h-4" />}
+                                      <div className={`absolute -bottom-1 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded-md text-[6px] font-black uppercase tracking-tighter border shadow-sm ${uIsDev
+                                        ? 'bg-amber-50 text-amber-600 border-amber-200'
+                                        : (uIsAdmin || uIsAPM || uIsCC)
+                                          ? 'bg-purple-100 text-purple-700 border-purple-200'
+                                          : 'bg-blue-100 text-blue-700 border-blue-200'
+                                        }`}>
+                                        {((u.role && u.role.toLowerCase() !== 'none') ? u.role : 'VO').split(' - ').pop()}
+                                      </div>
                                     </div>
                                   </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-black text-gray-900 leading-tight flex items-center gap-2 truncate" onClick={() => uIsVO && handleViewUserUploads(u)}>
+                                      {u.voName}
+                                      {u.isOnline && <span className="flex h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse shrink-0"></span>}
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-2 mt-1">
+                                      <div className="flex items-center gap-1">
+                                        <MapPin className="w-2.5 h-2.5 text-gray-400" />
+                                        <span className="text-[9px] font-bold text-gray-500 truncate max-w-[120px]">{u.village || u.mandal}, {u.district}</span>
+                                      </div>
+                                      {(u.voID || u.userID || u.clusterID) && (
+                                        <span className="text-[8px] font-black text-indigo-500 uppercase tracking-tighter bg-indigo-50 px-1.5 py-0.5 rounded">ID: {u.voID || u.userID || u.clusterID}</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  {u.isHierarchical && (
+                                    <button onClick={() => toggleRow(u)} className="p-2 bg-indigo-50 text-indigo-600 rounded-xl transition-all">
+                                      {isLoading ? (
+                                        <div className="w-4 h-4 border-2 border-indigo-600/30 border-t-indigo-600 rounded-full animate-spin" />
+                                      ) : (
+                                        <ChevronRight className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                                      )}
+                                    </button>
+                                  )}
                                 </div>
 
-                                <div className="flex flex-col gap-1">
-                                  <div
-                                    className="text-base font-black text-gray-900 leading-tight cursor-pointer hover:underline flex items-center gap-2"
-                                    onClick={() => uIsVO && handleViewUserUploads(u)}
-                                  >
-                                    {u.voName}
-                                    {u.isOnline && (
-                                      <span className="flex h-2.5 w-2.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse" title="Online"></span>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <MapPin className="w-3.5 h-3.5 text-gray-400" />
-                                    <span className="text-xs font-bold text-gray-500">
-                                      {u.village ? `${u.village}, ` : ''}{u.mandal}, {u.district}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-4 mt-1">
-                                    {(u.voID || u.userID || u.clusterID) && (
-                                      <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md uppercase tracking-tighter">
-                                        ID: {u.voID || u.userID || u.clusterID}
-                                      </span>
-                                    )}
-                                    <div className="flex items-center gap-1.5">
-                                      <Clock className="w-3 h-3 text-gray-300" />
-                                      <span className="text-[9px] font-bold text-gray-400 uppercase">Active {formatLastActive(u.lastActiveAt)}</span>
+                                {!(uIsAdmin || uIsDev) && (
+                                  <div className="space-y-4 pt-3 border-t border-gray-50">
+                                    <div className="grid grid-cols-2 gap-4">
+                                      <div className="bg-white p-2 rounded-2xl border border-gray-100 text-center">
+                                        <div className="flex justify-between items-center mb-1 px-1">
+                                          <span className="text-[7px] font-black text-gray-400 uppercase">Uploads</span>
+                                          <span className="text-[9px] font-black text-black">{u.totalFiles}</span>
+                                        </div>
+                                        <div className="flex gap-1 justify-between">
+                                          <div className="flex-1"><div className="text-[10px] font-black text-green-600">{u.uploadedFiles}</div><div className="text-[5px] font-bold text-gray-400">U</div></div>
+                                          <div className="flex-1"><div className="text-[10px] font-black text-orange-500">{u.pendingFiles}</div><div className="text-[5px] font-bold text-gray-400">P</div></div>
+                                          <div className="flex-1"><div className="text-[10px] font-black text-black">{u.totalFiles}</div><div className="text-[5px] font-bold text-gray-400">T</div></div>
+                                        </div>
+                                      </div>
+                                      <div className="bg-white p-2 rounded-2xl border border-gray-100 text-center">
+                                        <div className="flex justify-between items-center mb-1 px-1"><span className="text-[7px] font-black text-gray-400 uppercase">Approvals</span><span className="text-[9px] font-black text-green-600">{perf.uploads.approved}</span></div>
+                                        <div className="flex gap-1 justify-between">
+                                          <div className="flex-1"><div className="text-[10px] font-black text-green-600">{perf.uploads.approved}</div><div className="text-[5px] font-bold text-green-600/60">A</div></div>
+                                          <div className="flex-1"><div className="text-[10px] font-black text-red-600">{perf.uploads.rejected}</div><div className="text-[5px] font-bold text-red-400">R</div></div>
+                                          <div className="flex-1"><div className="text-[10px] font-black text-orange-500">{perf.uploads.pending}</div><div className="text-[5px] font-bold text-orange-400">P</div></div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div className="bg-white p-2 rounded-2xl border border-indigo-100">
+                                      <div className="flex justify-between items-center mb-1 px-1">
+                                        <span className="text-[7px] font-black text-gray-400 uppercase">Conversion</span>
+                                      </div>
+                                      <div className="flex justify-between gap-1">
+                                        {[
+                                          { label: 'Success', val: perf.conversion.success, color: 'text-green-600' },
+                                          { label: 'Failed', val: perf.conversion.failed, color: 'text-red-600' },
+                                          { label: 'In Que', val: perf.conversion.pending + perf.conversion.processing, color: 'text-orange-500' }
+                                        ].map(item => (
+                                          <div key={item.label} className="text-center flex-1 bg-gray-50 rounded-lg p-1">
+                                            <div className={`text-[10px] font-black ${item.color}`}>{item.val}</div>
+                                            <div className="text-[5px] font-black text-gray-400 uppercase leading-none">{item.label}</div>
+                                          </div>
+                                        ))}
+                                      </div>
                                     </div>
                                   </div>
+                                )}
+
+                                <div className="flex gap-1.5 pt-2">
+                                  {(uIsAPM || uIsCC) && <button onClick={() => downloadSummaryExcel(u)} className="flex-1 p-1 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center gap-1"><Download className="w-3 h-3" /><span className="text-[7px] font-black">REPORT</span></button>}
+                                  {canViewUserUploads(u) && <button onClick={() => { setSelectedUserId(u._id); setSelectedUserName(u.voName); setActiveTab('conversion'); }} className="flex-1 p-1 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center gap-1"><FileSymlink className="w-3 h-3" /><span className="text-[7px] font-black">VIEW</span></button>}
+                                  {canEditUser(u) && <button onClick={() => openEditModal(u)} className="flex-1 p-1 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center gap-1"><Edit className="w-3 h-3" /><span className="text-[7px] font-black">EDIT</span></button>}
                                 </div>
                               </div>
-                            </td>
-                            <td className="px-4 py-6 text-center border-r border-gray-50">
-                              {(uIsAdmin || uIsDev) ? (
-                                <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest italic">N/A</span>
-                              ) : (
-                                <div className="flex flex-col gap-2">
-                                  <div className="flex justify-center items-center gap-4">
-                                    <div className="flex flex-col items-center">
-                                      <span className="text-xs font-black text-green-600 leading-none">{u.uploadedFiles || 0}</span>
-                                      <span className="text-[8px] font-black text-green-600/60 uppercase tracking-tighter mt-1">Uploaded</span>
-                                    </div>
-                                    <div className="flex flex-col items-center">
-                                      <span className="text-xs font-black text-orange-500 leading-none">{u.pendingFiles || 0}</span>
-                                      <span className="text-[8px] font-black text-orange-400 uppercase tracking-tighter mt-1">Pending</span>
-                                    </div>
-                                    <div className="flex flex-col items-center">
-                                      <span className="text-xs font-black text-black leading-none">{u.totalFiles || 0}</span>
-                                      <span className="text-[8px] font-black text-gray-400 uppercase tracking-tighter mt-1">Total</span>
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-4 py-6 text-center border-r border-gray-50">
-                              {(uIsAdmin || uIsDev) ? (
-                                <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest italic">N/A</span>
-                              ) : (
-                                <div className="flex flex-col gap-2">
-                                  <div className="flex justify-center items-center gap-4">
-                                    <div className="flex flex-col items-center">
-                                      <span className="text-xs font-black text-green-600 leading-none">{perf.uploads.approved}</span>
-                                      <span className="text-[8px] font-black text-green-600/60 uppercase tracking-tighter mt-1">Approved</span>
-                                    </div>
-                                    <div className="flex flex-col items-center">
-                                      <span className="text-xs font-black text-red-600 leading-none">{perf.uploads.rejected}</span>
-                                      <span className="text-[8px] font-black text-red-400 uppercase tracking-tighter mt-1">Rejected</span>
-                                    </div>
-                                    <div className="flex flex-col items-center">
-                                      <span className="text-xs font-black text-orange-500 leading-none">{perf.uploads.pending}</span>
-                                      <span className="text-[8px] font-black text-orange-400 uppercase tracking-tighter mt-1">Pending</span>
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-4 py-6 text-center border-r border-gray-50">
-                              {(uIsAdmin || uIsDev) ? (
-                                <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest italic">N/A</span>
-                              ) : (
-                                <div className="flex flex-col gap-2">
-                                  <div className="flex justify-center items-center gap-4">
-                                    <div className="flex flex-col items-center">
-                                      <span className="text-xs font-black text-green-600 leading-none">{perf.conversion.success}</span>
-                                      <span className="text-[8px] font-black text-green-600/60 uppercase tracking-tighter mt-1">Success</span>
-                                    </div>
-                                    <div className="flex flex-col items-center">
-                                      <span className="text-xs font-black text-red-600 leading-none">{perf.conversion.failed}</span>
-                                      <span className="text-[8px] font-black text-red-400 uppercase tracking-tighter mt-1">Failed</span>
-                                    </div>
-                                    <div className="flex flex-col items-center">
-                                      <span className="text-xs font-black text-orange-500 leading-none">{perf.conversion.pending + perf.conversion.processing}</span>
-                                      <span className="text-[8px] font-black text-orange-400 uppercase tracking-tighter mt-1">In Que</span>
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-4 py-6 whitespace-nowrap text-right">
-                              <div className="flex justify-end gap-2 transition-opacity">
-                                {(uIsAPM || uIsCC) && (
-                                  <button
-                                    onClick={() => downloadSummaryExcel(u)}
-                                    className="p-1.5 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-lg transition-all shadow-sm"
-                                    title="Download Performance Summary (Excel)"
-                                  >
-                                    <Download className="w-4 h-4" />
-                                  </button>
-                                )}
-                                {canViewUserUploads(u) && (
-                                  <button
-                                    onClick={() => {
-                                      setSelectedUserId(u._id);
-                                      setSelectedUserName(u.voName);
-                                      setActiveTab('conversion');
-                                    }}
-                                    className="p-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-lg transition-all shadow-sm"
-                                    title="View Converted SHGs"
-                                  >
-                                    <FileSymlink className="w-4 h-4" />
-                                  </button>
-                                )}
-                                {canEditUser(u) && (
-                                  <button
-                                    onClick={() => openEditModal(u)}
-                                    className="p-1.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg transition-all shadow-sm"
-                                    title="Edit User"
-                                  >
-                                    <Edit className="w-4 h-4" />
-                                  </button>
-                                )}
-                                {canDeleteUser(u) && (
-                                  <button
-                                    onClick={() => handleDeleteUser(u._id)}
-                                    className="p-1.5 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white rounded-lg transition-all shadow-sm"
-                                    title="Delete User"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                )}
+                            </div>
+                            {isExpanded && u.vos && u.vos.length > 0 && (
+                              <div className="pl-4 border-l-2 border-indigo-100 space-y-2 my-2 ml-4">
+                                {u.vos.map(child => renderCardTree(child, true))}
                               </div>
-                            </td>
-                          </tr>
+                            )}
+                          </div>
                         );
                       };
+                    })}
+                  </div>
 
-                      return (
-                        <div className="mb-10 last:mb-0">
-                          {/* Section Title removed per user request */}
-                          <table className="w-full text-left border-collapse min-w-[1000px]">
-                            <thead>
-                              <tr className="bg-indigo-700 text-white">
-                                <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest border-r border-white/10 w-[35%]">
-                                  {currentUserRole.includes('admin - apm')
-                                    ? 'CC Profile'
-                                    : currentUserRole.includes('admin - cc')
-                                      ? 'VO Profile'
-                                      : 'APM Profile'
-                                  }
-                                </th>
-                                <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest border-r border-white/10 text-center w-[18%]">
-                                  Uploads (U/P/T)
-                                </th>
-                                <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest border-r border-white/10 text-center w-[18%]">
-                                  Approvals (A/R/P)
-                                </th>
-                                <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest border-r border-white/10 text-center w-[18%]">
-                                  Conversion
-                                </th>
-                                <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest text-right w-[11%]">Actions</th>
-                              </tr>
-                            </thead>
-                            <tbody key={page} className="divide-y divide-gray-100">
-                              {userList.map((user) => {
-                                const renderUserTree = (u, depth = 0) => {
-                                  const isExpandedLocal = expandedRows.has(u._id);
-                                  return (
-                                    <React.Fragment key={u._id}>
-                                      {renderUserRow(u, depth > 0, depth)}
-                                      {isExpandedLocal && (
-                                        <>
-                                          {u.ccs && u.ccs.length > 0 && u.ccs.map(child => renderUserTree(child, depth + 1))}
-                                          {u.vos && u.vos.length > 0 && u.vos.map(child => renderUserTree(child, depth + 1))}
-                                        </>
-                                      )}
-                                    </React.Fragment>
-                                  );
-                                };
-                                return renderUserTree(user);
-                              })}
-                            </tbody>
-                          </table>
+                  {/* Mobile Staff Section - Moved to bottom */}
+                  {staffUsers.length > 0 && (
+                    <div className="space-y-4 pt-10 border-t border-gray-100 mt-10">
+                      <div className="flex items-center gap-3 px-2">
+                        <div className="bg-amber-100 p-2 rounded-xl">
+                          <Lock className="w-4 h-4 text-amber-600" />
                         </div>
-                      );
-                    };
-
-                    return (
-                      <div className="space-y-4">
-                        {renderUserList(users, "Operational Hierarchy (APM > CC > VO)", true)}
+                        <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest text-xs">Technical & Administrative Staff</h3>
                       </div>
-                    );
-                  })()}
-                </div>
-
-                {/* Technical Staff Section (Table View) - Moved to bottom */}
-                {staffUsers.length > 0 && (
-                  <div className="mt-3 mb-10 border-t border-gray-100 pt-10">
-                    <div className="flex items-center gap-3 px-8 py-6 bg-amber-50/50 border-b border-gray-100">
-                      <div className="bg-amber-100 p-2 rounded-xl">
-                        <Lock className="w-5 h-5 text-amber-600" />
-                      </div>
-                      <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">Technical & Administrative Staff</h3>
-                    </div>
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="bg-indigo-700/90 text-white">
-                          <th className="px-8 py-4 text-[10px] font-black uppercase tracking-widest border-r border-white/10 w-[80%]">Staff Profile & Identity</th>
-                          <th className="px-8 py-4 text-[10px] font-black uppercase tracking-widest text-right w-[20%]">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100 bg-white">
+                      <div className="space-y-3">
                         {staffUsers.map(s => {
                           const rLower = (s.role || '').toLowerCase();
                           const sIsDev = rLower.includes('developer');
                           return (
-                            <tr key={s._id} className="hover:bg-amber-50/20 transition-all group">
-                              <td className="px-8 py-5 whitespace-nowrap">
-                                <div className="flex items-center gap-6">
-                                  <div className={`relative w-12 h-12 rounded-2xl flex items-center justify-center shadow-md transition-transform group-hover:scale-105 ${sIsDev ? 'bg-gradient-to-br from-amber-500 to-orange-600 text-white' : 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white'
-                                    }`}>
-                                    {sIsDev ? <Lock className="w-5 h-5" /> : <Shield className="w-5 h-5" />}
-                                    <div className={`absolute -bottom-1 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-md text-[7px] font-black uppercase tracking-tighter border shadow-sm ${sIsDev ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-purple-100 text-purple-700 border-purple-200'
-                                      }`}>
-                                      {(s.role || 'Admin').split(' - ').pop()}
-                                    </div>
-                                  </div>
-                                  <div className="flex flex-col gap-0.5">
-                                    <span className="text-base font-black text-gray-900 leading-tight">{s.voName || s.name}</span>
-                                    <div className="flex items-center gap-4 mt-1">
-                                      {(s.voID || s.userID || s.clusterID) && (
-                                        <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md uppercase tracking-tighter">
-                                          ID: {s.voID || s.userID || s.clusterID}
-                                        </span>
-                                      )}
-                                      <div className="flex items-center gap-1.5">
-                                        <Clock className="w-3 h-3 text-gray-300" />
-                                        <span className="text-[9px] font-bold text-gray-400 uppercase">Active {formatLastActive(s.lastActiveAt)}</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-8 py-5 whitespace-nowrap text-right">
-                                <div className="flex justify-end gap-3 lg:opacity-0 group-hover:opacity-100 transition-opacity">
-                                  {canEditUser(s) && (
-                                    <button onClick={() => openEditModal(s)} className="p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all shadow-sm">
-                                      <Edit className="w-5 h-5" />
-                                    </button>
-                                  )}
-                                  {canDeleteUser(s) && (
-                                    <button onClick={() => handleDeleteUser(s._id)} className="p-2.5 bg-red-50 text-red-600 hover:bg-red-600 hover:text-white rounded-xl transition-all shadow-sm">
-                                      <Trash2 className="w-5 h-5" />
-                                    </button>
-                                  )}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              {/* Mobile/Tablet Card View */}
-              <div className="lg:hidden p-4 space-y-8">
-
-                {/* Mobile Ground Hierarchy */}
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2 px-2">
-                    <div className="w-1.5 h-4 bg-indigo-600 rounded-full"></div>
-                    <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest text-xs">Ground Operational Hierarchy</h3>
-                  </div>
-                  {users.map((user) => {
-                    const renderCardTree = (u, isNested = false) => {
-                      const isExpanded = expandedRows.has(u._id);
-                      const isLoading = loadingNodes.has(u._id);
-                      const uRoleLower = (u.role || '').toLowerCase();
-                      const uIsAPM = uRoleLower.includes('admin - apm');
-                      const uIsCC = uRoleLower.includes('admin - cc');
-                      const uIsVO = uRoleLower.startsWith('vo') || uRoleLower === 'none' || !u.role;
-
-                      const perf = u.performanceStats || {
-                        uploads: { approved: 0, rejected: 0, pending: 0 },
-                        conversion: { success: 0, failed: 0, pending: 0, processing: 0 }
-                      };
-
-                      return (
-                        <div key={u._id} className="space-y-2">
-                          <div className={`${isNested ? 'bg-indigo-50/30' : 'bg-white'} rounded-3xl border border-gray-100 shadow-sm overflow-hidden`}>
-                            <div className="p-4 space-y-4">
-                              <div className="flex items-center gap-3">
-                                <div className="flex flex-col items-center gap-1 shrink-0">
-                                  <div className={`relative ${isNested ? 'w-10 h-10' : 'w-11 h-11'} rounded-2xl flex items-center justify-center shadow-md ${uIsDev
-                                    ? 'bg-gradient-to-br from-amber-500 to-orange-600 text-white'
-                                    : (uIsAdmin || uIsAPM || uIsCC)
-                                      ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white'
-                                      : 'bg-gradient-to-br from-blue-500 to-blue-600 text-white'
-                                    }`}>
-                                    {uIsDev ? <Lock className="w-4 h-4" /> : (uIsAdmin || uIsAPM || uIsCC) ? <Shield className="w-4 h-4" /> : <User className="w-4 h-4" />}
-                                    <div className={`absolute -bottom-1 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded-md text-[6px] font-black uppercase tracking-tighter border shadow-sm ${uIsDev
-                                      ? 'bg-amber-50 text-amber-600 border-amber-200'
-                                      : (uIsAdmin || uIsAPM || uIsCC)
-                                        ? 'bg-purple-100 text-purple-700 border-purple-200'
-                                        : 'bg-blue-100 text-blue-700 border-blue-200'
-                                      }`}>
-                                      {(u.role || 'VO').split(' - ').pop()}
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="text-sm font-black text-gray-900 leading-tight flex items-center gap-2 truncate" onClick={() => uIsVO && handleViewUserUploads(u)}>
-                                    {u.voName}
-                                    {u.isOnline && <span className="flex h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse shrink-0"></span>}
-                                  </div>
-                                  <div className="flex flex-wrap items-center gap-2 mt-1">
-                                    <div className="flex items-center gap-1">
-                                      <MapPin className="w-2.5 h-2.5 text-gray-400" />
-                                      <span className="text-[9px] font-bold text-gray-500 truncate max-w-[120px]">{u.village || u.mandal}, {u.district}</span>
-                                    </div>
-                                    {(u.voID || u.userID || u.clusterID) && (
-                                      <span className="text-[8px] font-black text-indigo-500 uppercase tracking-tighter bg-indigo-50 px-1.5 py-0.5 rounded">ID: {u.voID || u.userID || u.clusterID}</span>
-                                    )}
-                                  </div>
-                                </div>
-                                {u.isHierarchical && (
-                                  <button onClick={() => toggleRow(u)} className="p-2 bg-indigo-50 text-indigo-600 rounded-xl transition-all">
-                                    {isLoading ? (
-                                      <div className="w-4 h-4 border-2 border-indigo-600/30 border-t-indigo-600 rounded-full animate-spin" />
-                                    ) : (
-                                      <ChevronRight className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
-                                    )}
-                                  </button>
-                                )}
-                              </div>
-
-                              {!(uIsAdmin || uIsDev) && (
-                                <div className="space-y-4 pt-3 border-t border-gray-50">
-                                  <div className="grid grid-cols-2 gap-4">
-                                    <div className="bg-white p-2 rounded-2xl border border-gray-100 text-center">
-                                      <div className="flex justify-between items-center mb-1 px-1">
-                                        <span className="text-[7px] font-black text-gray-400 uppercase">Uploads</span>
-                                        <span className="text-[9px] font-black text-black">{u.totalFiles}</span>
-                                      </div>
-                                      <div className="flex gap-1 justify-between">
-                                        <div className="flex-1"><div className="text-[10px] font-black text-green-600">{u.uploadedFiles}</div><div className="text-[5px] font-bold text-gray-400">U</div></div>
-                                        <div className="flex-1"><div className="text-[10px] font-black text-orange-500">{u.pendingFiles}</div><div className="text-[5px] font-bold text-gray-400">P</div></div>
-                                        <div className="flex-1"><div className="text-[10px] font-black text-black">{u.totalFiles}</div><div className="text-[5px] font-bold text-gray-400">T</div></div>
-                                      </div>
-                                    </div>
-                                    <div className="bg-white p-2 rounded-2xl border border-gray-100 text-center">
-                                      <div className="flex justify-between items-center mb-1 px-1"><span className="text-[7px] font-black text-gray-400 uppercase">Approvals</span><span className="text-[9px] font-black text-green-600">{perf.uploads.approved}</span></div>
-                                      <div className="flex gap-1 justify-between">
-                                        <div className="flex-1"><div className="text-[10px] font-black text-green-600">{perf.uploads.approved}</div><div className="text-[5px] font-bold text-green-600/60">A</div></div>
-                                        <div className="flex-1"><div className="text-[10px] font-black text-red-600">{perf.uploads.rejected}</div><div className="text-[5px] font-bold text-red-400">R</div></div>
-                                        <div className="flex-1"><div className="text-[10px] font-black text-orange-500">{perf.uploads.pending}</div><div className="text-[5px] font-bold text-orange-400">P</div></div>
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <div className="bg-white p-2 rounded-2xl border border-indigo-100">
-                                    <div className="flex justify-between items-center mb-1 px-1">
-                                      <span className="text-[7px] font-black text-gray-400 uppercase">Conversion</span>
-                                    </div>
-                                    <div className="flex justify-between gap-1">
-                                      {[
-                                        { label: 'Success', val: perf.conversion.success, color: 'text-green-600' },
-                                        { label: 'Failed', val: perf.conversion.failed, color: 'text-red-600' },
-                                        { label: 'In Que', val: perf.conversion.pending + perf.conversion.processing, color: 'text-orange-500' }
-                                      ].map(item => (
-                                        <div key={item.label} className="text-center flex-1 bg-gray-50 rounded-lg p-1">
-                                          <div className={`text-[10px] font-black ${item.color}`}>{item.val}</div>
-                                          <div className="text-[5px] font-black text-gray-400 uppercase leading-none">{item.label}</div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
-
-                              <div className="flex gap-1.5 pt-2">
-                                {(uIsAPM || uIsCC) && <button onClick={() => downloadSummaryExcel(u)} className="flex-1 p-1 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center gap-1"><Download className="w-3 h-3" /><span className="text-[7px] font-black">REPORT</span></button>}
-                                {canViewUserUploads(u) && <button onClick={() => { setSelectedUserId(u._id); setSelectedUserName(u.voName); setActiveTab('conversion'); }} className="flex-1 p-1 bg-emerald-50 text-emerald-600 rounded-lg flex items-center justify-center gap-1"><FileSymlink className="w-3 h-3" /><span className="text-[7px] font-black">VIEW</span></button>}
-                                {canEditUser(u) && <button onClick={() => openEditModal(u)} className="flex-1 p-1 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center gap-1"><Edit className="w-3 h-3" /><span className="text-[7px] font-black">EDIT</span></button>}
-                              </div>
-                            </div>
-                          </div>
-                          {isExpanded && u.vos && u.vos.length > 0 && (
-                            <div className="pl-4 border-l-2 border-indigo-100 space-y-2 my-2 ml-4">
-                              {u.vos.map(child => renderCardTree(child, true))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    };
-                  })}
-                </div>
-
-                {/* Mobile Staff Section - Moved to bottom */}
-                {staffUsers.length > 0 && (
-                  <div className="space-y-4 pt-10 border-t border-gray-100 mt-10">
-                    <div className="flex items-center gap-3 px-2">
-                      <div className="bg-amber-100 p-2 rounded-xl">
-                        <Lock className="w-4 h-4 text-amber-600" />
-                      </div>
-                      <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest text-xs">Technical & Administrative Staff</h3>
-                    </div>
-                    <div className="space-y-3">
-                      {staffUsers.map(s => {
-                        const rLower = (s.role || '').toLowerCase();
-                        const sIsDev = rLower.includes('developer');
-                        return (
-                          <div key={s._id} className="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm flex items-center gap-4">
-                            <div className={`relative w-12 h-12 rounded-2xl flex items-center justify-center shadow-md ${sIsDev ? 'bg-gradient-to-br from-amber-500 to-orange-600 text-white' : 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white'
-                              }`}>
-                              {sIsDev ? <Lock className="w-5 h-5" /> : <Shield className="w-5 h-5" />}
-                              <div className={`absolute -bottom-1 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded-md text-[6px] font-black uppercase tracking-tighter border shadow-sm ${sIsDev ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-purple-100 text-purple-700 border-purple-200'
+                            <div key={s._id} className="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm flex items-center gap-4">
+                              <div className={`relative w-12 h-12 rounded-2xl flex items-center justify-center shadow-md ${sIsDev ? 'bg-gradient-to-br from-amber-500 to-orange-600 text-white' : 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white'
                                 }`}>
-                                {(s.role || 'Admin').split(' - ').pop()}
+                                {sIsDev ? <Lock className="w-5 h-5" /> : <Shield className="w-5 h-5" />}
+                                <div className={`absolute -bottom-1 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded-md text-[6px] font-black uppercase tracking-tighter border shadow-sm ${sIsDev ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-purple-100 text-purple-700 border-purple-200'
+                                  }`}>
+                                  {(s.role || 'Admin').split(' - ').pop()}
+                                </div>
                               </div>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="font-black text-gray-900 text-sm truncate">{s.voName || s.name}</div>
-                              <div className="flex items-center gap-2 mt-1">
-                                {(s.voID || s.userID || s.clusterID) && (
-                                  <span className="text-[8px] font-black text-indigo-500 uppercase tracking-tighter bg-indigo-50 px-1.5 py-0.5 rounded">
-                                    ID: {s.voID || s.userID || s.clusterID}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex gap-1">
-                              {canEditUser(s) && (
-                                <button onClick={() => openEditModal(s)} className="p-2 bg-blue-50 text-blue-600 rounded-xl">
-                                  <Edit className="w-4 h-4" />
-                                </button>
-                              )}
-                              {canDeleteUser(s) && (
-                                <button onClick={() => handleDeleteUser(s._id)} className="p-2 bg-red-50 text-red-600 rounded-xl">
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-
-          {/* Pagination Controls */}
-          {!loading && totalPages > 1 && (
-            <div className="px-4 sm:px-8 py-6 bg-gray-50/50 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-6">
-              <div className="text-[10px] sm:text-xs font-bold text-gray-500 uppercase tracking-widest text-center sm:text-left transition-all">
-                Showing <span className="text-indigo-600">{(page - 1) * limit + 1}</span> - <span className="text-indigo-600">{Math.min(page * limit, totalUsers)}</span> of <span className="text-gray-900">{totalUsers}</span> users
-              </div>
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                <button
-                  disabled={page === 1}
-                  onClick={() => setPage(p => p - 1)}
-                  className="p-2.5 rounded-xl border-2 border-gray-200 bg-white hover:border-indigo-600 hover:text-indigo-600 disabled:opacity-30 disabled:hover:border-gray-200 disabled:hover:text-gray-400 transition-all"
-                >
-                  <ChevronLeft className="w-5 h-5" />
-                </button>
-
-                <div className="flex items-center gap-1 mx-2">
-                  {[...Array(totalPages)].map((_, i) => (
-                    <button
-                      key={i + 1}
-                      onClick={() => setPage(i + 1)}
-                      className={`min-w-[36px] h-[36px] sm:min-w-[44px] sm:h-[44px] font-black text-xs sm:text-sm rounded-lg sm:rounded-xl transition-all ${page === i + 1
-                        ? 'bg-indigo-700 text-white shadow-lg shadow-indigo-200 scale-110 z-10'
-                        : 'bg-white text-gray-500 border-2 border-gray-100 hover:border-indigo-300'
-                        }`}
-                    >
-                      {i + 1}
-                    </button>
-                  )).slice(Math.max(0, page - 3), Math.min(totalPages, page + 2))}
-                </div>
-
-                <button
-                  disabled={page === totalPages}
-                  onClick={() => setPage(p => p + 1)}
-                  className="p-2.5 rounded-xl border-2 border-gray-200 bg-white hover:border-indigo-600 hover:text-indigo-600 disabled:opacity-30 disabled:hover:border-gray-200 disabled:hover:text-gray-400 transition-all"
-                >
-                  <ChevronRight className="w-5 h-5" />
-                </button>
-
-                <div className="flex items-center gap-3 ml-0 sm:ml-4 border-l-0 sm:border-l border-gray-200 pl-0 sm:pl-4">
-                  <span className="text-[10px] font-black text-gray-400 uppercase hidden xs:inline">Jump</span>
-                  <input
-                    type="text"
-                    value={pageInput}
-                    onChange={(e) => setPageInput(e.target.value)}
-                    onBlur={commitPage}
-                    onKeyDown={(e) => e.key === 'Enter' && commitPage()}
-                    className="w-10 h-8 sm:w-12 sm:h-9 bg-white border-2 border-gray-100 rounded-lg text-center text-[10px] sm:text-xs font-black focus:border-indigo-500 focus:outline-none transition-all"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div >
-
-      {/* Modal Portals - Wrapped in zero-size absolute container to prevent any layout insertio n */}
-      < div class N ame="absolute h-0 w-0 overflow-hidden pointer-events-n one" >
-        {/* Add/Edit Modal */}
-        {
-          (showAddModal || showEditModal) && createPortal(
-            <div className="fixed inset-0 bg-indigo-950/60 backdrop-blur-md flex items-center justify-center z-50 p-4 !mt-0 animate-in fade-in duration-300">
-              <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[95vh] sm:max-h-[90vh] border border-white/20 animate-in zoom-in-95 duration-200">
-                <div className="px-4 sm:px-8 py-6 border-b border-gray-100 bg-indigo-50/50 flex justify-between items-center">
-                  <div className="flex items-center gap-3 sm:gap-4">
-                    <div className={`p-2 sm:p-3 rounded-2xl shadow-lg ${showAddModal ? 'bg-indigo-600' : 'bg-purple-600'} text-white`}>
-                      {showAddModal ? <Plus className="w-6 h-6" /> : <Edit className="w-6 h-6" />}
-                    </div>
-                    <div>
-                      <h3 className="text-xl font-black text-gray-900 leading-tight">{showAddModal ? 'Add New User' : 'Update User Details'}</h3>
-                      <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">{showAddModal ? 'Create Account' : 'Update Account'}</p>
-                    </div>
-                  </div>
-                  <button onClick={() => { setShowAddModal(false); setShowEditModal(false); }} className="p-2 sm:p-2.5 bg-white text-gray-400 hover:text-red-500 hover:shadow-md rounded-xl transition-all border border-gray-100">
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                <form onSubmit={showAddModal ? handleAddUser : handleEditUser} className="p-4 sm:p-8 overflow-y-auto space-y-6 sm:space-y-8 custom-scrollbar">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8">
-                    {/* Basic Info */}
-                    <div className="space-y-6">
-                      <div className="space-y-2">
-                        <label className="text-xs font-black text-gray-700 ml-1 uppercase flex items-center gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full bg-indigo-500"></div>
-                          {formData.role === 'Admin - CC' ? 'Cluster Administrator Name' : formData.role === 'Admin - APM' ? 'APM Administrator Name' : formData.role === 'VO' ? 'VO Name' : 'Administrator Name'}
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          value={formData.voName}
-                          onChange={(e) => setFormData({ ...formData, voName: e.target.value })}
-                          className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
-                          placeholder={formData.role === 'Admin - CC' ? 'e.g. CC Admin' : formData.role === 'Admin - APM' ? 'e.g. APM Admin' : 'e.g. Navodaya VO'}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        {formData.role === 'Admin' && (
-                          <>
-                            <label className="text-xs font-black text-gray-700 ml-1 uppercase flex items-center gap-2">
-                              <div className="w-1.5 h-1.5 rounded-full bg-indigo-500"></div>
-                              Primary Contact / Login
-                            </label>
-                            <input
-                              type="text"
-                              required
-                              value={formData.phone}
-                              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                              className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
-                              placeholder="+91"
-                            />
-                          </>
-                        )}
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-xs font-black text-gray-700 ml-1 uppercase flex items-center gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full bg-indigo-500"></div>
-                          {showEditModal ? 'New Password (Optional)' : 'Password'}
-                        </label>
-                        <input
-                          type="password"
-                          required={showAddModal}
-                          value={formData.password}
-                          onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                          className="w-full bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
-                          placeholder="**********"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <label className="text-xs font-black text-gray-700 ml-1 uppercase flex items-center gap-2">
-                          <div className="w-1.5 h-1.5 rounded-full bg-indigo-500"></div>
-                          Role
-                        </label>
-                        <select
-                          value={formData.role}
-                          onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                          className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
-                        >
-                          <option value="VO">Village Organization (VO)</option>
-                          {!currentUserRole.includes('admin - apm') && (
-                            <>
-                              <option value="Admin">Admin</option>
-                              <option value="Admin - CC">Admin - CC</option>
-                              <option value="Admin - APM">Admin - APM</option>
-                            </>
-                          )}
-                        </select>
-
-                        {isLoggedInDev && (
-                          <div className="mt-4 flex items-center gap-3 p-4 bg-amber-50 rounded-2xl border border-amber-100">
-                            <input
-                              type="checkbox"
-                              id="isDeveloper"
-                              checked={formData.isDeveloper}
-                              onChange={(e) => setFormData({ ...formData, isDeveloper: e.target.checked })}
-                              className="w-5 h-5 rounded-lg border-2 border-amber-300 text-amber-600 focus:ring-amber-500 transition-all cursor-pointer"
-                            />
-                            <label htmlFor="isDeveloper" className="text-sm font-black text-amber-900 cursor-pointer select-none">
-                              Enable Developer Access
-                            </label>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Location & VO Details */}
-                    <div className="space-y-6">
-                      {!(formData.role === 'Admin' || formData.isDeveloper) && (
-                        <>
-                          {!(currentUserRole.includes('admin - apm') || currentUserRole.includes('admin - cc')) && (
-                            <div className="space-y-2">
-                              <label className="text-xs font-black text-gray-700 ml-1 uppercase flex items-center gap-2">
-                                <div className="w-1.5 h-1.5 rounded-full bg-purple-500"></div>
-                                District
-                              </label>
-                              <select
-                                value={formData.district}
-                                required
-                                onChange={(e) => setFormData({ ...formData, district: e.target.value })}
-                                className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
-                              >
-                                <option value="">Select District</option>
-                                {districts.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
-                              </select>
-                            </div>
-                          )}
-                          <div className="grid grid-cols-2 gap-4">
-                            {!(currentUserRole.includes('admin - apm') || currentUserRole.includes('admin - cc')) && (
-                              <div className="space-y-2">
-                                <label className="text-xs font-black text-gray-700 ml-1 uppercase">Mandal</label>
-                                <select
-                                  value={formData.mandal}
-                                  required
-                                  onChange={(e) => setFormData({ ...formData, mandal: e.target.value, village: '' })}
-                                  disabled={!formData.district}
-                                  className={`w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all disabled:opacity-50 ${formData.role === 'Admin - CC' || formData.role === 'Admin - APM' ? 'col-span-2' : ''}`}
-                                >
-                                  <option value="">Select Mandal</option>
-                                  {modalMandals.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
-                                </select>
-                              </div>
-                            )}
-                            <div className={`space-y-2 ${(currentUserRole.includes('admin - apm') || currentUserRole.includes('admin - cc')) ? 'col-span-2' : ''}`}>
-                              <label className="text-xs font-black text-gray-700 ml-1 uppercase">Village</label>
-                              <select
-                                value={formData.village}
-                                required={formData.role === 'VO'}
-                                onChange={(e) => setFormData({ ...formData, village: e.target.value })}
-                                disabled={!formData.mandal || (formData.role !== 'VO')}
-                                className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all disabled:opacity-50"
-                              >
-                                <option value="">{formData.role === 'VO' ? 'Select Village' : 'No Village Required'}</option>
-                                {modalVillages.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
-                              </select>
-                            </div>
-                          </div>
-                        </>
-                      )}
-
-                      {/* Role Specific ID/Name Details */}
-                      {formData.role === 'VO' ? (
-                        <div className="bg-indigo-50/50 p-6 rounded-[24px] border border-indigo-100 space-y-6">
-                          <div className="space-y-2">
-                            <label className="text-xs font-black text-gray-700 ml-1 uppercase flex items-center gap-2">
-                              <CheckCircle className="w-3.5 h-3.5 text-indigo-600" />
-                              Official VO ID (15 Digits)
-                            </label>
-                            <input
-                              type="text"
-                              required
-                              maxLength={15}
-                              minLength={15}
-                              value={formData.voID}
-                              onChange={(e) => {
-                                const val = e.target.value.replace(/\D/g, '');
-                                setFormData({ ...formData, voID: val });
-                              }}
-                              className="w-full bg-white border-2 border-indigo-100 rounded-xl px-5 py-3 text-sm font-black focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:outline-none transition-all"
-                              placeholder="15-digit VO ID"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <label className="text-xs font-black text-gray-700 ml-1 uppercase flex items-center gap-2">
-                              <User className="w-3.5 h-3.5 text-indigo-600" />
-                              Representative VOA Name
-                            </label>
-                            <input
-                              type="text"
-                              required
-                              value={formData.voaName}
-                              onChange={(e) => setFormData({ ...formData, voaName: e.target.value })}
-                              className="w-full bg-white border-2 border-indigo-100 rounded-xl px-5 py-3 text-sm font-black focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:outline-none transition-all"
-                              placeholder="Representative Full Name"
-                            />
-                          </div>
-                        </div>
-                      ) : formData.role === 'Admin - CC' ? (
-                        <div className="bg-amber-50/50 p-6 rounded-[24px] border border-amber-100 space-y-6">
-                          <div className="space-y-2">
-                            <label className="text-xs font-black text-gray-700 ml-1 uppercase flex items-center gap-2">
-                              <CheckCircle className="w-3.5 h-3.5 text-amber-600" />
-                              Cluster ID (8 Digits)
-                            </label>
-                            <input
-                              type="text"
-                              required
-                              maxLength={8}
-                              minLength={8}
-                              value={formData.clusterID}
-                              onChange={(e) => {
-                                const val = e.target.value.replace(/\D/g, '');
-                                setFormData({ ...formData, clusterID: val });
-                              }}
-                              className="w-full bg-white border-2 border-amber-100 rounded-xl px-5 py-3 text-sm font-black focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 focus:outline-none transition-all"
-                              placeholder="8-digit Cluster ID"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <label className="text-xs font-black text-gray-700 ml-1 uppercase flex items-center gap-2">
-                              <User className="w-3.5 h-3.5 text-amber-600" />
-                              Cluster Name
-                            </label>
-                            <input
-                              type="text"
-                              required
-                              value={formData.clusterName}
-                              onChange={(e) => setFormData({ ...formData, clusterName: e.target.value })}
-                              className="w-full bg-white border-2 border-amber-100 rounded-xl px-5 py-3 text-sm font-black focus:ring-4 focus:ring-amber-500/10 focus:border-amber-500 focus:outline-none transition-all"
-                              placeholder="Full Cluster Name"
-                            />
-                          </div>
-                        </div>
-                      ) : (formData.role === 'Admin - APM') ? (
-                        <div className="bg-purple-50/50 p-6 rounded-[24px] border border-purple-100 space-y-6">
-                          <div className="space-y-2">
-                            <label className="text-xs font-black text-gray-700 ml-1 uppercase flex items-center gap-2">
-                              <CheckCircle className="w-3.5 h-3.5 text-purple-600" />
-                              User ID (6 Digits)
-                            </label>
-                            <input
-                              type="text"
-                              required
-                              maxLength={6}
-                              minLength={6}
-                              value={formData.userID}
-                              onChange={(e) => {
-                                const val = e.target.value.replace(/\D/g, '');
-                                setFormData({ ...formData, userID: val });
-                              }}
-                              className="w-full bg-white border-2 border-purple-100 rounded-xl px-5 py-3 text-sm font-black focus:ring-4 focus:ring-purple-500/10 focus:border-purple-500 focus:outline-none transition-all"
-                              placeholder="6-digit User ID"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <label className="text-xs font-black text-gray-700 ml-1 uppercase flex items-center gap-2">
-                              <User className="w-3.5 h-3.5 text-purple-600" />
-                              User Name
-                            </label>
-                            <input
-                              type="text"
-                              required
-                              value={formData.userName}
-                              onChange={(e) => setFormData({ ...formData, userName: e.target.value })}
-                              className="w-full bg-white border-2 border-purple-100 rounded-xl px-5 py-3 text-sm font-black focus:ring-4 focus:ring-purple-500/10 focus:border-purple-500 focus:outline-none transition-all"
-                              placeholder="Full User Name"
-                            />
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  <div className="flex gap-4 pt-4 border-t border-gray-100 mt-6">
-                    <button
-                      type="button"
-                      onClick={() => { setShowAddModal(false); setShowEditModal(false); }}
-                      className="flex-1 px-8 py-4 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-2xl font-black min-h-[56px] transition-all"
-                    >
-                      Discard Changes
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={isSaving}
-                      className="flex-[2] px-8 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-2xl font-black min-h-[56px] transition-all flex items-center justify-center gap-3 shadow-xl shadow-indigo-100 disabled:opacity-70 disabled:grayscale"
-                    >
-                      {isSaving ? <Loader2 className="w-6 h-6 animate-spin" /> : (showAddModal ? <Plus className="w-6 h-6" /> : <CheckCircle className="w-6 h-6" />)}
-                      {showAddModal ? 'Add User' : 'Save Changes'}
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>,
-            document.body
-          )
-        }
-
-        {/* User Uploads Modal */}
-        {
-          showUserUploads && selectedUser && createPortal(
-            <div className="fixed inset-0 bg-indigo-950/60 backdrop-blur-md flex items-center justify-center z-50 p-2 sm:p-4 !mt-0 animate-in fade-in duration-300">
-              <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-6xl overflow-hidden flex flex-col max-h-[95vh] sm:max-h-[90vh] border border-white/20">
-                {/* Header */}
-                <div className="px-4 sm:px-8 py-3 sm:py-6 border-b border-gray-100 bg-gradient-to-r from-indigo-600 to-purple-600">
-                  <div className="flex justify-between items-center mb-2 sm:mb-4">
-                    <div>
-                      <h3 className="text-lg sm:text-2xl font-black text-white leading-tight">{selectedUser.voName} VO Uploads</h3>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <p className="text-[9px] sm:text-sm text-white/80 font-bold uppercase tracking-wider">VO ID: {selectedUser.voID}</p>
-                      </div>
-                    </div>
-                    <button onClick={() => setShowUserUploads(false)} className="p-1.5 sm:p-2.5 bg-white/20 text-white hover:bg-white/30 hover:shadow-md rounded-xl transition-all border border-white/30">
-                      <X className="w-5 h-5 sm:w-6 sm:h-6" />
-                    </button>
-                  </div>
-
-                  {/* Filters and Stats */}
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6 w-full">
-
-                    {uploadsSummary && (
-                      <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto pb-1 sm:pb-0 w-full min-w-0">
-                        <div className="bg-white/10 backdrop-blur-sm rounded-xl px-2.5 sm:px-4 py-1 sm:py-2.5 border border-white/20 flex-1 min-w-[80px]">
-                          <div className="text-[7px] sm:text-[10px] font-black text-white/70 uppercase truncate">Pending</div>
-                          <div className="text-sm sm:text-2xl font-black text-white">{uploadsSummary.pending}</div>
-                        </div>
-                        <div className="bg-white/10 backdrop-blur-sm rounded-xl px-2.5 sm:px-4 py-1 sm:py-2.5 border border-white/20 flex-1 min-w-[80px]">
-                          <div className="text-[7px] sm:text-[10px] font-black text-white/70 uppercase truncate">Approved</div>
-                          <div className="text-sm sm:text-2xl font-black text-white">{uploadsSummary.validated}</div>
-                        </div>
-                        <div className="bg-white/10 backdrop-blur-sm rounded-xl px-2.5 sm:px-4 py-1 sm:py-2.5 border border-white/20 flex-1 min-w-[80px]">
-                          <div className="text-[7px] sm:text-[10px] font-black text-white/70 uppercase truncate">Rejected</div>
-                          <div className="text-sm sm:text-2xl font-black text-white">{uploadsSummary.rejected}</div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Content */}
-                <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-gray-50/50 custom-scrollbar">
-                  {uploadsLoading ? (
-                    <div className="flex items-center justify-center py-20">
-                      <div className="text-center">
-                        <Loader2 className="w-12 h-12 animate-spin text-indigo-600 mx-auto mb-3" />
-                        <p className="text-gray-600 font-bold">Loading uploads...</p>
-                      </div>
-                    </div>
-                  ) : userUploads.length === 0 ? (
-                    <div className="text-center py-20">
-                      <FileText className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                      <p className="text-gray-600 font-bold text-lg">No uploads found</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-8">
-                      {/* Pending Section */}
-                      {userUploads.filter(u => u.status === 'pending').length > 0 && (
-                        <div>
-                          <div className="flex items-center gap-2 mb-4 bg-white rounded-xl p-3 border-2 border-orange-300 shadow-sm">
-                            <AlertCircle className="text-orange-500" size={24} />
-                            <h4 className="text-lg font-black text-gray-900">
-                              Pending Uploads
-                              <span className="ml-2 text-sm font-normal text-gray-500">({userUploads.filter(u => u.status === 'pending').length})</span>
-                            </h4>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {userUploads.filter(u => u.status === 'pending').map(upload => (
-                              <div key={upload._id} className="relative border-2 border-orange-300 bg-orange-50 rounded-2xl p-4 transition-all hover:shadow-lg hover:border-orange-400 flex flex-col">
-                                {/* Thumbnail */}
-                                {upload.s3Url && (
-                                  <div className="h-48 -mx-4 -mt-4 mb-3 overflow-hidden rounded-t-2xl border-b border-orange-200 bg-black/5">
-                                    <img src={upload.s3Url} alt="" className="w-full h-full object-contain" />
-                                  </div>
-                                )}
-
-                                <div className="flex justify-between items-start mb-3">
-                                  <div className="flex-1 min-w-0">
-                                    <h4 className="font-bold text-sm text-gray-900 truncate">{upload.shgName}</h4>
-                                    <p className="text-xs text-gray-600">SHG ID: '{upload.shgID}</p>
-                                  </div>
-                                  {currentUserRole !== 'admin - apm' && (
-                                    <span className="px-2 py-1 rounded-lg text-[10px] font-black uppercase bg-orange-200 text-orange-800">
-                                      Pending
+                              <div className="flex-1 min-w-0">
+                                <div className="font-black text-gray-900 text-sm truncate">{s.voName || s.name}</div>
+                                <div className="flex items-center gap-2 mt-1">
+                                  {(s.voID || s.userID || s.clusterID) && (
+                                    <span className="text-[8px] font-black text-indigo-500 uppercase tracking-tighter bg-indigo-50 px-1.5 py-0.5 rounded">
+                                      ID: {s.voID || s.userID || s.clusterID}
                                     </span>
                                   )}
                                 </div>
-
-                                <div className="space-y-2 text-xs mb-3 flex-1 overflow-hidden">
-                                  <div className="flex items-center gap-2 text-gray-600">
-                                    <Calendar className="w-3 h-3" />
-                                    <span>{formatDateTime(upload.uploadTimestamp)}</span>
-                                  </div>
-                                  <div className="text-gray-400 truncate" title={upload.originalFilename}>
-                                    {upload.originalFilename}
-                                  </div>
-                                </div>
-
-                                <div className="flex gap-2 mt-auto">
-                                  {(currentUserRole === 'admin' || currentUserRole === 'admin - developer' || currentUserRole === 'admin - apm') && (
-                                    <button
-                                      onClick={() => downloadImage(upload.s3Url, `${upload.shgName}_${upload.shgID}.jpg`)}
-                                      className={`px-3 py-2 ${currentUserRole === 'admin - apm' ? 'flex-1 bg-blue-600 text-white' : 'bg-blue-50 text-blue-600'} hover:bg-blue-600 hover:text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1`}
-                                      title="Download Image"
-                                    >
-                                      <Download size={14} /> {currentUserRole === 'admin - apm' ? 'Download' : ''}
-                                    </button>
-                                  )}
-                                  <button
-                                    onClick={() => openImageViewer(upload)}
-                                    className="px-3 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1"
-                                    title="View Full Image"
-                                  >
-                                    <Eye size={14} /> View
-                                  </button>
-                                  {currentUserRole !== 'admin - apm' && (
-                                    <>
-                                      <button
-                                        onClick={() => handleQuickStatusUpdate(upload, 'validated')}
-                                        disabled={uploading}
-                                        className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1"
-                                      >
-                                        <CheckCircle size={14} /> Approve
-                                      </button>
-                                      <button
-                                        onClick={() => openStatusModal(upload)}
-                                        disabled={uploading}
-                                        className="flex-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1"
-                                      >
-                                        <X size={14} /> Reject
-                                      </button>
-                                    </>
-                                  )}
-                                </div>
                               </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Rejected Section */}
-                      {userUploads.filter(u => u.status === 'rejected').length > 0 && (
-                        <div>
-                          <div className="flex items-center gap-2 mb-4 bg-white rounded-xl p-3 border-2 border-red-300 shadow-sm">
-                            <AlertTriangle className="text-red-500" size={24} />
-                            <h4 className="text-lg font-black text-gray-900">
-                              Rejected Uploads
-                              <span className="ml-2 text-sm font-normal text-gray-500">({userUploads.filter(u => u.status === 'rejected').length})</span>
-                            </h4>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {userUploads.filter(u => u.status === 'rejected').map(upload => (
-                              <div key={upload._id} className="relative border-2 border-red-300 bg-red-50 rounded-2xl p-4 transition-all hover:shadow-lg hover:border-red-400 flex flex-col">
-                                {/* Thumbnail */}
-                                {upload.s3Url && (
-                                  <div className="h-48 -mx-4 -mt-4 mb-3 overflow-hidden rounded-t-2xl border-b border-red-200 bg-black/5">
-                                    <img src={upload.s3Url} alt="" className="w-full h-full object-contain" />
-                                  </div>
+                              <div className="flex gap-1">
+                                {canEditUser(s) && (
+                                  <button onClick={() => openEditModal(s)} className="p-2 bg-blue-50 text-blue-600 rounded-xl">
+                                    <Edit className="w-4 h-4" />
+                                  </button>
                                 )}
-
-                                <div className="flex justify-between items-start mb-3">
-                                  <div className="flex-1 min-w-0">
-                                    <h4 className="font-bold text-sm text-gray-900 truncate">{upload.shgName}</h4>
-                                    <p className="text-xs text-gray-600">SHG ID: '{upload.shgID}</p>
-                                  </div>
-                                  <span className="px-2 py-1 rounded-lg text-[10px] font-black uppercase bg-red-200 text-red-800">
-                                    Rejected
-                                  </span>
-                                </div>
-
-                                <div className="space-y-2 text-xs mb-3 flex-1 overflow-hidden">
-                                  <div className="flex items-center gap-2 text-gray-600">
-                                    <Calendar className="w-3 h-3" />
-                                    <span>{formatDateTime(upload.uploadTimestamp)}</span>
-                                  </div>
-                                  {upload.rejectionReason && (
-                                    <div className="bg-white rounded-lg p-2 border-l-4 border-red-500">
-                                      <p className="text-[10px] font-bold text-red-600 mb-1">Reason:</p>
-                                      <p className="text-xs text-gray-800 line-clamp-2">{upload.rejectionReason}</p>
-                                    </div>
-                                  )}
-                                  <div className="text-gray-400 truncate" title={upload.originalFilename}>
-                                    {upload.originalFilename}
-                                  </div>
-                                </div>
-
-                                <div className="flex gap-2 mt-auto">
-                                  {(currentUserRole === 'admin' || currentUserRole === 'admin - developer' || currentUserRole === 'admin - apm') && (
-                                    <button
-                                      onClick={() => downloadImage(upload.s3Url, `${upload.shgName}_${upload.shgID}.jpg`)}
-                                      className={`px-3 py-2 ${currentUserRole === 'admin - apm' ? 'flex-1 bg-blue-600 text-white' : 'bg-blue-50 text-blue-600'} hover:bg-blue-600 hover:text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1`}
-                                      title="Download Image"
-                                    >
-                                      <Download size={14} /> {currentUserRole === 'admin - apm' ? 'Download' : ''}
-                                    </button>
-                                  )}
-                                  <button
-                                    onClick={() => openImageViewer(upload)}
-                                    className="px-3 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1"
-                                    title="View Full Image"
-                                  >
-                                    <Eye size={14} /> View
+                                {canDeleteUser(s) && (
+                                  <button onClick={() => handleDeleteUser(s._id)} className="p-2 bg-red-50 text-red-600 rounded-xl">
+                                    <Trash2 className="w-4 h-4" />
                                   </button>
-                                  <button
-                                    onClick={() => openStatusModal(upload)}
-                                    className="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs transition-all shadow-sm"
-                                  >
-                                    Update Status
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Validated Section */}
-                      {userUploads.filter(u => u.status === 'validated').length > 0 && (
-                        <div>
-                          <div className="flex items-center gap-2 mb-4 bg-white rounded-xl p-3 border-2 border-green-300 shadow-sm">
-                            <CheckCircle className="text-green-500" size={24} />
-                            <h4 className="text-lg font-black text-gray-900">
-                              Approved Uploads
-                              <span className="ml-2 text-sm font-normal text-gray-500">({userUploads.filter(u => u.status === 'validated').length})</span>
-                            </h4>
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {userUploads.filter(u => u.status === 'validated').map(upload => (
-                              <div key={upload._id} className="relative border-2 border-green-300 bg-green-50 rounded-2xl p-4 transition-all hover:shadow-lg hover:border-green-400 flex flex-col">
-                                {/* Thumbnail */}
-                                {upload.s3Url && (
-                                  <div className="h-48 -mx-4 -mt-4 mb-3 overflow-hidden rounded-t-2xl border-b border-green-200 bg-black/5">
-                                    <img src={upload.s3Url} alt="" className="w-full h-full object-contain" />
-                                  </div>
                                 )}
-
-                                <div className="flex justify-between items-start mb-3">
-                                  <div className="flex-1 min-w-0">
-                                    <h4 className="font-bold text-sm text-gray-900 truncate">{upload.shgName}</h4>
-                                    <p className="text-xs text-gray-600">SHG ID: '{upload.shgID}</p>
-                                  </div>
-                                  <span className="px-2 py-1 rounded-lg text-[10px] font-black uppercase bg-green-200 text-green-800">
-                                    Approved
-                                  </span>
-                                </div>
-
-                                <div className="space-y-1 text-xs mb-3 flex-1 overflow-hidden">
-                                  <div className="flex items-center gap-2 text-gray-600">
-                                    <Calendar className="w-3 h-3" />
-                                    <span>{formatDateTime(upload.uploadTimestamp)}</span>
-                                  </div>
-                                  <div className="text-gray-400 truncate mt-2" title={upload.originalFilename}>
-                                    {upload.originalFilename}
-                                  </div>
-                                </div>
-
-                                <div className="flex gap-2 mt-auto">
-                                  {(currentUserRole === 'admin' || currentUserRole === 'admin - developer' || currentUserRole === 'admin - apm') && (
-                                    <button
-                                      onClick={() => downloadImage(upload.s3Url, `${upload.shgName}_${upload.shgID}.jpg`)}
-                                      className={`px-3 py-2 ${currentUserRole === 'admin - apm' ? 'flex-1 bg-blue-600 text-white' : 'bg-blue-50 text-blue-600'} hover:bg-blue-600 hover:text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1`}
-                                      title="Download Image"
-                                    >
-                                      <Download size={14} /> {currentUserRole === 'admin - apm' ? 'Download' : ''}
-                                    </button>
-                                  )}
-                                  <button
-                                    onClick={() => openImageViewer(upload)}
-                                    className="px-3 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1"
-                                    title="View Full Image"
-                                  >
-                                    <Eye size={14} /> View
-                                  </button>
-                                  {currentUserRole !== 'admin - apm' && (
-                                    <button
-                                      onClick={() => openStatusModal(upload)}
-                                      className="flex-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-xs transition-all"
-                                    >
-                                      Details
-                                    </button>
-                                  )}
-                                </div>
                               </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+                            </div>
+                          )
+                        })}
+                      </div>
                     </div>
                   )}
                 </div>
-              </div>
-            </div>,
-            document.body
-          )
-        }
+              </>
+            )}
 
-        {/* Status Update Modal */}
-        {
-          showStatusModal && selectedUpload && createPortal(
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4 !mt-0">
-              <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto p-6">
-                <div className="flex justify-between items-center mb-6">
-                  <div>
-                    <h3 className="text-xl font-black text-gray-900">Update Upload Status</h3>
-                    <p className="text-sm text-gray-600 mt-1">{selectedUpload.shgName} ('{selectedUpload.shgID})</p>
-                  </div>
-                  <button onClick={() => setShowStatusModal(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-all">
-                    <X className="w-5 h-5" />
+            {/* Pagination Controls */}
+            {!loading && totalPages > 1 && (
+              <div className="px-4 sm:px-8 py-6 bg-gray-50/50 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-6">
+                <div className="text-[10px] sm:text-xs font-bold text-gray-500 uppercase tracking-widest text-center sm:text-left transition-all">
+                  Showing <span className="text-indigo-600">{(page - 1) * limit + 1}</span> - <span className="text-indigo-600">{Math.min(page * limit, totalUsers)}</span> of <span className="text-gray-900">{totalUsers}</span> users
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <button
+                    disabled={page === 1}
+                    onClick={() => setPage(p => p - 1)}
+                    className="p-2.5 rounded-xl border-2 border-gray-200 bg-white hover:border-indigo-600 hover:text-indigo-600 disabled:opacity-30 disabled:hover:border-gray-200 disabled:hover:text-gray-400 transition-all"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
                   </button>
-                </div>
 
-                {selectedUpload.s3Url && (
-                  <div className="mb-6 bg-gray-50 rounded-2xl overflow-hidden border-2 border-gray-200">
-                    <img src={selectedUpload.s3Url} alt={selectedUpload.shgName} className="w-full max-h-96 object-contain" />
+                  <div className="flex items-center gap-1 mx-2">
+                    {[...Array(totalPages)].map((_, i) => (
+                      <button
+                        key={i + 1}
+                        onClick={() => setPage(i + 1)}
+                        className={`min-w-[36px] h-[36px] sm:min-w-[44px] sm:h-[44px] font-black text-xs sm:text-sm rounded-lg sm:rounded-xl transition-all ${page === i + 1
+                          ? 'bg-indigo-700 text-white shadow-lg shadow-indigo-200 scale-110 z-10'
+                          : 'bg-white text-gray-500 border-2 border-gray-100 hover:border-indigo-300'
+                          }`}
+                      >
+                        {i + 1}
+                      </button>
+                    )).slice(Math.max(0, page - 3), Math.min(totalPages, page + 2))}
                   </div>
-                )}
 
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-black text-gray-700 mb-2">Reason for Rejection</label>
-                    <select
-                      value={rejectionReason}
-                      onChange={e => {
-                        setRejectionReason(e.target.value);
-                        setStatus('rejected');
-                      }}
-                      className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl font-bold focus:border-indigo-500 focus:outline-none transition-all"
-                    >
-                      {REJECTION_REASONS.map((reason, idx) => (
-                        <option key={idx} value={reason}>{reason}</option>
-                      ))}
-                    </select>
-                    <p className="mt-1 text-xs text-gray-600 font-bold">This will be shown to VO users. Default is "Follow guidelines".</p>
-                    <p className="mt-2 text-xs text-indigo-600 font-bold flex items-center gap-2">
-                      <AlertCircle className="w-4 h-4" />
-                      Note: File will be kept in rejected history and VO will see the rejection reason.
-                    </p>
+                  <button
+                    disabled={page === totalPages}
+                    onClick={() => setPage(p => p + 1)}
+                    className="p-2.5 rounded-xl border-2 border-gray-200 bg-white hover:border-indigo-600 hover:text-indigo-600 disabled:opacity-30 disabled:hover:border-gray-200 disabled:hover:text-gray-400 transition-all"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+
+                  <div className="flex items-center gap-3 ml-0 sm:ml-4 border-l-0 sm:border-l border-gray-200 pl-0 sm:pl-4">
+                    <span className="text-[10px] font-black text-gray-400 uppercase hidden xs:inline">Jump</span>
+                    <input
+                      type="text"
+                      value={pageInput}
+                      onChange={(e) => setPageInput(e.target.value)}
+                      onBlur={commitPage}
+                      onKeyDown={(e) => e.key === 'Enter' && commitPage()}
+                      className="w-10 h-8 sm:w-12 sm:h-9 bg-white border-2 border-gray-100 rounded-lg text-center text-[10px] sm:text-xs font-black focus:border-indigo-500 focus:outline-none transition-all"
+                    />
                   </div>
-                </div>
-
-                <div className="flex gap-3 mt-6">
-                  <button onClick={() => setShowStatusModal(false)} className="flex-1 px-6 py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-xl font-black transition-all">Cancel</button>
-                  <button onClick={handleUpdateStatus} disabled={uploading} className="flex-1 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black transition-all flex items-center justify-center gap-3 disabled:opacity-70 disabled:grayscale shadow-md">Update Status</button>
                 </div>
               </div>
-            </div>,
-            document.body
+            )}
+          </div>
 
-          )
-        }
+          {/* Modal Portals - Wrapped in zero-size absolute container to prevent any layout insertio n */}
+          <div className="absolute h-0 w-0 overflow-hidden pointer-events-none">
+            {/* Add/Edit Modal */}
+            {
+              (showAddModal || showEditModal) && createPortal(
+                <div className="fixed inset-0 bg-indigo-950/60 backdrop-blur-md flex items-center justify-center z-50 p-4 !mt-0 animate-in fade-in duration-300">
+                  <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[95vh] sm:max-h-[90vh] border border-white/20 animate-in zoom-in-95 duration-200">
+                    <div className="px-4 sm:px-8 py-6 border-b border-gray-100 bg-indigo-50/50 flex justify-between items-center">
+                      <div className="flex items-center gap-3 sm:gap-4">
+                        <div className={`p-2 sm:p-3 rounded-2xl shadow-lg ${showAddModal ? 'bg-indigo-600' : 'bg-purple-600'} text-white`}>
+                          {showAddModal ? <Plus className="w-6 h-6" /> : <Edit className="w-6 h-6" />}
+                        </div>
+                        <div>
+                          <h3 className="text-xl font-black text-gray-900 leading-tight">{showAddModal ? 'Add New User' : 'Update User Details'}</h3>
+                          <p className="text-xs text-gray-500 font-bold uppercase tracking-wider">{showAddModal ? 'Create Account' : 'Update Account'}</p>
+                        </div>
+                      </div>
+                      <button onClick={() => { setShowAddModal(false); setShowEditModal(false); }} className="p-2 sm:p-2.5 bg-white text-gray-400 hover:text-red-500 hover:shadow-md rounded-xl transition-all border border-gray-100">
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
 
-        {/* Full Image Viewer Mo dal */}
+                    <form onSubmit={showAddModal ? handleAddUser : handleEditUser} className="p-4 sm:p-8 overflow-y-auto custom-scrollbar bg-slate-50/50">
+                      <div className="space-y-6">
+                        {/* SECTION 1: IDENTITY & ROLE */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                          {/* Identity Card */}
+                          <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-5">
+                            <div className="flex items-center gap-3 mb-2">
+                              <div className="w-8 h-8 rounded-xl bg-indigo-100 flex items-center justify-center text-indigo-600">
+                                <User className="w-5 h-5" />
+                              </div>
+                              <h4 className="text-sm font-black text-gray-900 uppercase tracking-tight">Identity</h4>
+                            </div>
 
-        {
-          showImageViewer && createPortal(
-            <div className="fixed inset-0 bg-indigo-950/60 backdrop-blur-md flex items-center justify-center z-[100] p-2 sm:p-4 !mt-0 animate-in fade-in duration-300">
-              <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-6xl overflow-hidden flex flex-col max-h-[95vh] sm:max-h-[90vh] border border-white/20 animate-in zoom-in-95 duration-200">
-                <div className="px-4 sm:px-8 py-3 sm:py-6 border-b border-gray-100 bg-gradient-to-r from-indigo-600 to-purple-600">
-                  <div className="flex justify-between items-center bg-transparent">
-                    <div className="bg-transparent">
-                      <h3 className="text-lg sm:text-2xl font-black text-white leading-tight">{viewerImageData.title}</h3>
-                      <div className="flex items-center gap-2 mt-0.5 bg-transparent">
-                        <p className="text-[9px] sm:text-sm text-white/80 font-bold uppercase tracking-wider">{viewerImageData.subtitle}</p>
+                            <div className="space-y-2">
+                              <label className="text-[10px] font-black text-gray-400 ml-1 uppercase">Full Name</label>
+                              <input
+                                type="text"
+                                required
+                                value={formData.voName}
+                                onChange={(e) => setFormData({ ...formData, voName: e.target.value })}
+                                className="w-full bg-gray-50/50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
+                                placeholder={formData.role === 'Admin - CC' ? 'e.g. Cluster Admin' : 'e.g. Navodaya VO'}
+                              />
+                            </div>
+
+                            {formData.role === 'Admin' && (
+                              <div className="space-y-2">
+                                <label className="text-[10px] font-black text-gray-400 ml-1 uppercase">Primary Contact / Login</label>
+                                <input
+                                  type="text"
+                                  required
+                                  value={formData.phone}
+                                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                                  className="w-full bg-gray-50/50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
+                                  placeholder="+91 XXXXXXXXXX"
+                                />
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Access Card */}
+                          <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-5">
+                            <div className="flex items-center gap-3 mb-2">
+                              <div className="w-8 h-8 rounded-xl bg-purple-100 flex items-center justify-center text-purple-600">
+                                <Shield className="w-5 h-5" />
+                              </div>
+                              <h4 className="text-sm font-black text-gray-900 uppercase tracking-tight">Access Control</h4>
+                            </div>
+
+                            <div className="space-y-2">
+                              <label className="text-[10px] font-black text-gray-400 ml-1 uppercase">System Role</label>
+                              <div className="relative">
+                                <select
+                                  value={formData.role}
+                                  onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                                  className="w-full appearance-none bg-gray-50/50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
+                                >
+                                  <option value="VO">Village Organization (VO)</option>
+                                  {!currentUserRole.includes('admin - apm') && (
+                                    <>
+                                      <option value="Admin">Admin</option>
+                                      <option value="Admin - CC">Admin - CC</option>
+                                      <option value="Admin - APM">Admin - APM</option>
+                                    </>
+                                  )}
+                                </select>
+                                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                              </div>
+                            </div>
+
+                            <div className="space-y-2">
+                              <label className="text-[10px] font-black text-gray-400 ml-1 uppercase">
+                                {showEditModal ? 'Update Password' : 'Password'}
+                              </label>
+                              <div className="relative">
+                                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300" />
+                                <input
+                                  type="password"
+                                  required={showAddModal}
+                                  value={formData.password}
+                                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                                  className="w-full bg-gray-50/50 border-2 border-gray-100 rounded-2xl pl-12 pr-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
+                                  placeholder="**********"
+                                />
+                              </div>
+                            </div>
+
+                            {isDeveloperUser && (
+                              <div className="flex items-center gap-3 p-3 bg-amber-50 rounded-2xl border border-amber-100">
+                                <input
+                                  type="checkbox"
+                                  id="isDeveloper"
+                                  checked={formData.isDeveloper}
+                                  onChange={(e) => setFormData({ ...formData, isDeveloper: e.target.checked })}
+                                  className="w-5 h-5 rounded-lg border-2 border-amber-300 text-amber-600 focus:ring-amber-500 transition-all cursor-pointer"
+                                />
+                                <label htmlFor="isDeveloper" className="text-xs font-black text-amber-900 uppercase cursor-pointer select-none">
+                                  Developer Access
+                                </label>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* SECTION 2: JURISDICTION & HIERARCHY (Only if applicable) */}
+                        {!(formData.role === 'Admin' || formData.isDeveloper) && (
+                          <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-6">
+                            <div className="flex items-center gap-3 mb-2">
+                              <div className="w-8 h-8 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600">
+                                <MapPin className="w-5 h-5" />
+                              </div>
+                              <h4 className="text-sm font-black text-gray-900 uppercase tracking-tight">Jurisdiction Details</h4>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                              {!(currentUserRole.includes('admin - apm') || currentUserRole.includes('admin - cc')) && (
+                                <div className="space-y-2 text-center md:text-left">
+                                  <label className="text-[10px] font-black text-gray-400 ml-1 uppercase">District</label>
+                                  <div className="relative">
+                                    <select
+                                      value={formData.district}
+                                      required
+                                      onChange={(e) => setFormData({ ...formData, district: e.target.value })}
+                                      className="w-full appearance-none bg-gray-50/50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
+                                    >
+                                      <option value="">Select District</option>
+                                      {districts.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+                                    </select>
+                                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                  </div>
+                                </div>
+                              )}
+
+                              {!(currentUserRole.includes('admin - apm') || currentUserRole.includes('admin - cc')) && (
+                                <div className="space-y-2 text-center md:text-left">
+                                  <label className="text-[10px] font-black text-gray-400 ml-1 uppercase">Mandal</label>
+                                  <div className="relative">
+                                    <select
+                                      value={formData.mandal}
+                                      required
+                                      onChange={(e) => setFormData({ ...formData, mandal: e.target.value, village: '' })}
+                                      disabled={!formData.district}
+                                      className="w-full appearance-none bg-gray-50/50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all disabled:opacity-50"
+                                    >
+                                      <option value="">Select Mandal</option>
+                                      {modalMandals.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                                    </select>
+                                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                  </div>
+                                </div>
+                              )}
+
+                              <div className={`space-y-2 text-center md:text-left ${currentUserRole.includes('admin - apm') || currentUserRole.includes('admin - cc') ? 'md:col-span-3' : ''}`}>
+                                <label className="text-[10px] font-black text-gray-400 ml-1 uppercase">Village</label>
+                                <div className="relative">
+                                  <select
+                                    value={formData.village}
+                                    required={formData.role === 'VO'}
+                                    onChange={(e) => setFormData({ ...formData, village: e.target.value })}
+                                    disabled={!formData.mandal || (formData.role !== 'VO')}
+                                    className="w-full appearance-none bg-gray-50/50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all disabled:opacity-50"
+                                  >
+                                    <option value="">{formData.role === 'VO' ? 'Select Village' : 'No Village Required'}</option>
+                                    {modalVillages.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
+                                  </select>
+                                  <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Organizational IDs */}
+                            <div className="pt-6 border-t border-gray-100">
+                              <div className="flex items-center gap-3 mb-4">
+                                <div className="w-8 h-8 rounded-xl bg-orange-100 flex items-center justify-center text-orange-600">
+                                  <FileText className="w-5 h-5" />
+                                </div>
+                                <h4 className="text-sm font-black text-gray-900 uppercase tracking-tight">Role Specific Identification</h4>
+                              </div>
+
+                              {formData.role === 'VO' && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                  <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-gray-400 ml-1 uppercase">Official VO ID (15 Digits)</label>
+                                    <input
+                                      type="text" required maxLength={15} minLength={15}
+                                      value={formData.voID}
+                                      onChange={(e) => setFormData({ ...formData, voID: e.target.value.replace(/\D/g, '') })}
+                                      className="w-full bg-gray-50/50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
+                                      placeholder="15-digit ID"
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-gray-400 ml-1 uppercase">Representative VOA Name</label>
+                                    <input
+                                      type="text" required
+                                      value={formData.voaName}
+                                      onChange={(e) => setFormData({ ...formData, voaName: e.target.value })}
+                                      className="w-full bg-gray-50/50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
+                                      placeholder="VOA Full Name"
+                                    />
+                                  </div>
+                                </div>
+                              )}
+
+                              {formData.role === 'Admin - CC' && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                  <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-gray-400 ml-1 uppercase">Cluster ID (8 Digits)</label>
+                                    <input
+                                      type="text" required maxLength={8} minLength={8}
+                                      value={formData.clusterID}
+                                      onChange={(e) => setFormData({ ...formData, clusterID: e.target.value.replace(/\D/g, '') })}
+                                      className="w-full bg-gray-50/50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
+                                      placeholder="8-digit ID"
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-gray-400 ml-1 uppercase">Cluster Name</label>
+                                    <input
+                                      type="text" required
+                                      value={formData.clusterName}
+                                      onChange={(e) => setFormData({ ...formData, clusterName: e.target.value })}
+                                      className="w-full bg-gray-50/50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
+                                      placeholder="Full Cluster Name"
+                                    />
+                                  </div>
+                                </div>
+                              )}
+
+                              {formData.role === 'Admin - APM' && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                  <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-gray-400 ml-1 uppercase">User ID (6 Digits)</label>
+                                    <input
+                                      type="text" required maxLength={6} minLength={6}
+                                      value={formData.userID}
+                                      onChange={(e) => setFormData({ ...formData, userID: e.target.value.replace(/\D/g, '') })}
+                                      className="w-full bg-gray-50/50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
+                                      placeholder="6-digit ID"
+                                    />
+                                  </div>
+                                  <div className="space-y-2">
+                                    <label className="text-[10px] font-black text-gray-400 ml-1 uppercase">User Name</label>
+                                    <input
+                                      type="text" required
+                                      value={formData.userName}
+                                      onChange={(e) => setFormData({ ...formData, userName: e.target.value })}
+                                      className="w-full bg-gray-50/50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
+                                      placeholder="Full User Name"
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex gap-4 pt-6 mt-8">
+                        <button
+                          type="button"
+                          onClick={() => { setShowAddModal(false); setShowEditModal(false); }}
+                          className="flex-1 px-8 py-4 bg-white border-2 border-gray-100 hover:bg-gray-50 text-gray-600 rounded-2xl font-black transition-all"
+                        >
+                          Discard
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={isSaving}
+                          className={`flex-[2] px-8 py-4 rounded-2xl font-black text-white shadow-xl shadow-indigo-200 transition-all flex items-center justify-center gap-2 ${isSaving ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 hover:shadow-indigo-300 active:scale-[0.98]'}`}
+                        >
+                          {isSaving ? (
+                            <>
+                              <Loader2 className="w-5 h-5 animate-spin" />
+                              <span>Saving...</span>
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle className="w-5 h-5" />
+                              <span>{showAddModal ? 'Create Account' : 'Update Details'}</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>,
+                document.body
+              )
+            }
+
+            {/* User Uploads Modal */}
+            {
+              showUserUploads && selectedUser && createPortal(
+                <div className="fixed inset-0 bg-indigo-950/60 backdrop-blur-md flex items-center justify-center z-50 p-2 sm:p-4 !mt-0 animate-in fade-in duration-300">
+                  <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-6xl overflow-hidden flex flex-col max-h-[95vh] sm:max-h-[90vh] border border-white/20">
+                    {/* Header */}
+                    <div className="px-4 sm:px-8 py-3 sm:py-6 border-b border-gray-100 bg-gradient-to-r from-indigo-600 to-purple-600">
+                      <div className="flex justify-between items-center mb-2 sm:mb-4">
+                        <div>
+                          <h3 className="text-lg sm:text-2xl font-black text-white leading-tight">{selectedUser.voName} VO Uploads</h3>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <p className="text-[9px] sm:text-sm text-white/80 font-bold uppercase tracking-wider">VO ID: {selectedUser.voID}</p>
+                          </div>
+                        </div>
+                        <button onClick={() => setShowUserUploads(false)} className="p-1.5 sm:p-2.5 bg-white/20 text-white hover:bg-white/30 hover:shadow-md rounded-xl transition-all border border-white/30">
+                          <X className="w-5 h-5 sm:w-6 sm:h-6" />
+                        </button>
+                      </div>
+
+                      {/* Filters and Stats */}
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6 w-full">
+
+                        {uploadsSummary && (
+                          <div className="flex items-center gap-2 sm:gap-4 overflow-x-auto pb-1 sm:pb-0 w-full min-w-0">
+                            <div className="bg-white/10 backdrop-blur-sm rounded-xl px-2.5 sm:px-4 py-1 sm:py-2.5 border border-white/20 flex-1 min-w-[80px]">
+                              <div className="text-[7px] sm:text-[10px] font-black text-white/70 uppercase truncate">Pending</div>
+                              <div className="text-sm sm:text-2xl font-black text-white">{uploadsSummary.pending}</div>
+                            </div>
+                            <div className="bg-white/10 backdrop-blur-sm rounded-xl px-2.5 sm:px-4 py-1 sm:py-2.5 border border-white/20 flex-1 min-w-[80px]">
+                              <div className="text-[7px] sm:text-[10px] font-black text-white/70 uppercase truncate">Approved</div>
+                              <div className="text-sm sm:text-2xl font-black text-white">{uploadsSummary.validated}</div>
+                            </div>
+                            <div className="bg-white/10 backdrop-blur-sm rounded-xl px-2.5 sm:px-4 py-1 sm:py-2.5 border border-white/20 flex-1 min-w-[80px]">
+                              <div className="text-[7px] sm:text-[10px] font-black text-white/70 uppercase truncate">Rejected</div>
+                              <div className="text-sm sm:text-2xl font-black text-white">{uploadsSummary.rejected}</div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
-                    <button onClick={() => setShowImageViewer(false)} className="p-1.5 sm:p-2.5 bg-white/20 text-white hover:bg-white/30 hover:shadow-md rounded-xl transition-all border border-white/30">
-                      <X className="w-5 h-5 sm:w-6 sm:h-6" />
-                    </button>
+
+                    {/* Content */}
+                    <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-gray-50/50 custom-scrollbar">
+                      {uploadsLoading ? (
+                        <div className="flex items-center justify-center py-20">
+                          <div className="text-center">
+                            <Loader2 className="w-12 h-12 animate-spin text-indigo-600 mx-auto mb-3" />
+                            <p className="text-gray-600 font-bold">Loading uploads...</p>
+                          </div>
+                        </div>
+                      ) : userUploads.length === 0 ? (
+                        <div className="text-center py-20">
+                          <FileText className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                          <p className="text-gray-600 font-bold text-lg">No uploads found</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-8">
+                          {/* Pending Section */}
+                          {userUploads.filter(u => u.status === 'pending').length > 0 && (
+                            <div>
+                              <div className="flex items-center gap-2 mb-4 bg-white rounded-xl p-3 border-2 border-orange-300 shadow-sm">
+                                <AlertCircle className="text-orange-500" size={24} />
+                                <h4 className="text-lg font-black text-gray-900">
+                                  Pending Uploads
+                                  <span className="ml-2 text-sm font-normal text-gray-500">({userUploads.filter(u => u.status === 'pending').length})</span>
+                                </h4>
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {userUploads.filter(u => u.status === 'pending').map(upload => (
+                                  <div key={upload._id} className="relative border-2 border-orange-300 bg-orange-50 rounded-2xl p-4 transition-all hover:shadow-lg hover:border-orange-400 flex flex-col">
+                                    {/* Thumbnail */}
+                                    {upload.s3Url && (
+                                      <div className="h-48 -mx-4 -mt-4 mb-3 overflow-hidden rounded-t-2xl border-b border-orange-200 bg-black/5">
+                                        <img src={upload.s3Url} alt="" className="w-full h-full object-contain" />
+                                      </div>
+                                    )}
+
+                                    <div className="flex justify-between items-start mb-3">
+                                      <div className="flex-1 min-w-0">
+                                        <h4 className="font-bold text-sm text-gray-900 truncate">{upload.shgName}</h4>
+                                        <p className="text-xs text-gray-600">SHG ID: '{upload.shgID}</p>
+                                      </div>
+                                      {currentUserRole !== 'admin - apm' && (
+                                        <span className="px-2 py-1 rounded-lg text-[10px] font-black uppercase bg-orange-200 text-orange-800">
+                                          Pending
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <div className="space-y-2 text-xs mb-3 flex-1 overflow-hidden">
+                                      <div className="flex items-center gap-2 text-gray-600">
+                                        <Calendar className="w-3 h-3" />
+                                        <span>{formatDateTime(upload.uploadTimestamp)}</span>
+                                      </div>
+                                      <div className="text-gray-400 truncate" title={upload.originalFilename}>
+                                        {upload.originalFilename}
+                                      </div>
+                                    </div>
+
+                                    <div className="flex gap-2 mt-auto">
+                                      {(currentUserRole === 'admin' || currentUserRole === 'admin - developer' || currentUserRole === 'admin - apm') && (
+                                        <button
+                                          onClick={() => downloadImage(upload.s3Url, `${upload.shgName}_${upload.shgID}.jpg`)}
+                                          className={`px-3 py-2 ${currentUserRole === 'admin - apm' ? 'flex-1 bg-blue-600 text-white' : 'bg-blue-50 text-blue-600'} hover:bg-blue-600 hover:text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1`}
+                                          title="Download Image"
+                                        >
+                                          <Download size={14} /> {currentUserRole === 'admin - apm' ? 'Download' : ''}
+                                        </button>
+                                      )}
+                                      <button
+                                        onClick={() => openImageViewer(upload)}
+                                        className="px-3 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1"
+                                        title="View Full Image"
+                                      >
+                                        <Eye size={14} /> View
+                                      </button>
+                                      {currentUserRole !== 'admin - apm' && (
+                                        <>
+                                          <button
+                                            onClick={() => handleQuickStatusUpdate(upload, 'validated')}
+                                            disabled={uploading}
+                                            className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1"
+                                          >
+                                            <CheckCircle size={14} /> Approve
+                                          </button>
+                                          <button
+                                            onClick={() => openStatusModal(upload)}
+                                            disabled={uploading}
+                                            className="flex-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1"
+                                          >
+                                            <X size={14} /> Reject
+                                          </button>
+                                        </>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Rejected Section */}
+                          {userUploads.filter(u => u.status === 'rejected').length > 0 && (
+                            <div>
+                              <div className="flex items-center gap-2 mb-4 bg-white rounded-xl p-3 border-2 border-red-300 shadow-sm">
+                                <AlertTriangle className="text-red-500" size={24} />
+                                <h4 className="text-lg font-black text-gray-900">
+                                  Rejected Uploads
+                                  <span className="ml-2 text-sm font-normal text-gray-500">({userUploads.filter(u => u.status === 'rejected').length})</span>
+                                </h4>
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {userUploads.filter(u => u.status === 'rejected').map(upload => (
+                                  <div key={upload._id} className="relative border-2 border-red-300 bg-red-50 rounded-2xl p-4 transition-all hover:shadow-lg hover:border-red-400 flex flex-col">
+                                    {/* Thumbnail */}
+                                    {upload.s3Url && (
+                                      <div className="h-48 -mx-4 -mt-4 mb-3 overflow-hidden rounded-t-2xl border-b border-red-200 bg-black/5">
+                                        <img src={upload.s3Url} alt="" className="w-full h-full object-contain" />
+                                      </div>
+                                    )}
+
+                                    <div className="flex justify-between items-start mb-3">
+                                      <div className="flex-1 min-w-0">
+                                        <h4 className="font-bold text-sm text-gray-900 truncate">{upload.shgName}</h4>
+                                        <p className="text-xs text-gray-600">SHG ID: '{upload.shgID}</p>
+                                      </div>
+                                      <span className="px-2 py-1 rounded-lg text-[10px] font-black uppercase bg-red-200 text-red-800">
+                                        Rejected
+                                      </span>
+                                    </div>
+
+                                    <div className="space-y-2 text-xs mb-3 flex-1 overflow-hidden">
+                                      <div className="flex items-center gap-2 text-gray-600">
+                                        <Calendar className="w-3 h-3" />
+                                        <span>{formatDateTime(upload.uploadTimestamp)}</span>
+                                      </div>
+                                      {upload.rejectionReason && (
+                                        <div className="bg-white rounded-lg p-2 border-l-4 border-red-500">
+                                          <p className="text-[10px] font-bold text-red-600 mb-1">Reason:</p>
+                                          <p className="text-xs text-gray-800 line-clamp-2">{upload.rejectionReason}</p>
+                                        </div>
+                                      )}
+                                      <div className="text-gray-400 truncate" title={upload.originalFilename}>
+                                        {upload.originalFilename}
+                                      </div>
+                                    </div>
+
+                                    <div className="flex gap-2 mt-auto">
+                                      {(currentUserRole === 'admin' || currentUserRole === 'admin - developer' || currentUserRole === 'admin - apm') && (
+                                        <button
+                                          onClick={() => downloadImage(upload.s3Url, `${upload.shgName}_${upload.shgID}.jpg`)}
+                                          className={`px-3 py-2 ${currentUserRole === 'admin - apm' ? 'flex-1 bg-blue-600 text-white' : 'bg-blue-50 text-blue-600'} hover:bg-blue-600 hover:text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1`}
+                                          title="Download Image"
+                                        >
+                                          <Download size={14} /> {currentUserRole === 'admin - apm' ? 'Download' : ''}
+                                        </button>
+                                      )}
+                                      <button
+                                        onClick={() => openImageViewer(upload)}
+                                        className="px-3 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1"
+                                        title="View Full Image"
+                                      >
+                                        <Eye size={14} /> View
+                                      </button>
+                                      <button
+                                        onClick={() => openStatusModal(upload)}
+                                        className="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs transition-all shadow-sm"
+                                      >
+                                        Update Status
+                                      </button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Validated Section */}
+                          {userUploads.filter(u => u.status === 'validated').length > 0 && (
+                            <div>
+                              <div className="flex items-center gap-2 mb-4 bg-white rounded-xl p-3 border-2 border-green-300 shadow-sm">
+                                <CheckCircle className="text-green-500" size={24} />
+                                <h4 className="text-lg font-black text-gray-900">
+                                  Approved Uploads
+                                  <span className="ml-2 text-sm font-normal text-gray-500">({userUploads.filter(u => u.status === 'validated').length})</span>
+                                </h4>
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {userUploads.filter(u => u.status === 'validated').map(upload => (
+                                  <div key={upload._id} className="relative border-2 border-green-300 bg-green-50 rounded-2xl p-4 transition-all hover:shadow-lg hover:border-green-400 flex flex-col">
+                                    {/* Thumbnail */}
+                                    {upload.s3Url && (
+                                      <div className="h-48 -mx-4 -mt-4 mb-3 overflow-hidden rounded-t-2xl border-b border-green-200 bg-black/5">
+                                        <img src={upload.s3Url} alt="" className="w-full h-full object-contain" />
+                                      </div>
+                                    )}
+
+                                    <div className="flex justify-between items-start mb-3">
+                                      <div className="flex-1 min-w-0">
+                                        <h4 className="font-bold text-sm text-gray-900 truncate">{upload.shgName}</h4>
+                                        <p className="text-xs text-gray-600">SHG ID: '{upload.shgID}</p>
+                                      </div>
+                                      <span className="px-2 py-1 rounded-lg text-[10px] font-black uppercase bg-green-200 text-green-800">
+                                        Approved
+                                      </span>
+                                    </div>
+
+                                    <div className="space-y-1 text-xs mb-3 flex-1 overflow-hidden">
+                                      <div className="flex items-center gap-2 text-gray-600">
+                                        <Calendar className="w-3 h-3" />
+                                        <span>{formatDateTime(upload.uploadTimestamp)}</span>
+                                      </div>
+                                      <div className="text-gray-400 truncate mt-2" title={upload.originalFilename}>
+                                        {upload.originalFilename}
+                                      </div>
+                                    </div>
+
+                                    <div className="flex gap-2 mt-auto">
+                                      {(currentUserRole === 'admin' || currentUserRole === 'admin - developer' || currentUserRole === 'admin - apm') && (
+                                        <button
+                                          onClick={() => downloadImage(upload.s3Url, `${upload.shgName}_${upload.shgID}.jpg`)}
+                                          className={`px-3 py-2 ${currentUserRole === 'admin - apm' ? 'flex-1 bg-blue-600 text-white' : 'bg-blue-50 text-blue-600'} hover:bg-blue-600 hover:text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1`}
+                                          title="Download Image"
+                                        >
+                                          <Download size={14} /> {currentUserRole === 'admin - apm' ? 'Download' : ''}
+                                        </button>
+                                      )}
+                                      <button
+                                        onClick={() => openImageViewer(upload)}
+                                        className="px-3 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1"
+                                        title="View Full Image"
+                                      >
+                                        <Eye size={14} /> View
+                                      </button>
+                                      {currentUserRole !== 'admin - apm' && (
+                                        <button
+                                          onClick={() => openStatusModal(upload)}
+                                          className="flex-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-xs transition-all"
+                                        >
+                                          Details
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <div className="flex-1 overflow-auto bg-gray-50/50 custom-scrollbar flex items-start justify-center p-0">
-                  <img src={viewerImageData.url} alt={viewerImageData.title} className="w-auto h-auto shadow-2xl" />
-                </div>
-                <div className="px-8 py-4 border-t border-gray-100 bg-white flex justify-end gap-4">
-                  <button onClick={() => downloadImage(viewerImageData.url, viewerImageData.filename)} className="px-8 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-black transition-all shadow-md flex items-center gap-2">
-                    <Download size={18} /> Download Original
-                  </button>
-                </div>
-              </div>
-            </div>,
-            document.body
-          )
-        }
-      </div >
-    </div >
+                </div>,
+                document.body
+              )
+            }
+
+            {/* Status Update Modal */}
+            {
+              showStatusModal && selectedUpload && createPortal(
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4 !mt-0">
+                  <div className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto p-6">
+                    <div className="flex justify-between items-center mb-6">
+                      <div>
+                        <h3 className="text-xl font-black text-gray-900">Update Upload Status</h3>
+                        <p className="text-sm text-gray-600 mt-1">{selectedUpload.shgName} ('{selectedUpload.shgID})</p>
+                      </div>
+                      <button onClick={() => setShowStatusModal(false)} className="p-2 hover:bg-gray-100 rounded-xl transition-all">
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    {selectedUpload.s3Url && (
+                      <div className="mb-6 bg-gray-50 rounded-2xl overflow-hidden border-2 border-gray-200">
+                        <img src={selectedUpload.s3Url} alt={selectedUpload.shgName} className="w-full max-h-96 object-contain" />
+                      </div>
+                    )}
+
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-black text-gray-700 mb-2">Reason for Rejection</label>
+                        <select
+                          value={rejectionReason}
+                          onChange={e => {
+                            setRejectionReason(e.target.value);
+                            setStatus('rejected');
+                          }}
+                          className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl font-bold focus:border-indigo-500 focus:outline-none transition-all"
+                        >
+                          {REJECTION_REASONS.map((reason, idx) => (
+                            <option key={idx} value={reason}>{reason}</option>
+                          ))}
+                        </select>
+                        <p className="mt-1 text-xs text-gray-600 font-bold">This will be shown to VO users. Default is "Follow guidelines".</p>
+                        <p className="mt-2 text-xs text-indigo-600 font-bold flex items-center gap-2">
+                          <AlertCircle className="w-4 h-4" />
+                          Note: File will be kept in rejected history and VO will see the rejection reason.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-3 mt-6">
+                      <button onClick={() => setShowStatusModal(false)} className="flex-1 px-6 py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-xl font-black transition-all">Cancel</button>
+                      <button onClick={handleUpdateStatus} disabled={uploading} className="flex-1 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black transition-all flex items-center justify-center gap-3 disabled:opacity-70 disabled:grayscale shadow-md">Update Status</button>
+                    </div>
+                  </div>
+                </div>,
+                document.body
+
+              )
+            }
+
+            {/* Full Image Viewer Mo dal */}
+
+            {
+              showImageViewer && createPortal(
+                <div className="fixed inset-0 bg-indigo-950/60 backdrop-blur-md flex items-center justify-center z-[100] p-2 sm:p-4 !mt-0 animate-in fade-in duration-300">
+                  <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-6xl overflow-hidden flex flex-col max-h-[95vh] sm:max-h-[90vh] border border-white/20 animate-in zoom-in-95 duration-200">
+                    <div className="px-4 sm:px-8 py-3 sm:py-6 border-b border-gray-100 bg-gradient-to-r from-indigo-600 to-purple-600">
+                      <div className="flex justify-between items-center bg-transparent">
+                        <div className="bg-transparent">
+                          <h3 className="text-lg sm:text-2xl font-black text-white leading-tight">{viewerImageData.title}</h3>
+                          <div className="flex items-center gap-2 mt-0.5 bg-transparent">
+                            <p className="text-[9px] sm:text-sm text-white/80 font-bold uppercase tracking-wider">{viewerImageData.subtitle}</p>
+                          </div>
+                        </div>
+                        <button onClick={() => setShowImageViewer(false)} className="p-1.5 sm:p-2.5 bg-white/20 text-white hover:bg-white/30 hover:shadow-md rounded-xl transition-all border border-white/30">
+                          <X className="w-5 h-5 sm:w-6 sm:h-6" />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex-1 overflow-auto bg-gray-50/50 custom-scrollbar flex items-start justify-center p-0">
+                      <img src={viewerImageData.url} alt={viewerImageData.title} className="w-auto h-auto shadow-2xl" />
+                    </div>
+                    <div className="px-8 py-4 border-t border-gray-100 bg-white flex justify-end gap-4">
+                      <button onClick={() => downloadImage(viewerImageData.url, viewerImageData.filename)} className="px-8 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-black transition-all shadow-md flex items-center gap-2">
+                        <Download size={18} /> Download Original
+                      </button>
+                    </div>
+                  </div>
+                </div>,
+                document.body
+              )
+            }
+          </div>
+        </div>
+      </div>
+    </div>
   );
 };
 

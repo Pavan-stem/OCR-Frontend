@@ -6,9 +6,10 @@
   "homepage": "https://pavan-stem.github.io/OCR-Frontend",
   "scripts": {
     "dev": "vite",
+    "dev:host": "vite --host",
     "dev:frontend": "vite",
-    "dev:backend": "cd ../backend && python app2.py",
-    "dev:all": "concurrently -n \"backend,frontend\" -c \"cyan,magenta\" \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "cd ../backend-ocr && python app.py",
+    "dev:all": "concurrently -n \"backend,frontend\" -c \"cyan,magenta\" \"npm run dev:backend\" \"npm run dev:host\"",
     "build": "vite build",
     "build:gh": "vite build --mode github",
     "build:smd": "vite build --mode smd",
