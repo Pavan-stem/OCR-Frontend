@@ -445,7 +445,7 @@ const AnalyticsFilters = ({ filterProps, user }) => {
                     </div>
 
                     <div className="space-y-1 relative z-10">
-                        <label className={labelStyle}>Mandal</label>
+                        <label className={`${labelStyle} ${selectedDistrict === 'all' ? 'opacity-40' : ''}`}>Mandal</label>
                         <div className="relative">
                             <select
                                 value={selectedMandal}
@@ -453,12 +453,13 @@ const AnalyticsFilters = ({ filterProps, user }) => {
                                     setSelectedMandal(e.target.value);
                                     setSelectedVillage('all');
                                 }}
-                                className={selectStyle}
+                                disabled={selectedDistrict === 'all'}
+                                className={`${selectStyle} ${selectedDistrict === 'all' ? 'opacity-40 cursor-not-allowed border-white/5 bg-transparent' : ''}`}
                             >
                                 <option value="all" className="bg-[#1a1c4b] text-white">All Mandals</option>
                                 {locations.mandals.map(m => <option key={m.id} value={m.name} className="bg-[#1a1c4b] text-white">{m.name}</option>)}
                             </select>
-                            <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400/50 pointer-events-none" />
+                            <ChevronDown className={`absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 transition-all ${selectedDistrict === 'all' ? 'opacity-20' : 'text-indigo-400/50 pointer-events-none'}`} />
                         </div>
                     </div>
                 </>
@@ -478,17 +479,18 @@ const AnalyticsFilters = ({ filterProps, user }) => {
             )}
 
             <div className="space-y-1 relative z-10">
-                <label className={labelStyle}>Village</label>
+                <label className={`${labelStyle} ${selectedMandal === 'all' ? 'opacity-40' : ''}`}>Village</label>
                 <div className="relative">
                     <select
                         value={selectedVillage}
                         onChange={(e) => setSelectedVillage(e.target.value)}
-                        className={selectStyle}
+                        disabled={selectedMandal === 'all'}
+                        className={`${selectStyle} ${selectedMandal === 'all' ? 'opacity-40 cursor-not-allowed border-white/5 bg-transparent' : ''}`}
                     >
                         <option value="all" className="bg-[#1a1c4b] text-white">All Villages</option>
                         {locations.villages.map(v => <option key={v.id} value={v.name} className="bg-[#1a1c4b] text-white">{v.name}</option>)}
                     </select>
-                    <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400/50 pointer-events-none" />
+                    <ChevronDown className={`absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 transition-all ${selectedMandal === 'all' ? 'opacity-20' : 'text-indigo-400/50 pointer-events-none'}`} />
                 </div>
             </div>
         </div>

@@ -82,6 +82,40 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
         } : null;
     }, []);
 
+    const resolveCanonicalName = useCallback((name = '') => {
+        if (!name || name === 'all') return name;
+        const normalized = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+        const aliases = {
+            'drbrambedkarkonaseema': 'Konaseema',
+            'konaseema': 'Konaseema',
+            'spsrnellore': 'SPSR Nellore',
+            'pottisriramulunellore': 'SPSR Nellore',
+            'nellore': 'SPSR Nellore',
+            'sripottisriramulunellore': 'SPSR Nellore',
+            'anantapuramu': 'Anantapur',
+            'anantapur': 'Anantapur',
+            'ysrkadapa': 'YSR Kadapa',
+            'kadapa': 'YSR Kadapa',
+            'srisathyasai': 'Sri Sathya Sai',
+            'parvathipurammanyam': 'Parvathipuram Manyam',
+            'allurisitharamaraju': 'Alluri Sitharama Raju',
+            'allurisitharamarajudistrict': 'Alluri Sitharama Raju',
+            'visakhapatnam': 'Visakhapatnam',
+            'vizianagaram': 'Vizianagaram',
+            'srikakulam': 'Srikakulam',
+            'eastgodavari': 'East Godavari',
+            'westgodavari': 'West Godavari',
+            'guntur': 'Guntur',
+            'krishna': 'Krishna',
+            'kurnool': 'Kurnool',
+            'chittoor': 'Chittoor',
+            'prakasam': 'Prakasam'
+        };
+
+        return aliases[normalized] || name;
+    }, []);
+
     const getColorCategory = useCallback((hex) => {
         const rgb = hexToRgb(hex);
         if (!rgb) return null;
@@ -283,14 +317,15 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
     useEffect(() => {
         if (!editMode) {
             if (filters.district && filters.district !== 'all') {
-                setSelectedDistrict(filters.district);
-                zoomToDistrict(filters.district);
+                const canonicalName = resolveCanonicalName(filters.district);
+                setSelectedDistrict(canonicalName);
+                zoomToDistrict(canonicalName);
             } else if (filters.district === 'all') {
                 setSelectedDistrict(null);
                 zoomToDistrict(null);
             }
         }
-    }, [filters.district, zoomToDistrict, editMode, loading, svgContent]);
+    }, [filters.district, zoomToDistrict, editMode, loading, svgContent, resolveCanonicalName]);
 
     // Zoom sync for Calibration/Edit mode
     useEffect(() => {
