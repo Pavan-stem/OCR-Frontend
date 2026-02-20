@@ -1,29 +1,33 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { Camera, X, AlertTriangle, CheckCircle, Loader, RotateCw, Crop, RefreshCw, Image as ImageIcon, ScanLine, Flashlight } from "lucide-react";
-import { scanDocument, canvasToFile, rotateCanvas, cropCanvas, warpPerspective, enhanceImage } from "./utils/documentScanner";
+import { scanDocument, canvasToFile, rotateCanvas, cropCanvas, warpPerspective, enhanceImage, detectDocument } from "./utils/documentScanner";
 
 const cvReady = () => !!(window.cv && window.cv.Mat);
 
-const SmartCamera = ({ open, onClose, onCapture }) => {
+const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
     const overlayRef = useRef(null);
+    const reviewContainerRef = useRef(null);
     const fileInputRef = useRef(null);
     const [isCameraActive, setIsCameraActive] = useState(false);
     const [capturedImageData, setCapturedImageData] = useState(null);
     const [processingMessage, setProcessingMessage] = useState("");
     const [cameraError, setCameraError] = useState(null);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [shutterFlash, setShutterFlash] = useState(false);
     const [isEnhancing, setIsEnhancing] = useState(false);
 
     // Live Validation State
     const [liveStatus, setLiveStatus] = useState({
         isValid: false,
         message: "Searching for document...",
-        color: "text-white"
+        color: "text-white",
+        orientation: "Portrait"
     });
     const [captureProgress, setCaptureProgress] = useState(0);
+    const [manualRotation, setManualRotation] = useState(0); // 0, 90, 180, 270
     const stabilityTimer = useRef(null);
     const steadyCount = useRef(0);
 
@@ -42,6 +46,32 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
     const bestFrameRef = useRef(null);
     const bestPointsRef = useRef(null);
     const rawPointsRef = useRef(null); // High-speed sync ref for dots
+    const [deviceRotation, setDeviceRotation] = useState(0);
+
+    useEffect(() => {
+        const handleRotation = () => {
+            const angle = window.orientation || (window.screen?.orientation?.angle) || 0;
+            setDeviceRotation(angle);
+        };
+        window.addEventListener("orientationchange", handleRotation);
+        handleRotation();
+        return () => window.removeEventListener("orientationchange", handleRotation);
+    }, []);
+
+    const rotationScale = React.useMemo(() => {
+        if (manualRotation % 180 === 0 || !reviewContainerRef.current) return 1;
+        const w = reviewContainerRef.current.offsetWidth;
+        const h = reviewContainerRef.current.offsetHeight;
+        if (!w || !h) return 1;
+        return Math.min(w / h, h / w);
+    }, [manualRotation, capturedImageData]);
+
+    const handleRotate = (dir) => {
+        setManualRotation(prev => {
+            if (dir === 'left') return (prev - 90 + 360) % 360;
+            return (prev + 90) % 360;
+        });
+    };
 
     useEffect(() => {
         if (open) {
@@ -134,59 +164,70 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
             }
 
             if (videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
+                let src, gray, lap, mean, std, blurred, edges, contours, hierarchy, detected, shadowRoi;
                 try {
+                    let isAnyPartBlurry = false;
                     const video = videoRef.current;
                     const canvas = canvasRef.current;
                     const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
                     // Downscale to 0.3 for faster CV processing on mobile
                     const scale = 0.3;
+                    if (video.videoWidth === 0 || video.videoHeight === 0) return;
+
                     canvas.width = video.videoWidth * scale;
                     canvas.height = video.videoHeight * scale;
+                    if (canvas.width === 0 || canvas.height === 0) return;
+
                     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-                    const src = cv.imread(canvas);
-                    const gray = new cv.Mat();
+                    src = cv.imread(canvas);
+                    gray = new cv.Mat();
                     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
                     // 1. Quality Checks (Periodic to save CPU)
                     let blurVar = 150; // Optimized default
                     let avgBrightness = 100;
 
-                    const lap = new cv.Mat();
+                    lap = new cv.Mat();
                     cv.Laplacian(gray, lap, cv.CV_64F);
-                    const mean = new cv.Mat();
-                    const std = new cv.Mat();
+                    mean = new cv.Mat();
+                    std = new cv.Mat();
                     cv.meanStdDev(lap, mean, std);
                     blurVar = std.data64F[0] ** 2;
-                    lap.delete();
+                    // Global blur is now more lenient (Quality over Stillness)
+                    const isGloballyBlurry = blurVar < 150;
+                    lap.delete(); lap = null;
 
                     cv.meanStdDev(gray, mean, std);
                     avgBrightness = mean.data64F[0];
-                    mean.delete(); std.delete();
+
+                    let hasHardShadow = false;
 
                     // 2. Hybrid Detection Logic (Paper Boundary Focused)
-                    const blurred = new cv.Mat();
+                    blurred = new cv.Mat();
                     cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
                     // Removed medianBlur as it might be washing out the paper edges on low-res frames
 
-                    const edges = new cv.Mat();
+                    edges = new cv.Mat();
                     // Lower thresholds to catch weaker edges of the paper on light surfaces
                     cv.Canny(blurred, edges, 30, 100);
 
                     // Dilate slightly to bridge gaps in the paper outline
-                    const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3, 3));
+                    const kernelSize = new cv.Size(3, 3);
+                    const kernel = cv.getStructuringElement(cv.MORPH_RECT, kernelSize);
                     cv.dilate(edges, edges, kernel);
                     kernel.delete();
 
-                    const contours = new cv.MatVector();
-                    const hierarchy = new cv.Mat();
-                    // REVERT to RETR_LIST to catch the paper edge even if there are overlapping background/table lines
-                    cv.findContours(edges, contours, hierarchy, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+                    contours = new cv.MatVector();
+                    hierarchy = new cv.Mat();
+                    // RETR_EXTERNAL is much faster and cleaner for finding document boundaries
+                    cv.findContours(edges, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
-                    let detected = null;
+                    detected = null;
                     let maxArea = 0;
                     let detectedArea = 0;
+                    let isLandscape = liveStatus.orientation === "Landscape"; // Preserve last known
 
                     for (let i = 0; i < contours.size(); i++) {
                         const c = contours.get(i);
@@ -229,6 +270,63 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
                         approx.delete();
                     }
 
+                    // 3. Document-Aware Shadow Detection (ROI ONLY)
+                    if (detected) {
+                        const rect = cv.boundingRect(detected);
+                        shadowRoi = gray.roi(rect);
+
+                        const rows = 4;
+                        const cols = 4;
+                        const tileW = Math.floor(shadowRoi.cols / cols);
+                        const tileH = Math.floor(shadowRoi.rows / rows);
+                        const tileMeans = [];
+
+                        // Safety: Ensure tile dimensions are valid
+                        if (tileW > 1 && tileH > 1) {
+                            for (let r = 0; r < rows; r++) {
+                                for (let c = 0; c < cols; c++) {
+                                    const tileRect = new cv.Rect(c * tileW, r * tileH, tileW, tileH);
+                                    const tile = shadowRoi.roi(tileRect);
+                                    const meanVal = cv.mean(tile);
+                                    tileMeans.push(meanVal[0]);
+                                    tile.delete();
+                                }
+                            }
+                            const shadowDiff = Math.max(...tileMeans) - Math.min(...tileMeans);
+                            if (shadowDiff > 60) hasHardShadow = true;
+                        }
+
+                        // 4. Regional Blur Check (3x3 Grid on Document)
+                        const bRows = 3;
+                        const bCols = 3;
+                        const bTileW = Math.floor(shadowRoi.cols / bCols);
+                        const bTileH = Math.floor(shadowRoi.rows / bRows);
+                        const tileBlurs = [];
+
+                        if (bTileW > 4 && bTileH > 4) {
+                            for (let r = 0; r < bRows; r++) {
+                                for (let c = 0; c < bCols; c++) {
+                                    const tileRect = new cv.Rect(c * bTileW, r * bTileH, bTileW, bTileH);
+                                    const tile = shadowRoi.roi(tileRect);
+                                    const tLap = new cv.Mat();
+                                    cv.Laplacian(tile, tLap, cv.CV_64F);
+                                    const tMean = new cv.Mat();
+                                    const tStd = new cv.Mat();
+                                    cv.meanStdDev(tLap, tMean, tStd);
+                                    tileBlurs.push(tStd.data64F[0] ** 2);
+
+                                    tLap.delete();
+                                    tMean.delete();
+                                    tStd.delete();
+                                    tile.delete();
+                                }
+                            }
+                            const minSharpness = Math.min(...tileBlurs);
+                            // Regional threshold is strict (250 for ultra-clear text)
+                            if (minSharpness < 250) isAnyPartBlurry = true;
+                        }
+                    }
+
                     // 3. Stability & Smoothing Logic
                     const now = Date.now();
                     let rawPoints = null;
@@ -267,11 +365,12 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
                         // Calculate orientation for Smart Padding
                         const w = Math.hypot(rawPoints[1].x - rawPoints[0].x, rawPoints[1].y - rawPoints[0].y);
                         const h = Math.hypot(rawPoints[3].x - rawPoints[0].x, rawPoints[3].y - rawPoints[0].y);
-                        const isLandscape = w > h;
+                        isLandscape = h > w; // Inverted based on user feedback (Portrait camera feed)
 
-                        // Apply Balanced Motion Buffer Padding: 5% Side for Portrait, 10% Vertical for Landscape 
-                        const padSide = isLandscape ? 0.15 : 0.05;
-                        const padTopBot = isLandscape ? 0.10 : 0.20;
+                        // Apply Orientation-Aware Padding: 
+                        // Refined Landscape: 3% Top/Bottom, 6% Side
+                        const padSide = isLandscape ? 0.06 : 0.05;
+                        const padTopBot = isLandscape ? 0.03 : 0.20;
 
 
                         const centerX = rawPoints.reduce((sum, p) => sum + p.x, 0) / 4;
@@ -345,36 +444,74 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
                         setCaptureProgress(0);
                         maxBlurVarRef.current = 0; // Reset sampling
                     } else {
-                        // Use the captured isCutOff flag from earlier
+                        // 6. Tilt Detection (Anti-Squeeze)
+                        const topWidth = Math.hypot(rawPoints[1].x - rawPoints[0].x, rawPoints[1].y - rawPoints[0].y);
+                        const bottomWidth = Math.hypot(rawPoints[2].x - rawPoints[3].x, rawPoints[2].y - rawPoints[3].y);
+                        const leftHeight = Math.hypot(rawPoints[3].x - rawPoints[0].x, rawPoints[3].y - rawPoints[0].y);
+                        const rightHeight = Math.hypot(rawPoints[2].x - rawPoints[1].x, rawPoints[2].y - rawPoints[1].y);
 
-                        // RELAXED Validation: No more blur/shadow checks for auto-capture
+                        const widthRatio = Math.max(topWidth, bottomWidth) / Math.min(topWidth, bottomWidth);
+                        const heightRatio = Math.max(leftHeight, rightHeight) / Math.min(leftHeight, rightHeight);
+                        const isTooTilted = widthRatio > 1.15 || heightRatio > 1.15;
+
                         if (isCutOff) {
                             isValid = false; msg = "Center the Document"; color = "text-orange-500";
                             steadyCount.current = 0;
                             setCaptureProgress(0);
+                        } else if (isTooTilted) {
+                            isValid = false;
+                            msg = "Hold Phone Parallel to Paper";
+                            color = "text-orange-500";
+                            steadyCount.current = 0;
+                            setCaptureProgress(0);
+                        } else if (isGloballyBlurry || isAnyPartBlurry) {
+                            isValid = false;
+                            msg = isGloballyBlurry ? "Keep Phone Steady" : "Poor Focus (Check Corners)";
+                            color = "text-orange-500";
+                            steadyCount.current = 0;
+                            setCaptureProgress(0);
+                        } else if (hasHardShadow) {
+                            isValid = false;
+                            msg = "Uneven Lighting / Hard Shadow";
+                            color = "text-orange-500";
+                            steadyCount.current = 0;
+                            setCaptureProgress(0);
                         } else {
-                            // Faster Auto-Capture (0.5s window)
+                            // Faster Auto-Capture (0.3s window - 5 frames)
                             steadyCount.current += 1;
-                            const progress = Math.min(100, (steadyCount.current / 8) * 100);
+                            const progress = Math.min(100, (steadyCount.current / 5) * 100);
                             setCaptureProgress(progress);
 
                             if (progress >= 100 && !capturedImageData) {
                                 steadyCount.current = 0;
                                 setCaptureProgress(0);
-                                handleCapture(rawPoints); // Pass points directly for 100% accurate crop
+                                handleCapture(rawPoints);
                             }
                         }
                     }
 
-                    setLiveStatus({ isValid, message: msg, color });
-
-                    // Cleanup
-                    src.delete(); gray.delete(); blurred.delete(); edges.delete();
-                    contours.delete(); hierarchy.delete();
-                    if (detected) detected.delete();
+                    setLiveStatus({
+                        isValid,
+                        message: msg,
+                        color,
+                        orientation: isLandscape ? "Landscape" : "Portrait"
+                    });
 
                 } catch (e) {
                     console.error("OpenCV Processing Error:", e);
+                } finally {
+                    // Robust Cleanup
+                    if (src) src.delete();
+                    if (gray) gray.delete();
+                    if (lap) lap.delete();
+                    if (mean) mean.delete();
+                    if (std) std.delete();
+                    if (blurred) blurred.delete();
+                    if (edges) edges.delete();
+                    if (contours) contours.delete();
+                    if (hierarchy) hierarchy.delete();
+                    if (detected) detected.delete();
+                    if (shadowRoi) shadowRoi.delete();
                 }
             }
             // Processing loop runs at ~10-15fps to prevent "hanging"
@@ -410,6 +547,9 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
         if (!videoRef.current || captureTriggeredRef.current) return;
 
         captureTriggeredRef.current = true;
+        setShutterFlash(true);
+        setTimeout(() => setShutterFlash(false), 150); // Instant visual feedback
+
         setIsProcessing(true);
         isLoopingRef.current = false; // Kill loop immediately
 
@@ -437,8 +577,22 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
             let resultCanvas = canvas;
 
             // 1. CROP (Warp) FIRST using the exact synced points
+            // This now uses a 5% "Safety Buffer" from documentScanner.js to handle motion
             if (finalContour && cvReady()) {
                 resultCanvas = warpPerspective(canvas, finalContour);
+
+                // 1b. SECONDARY PASS: Detect and tighten crop to fix motion cutoff
+                // Fire up table detection again on the frozen frame
+                const refinedContour = detectDocument(resultCanvas);
+                if (refinedContour) {
+                    // Warp again to tighten the crop perfectly to the document edges
+                    resultCanvas = warpPerspective(resultCanvas, refinedContour);
+                }
+            }
+
+            // 2. HARDWARE ROTATION: Rotate image based on how the phone was held
+            if (deviceRotation !== 0) {
+                resultCanvas = rotateCanvas(resultCanvas, -deviceRotation);
             }
 
             // SHOW RAW CROP IMMEDIATELY (UX: Open review screen instantly)
@@ -478,10 +632,15 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
         image.src = capturedImageData;
         await new Promise(r => image.onload = r);
 
-        const canvas = document.createElement("canvas");
+        let canvas = document.createElement("canvas");
         canvas.width = image.width;
         canvas.height = image.height;
         canvas.getContext("2d").drawImage(image, 0, 0);
+
+        // Apply manual rotation if any
+        if (manualRotation !== 0) {
+            canvas = rotateCanvas(canvas, manualRotation);
+        }
 
         const file = await canvasToFile(canvas, "scanned_doc.jpg");
         onCapture(file);
@@ -494,6 +653,7 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
         if (uiAnimationFrameId.current) cancelAnimationFrame(uiAnimationFrameId.current);
 
         setCapturedImageData(null);
+        setManualRotation(0);
         setStableContour(null);
         setSmoothedContour(null);
         pointsTracker.current = null;
@@ -506,6 +666,20 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
         setIsProcessing(false);
         captureTriggeredRef.current = false;
         // The initCamera side-effect will restart the stream because capturedImageData changes
+    };
+
+    const handleGalleryUpload = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            setCapturedImageData(event.target.result);
+            setIsProcessing(false);
+            setProcessingMessage("");
+            setManualRotation(0);
+        };
+        reader.readAsDataURL(file);
     };
 
     // Draw Smooth Overlay with Blue Dots
@@ -580,37 +754,78 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
     if (!open) return null;
 
     return createPortal(
-        <div className="fixed inset-0 bg-black z-[10000] flex flex-col font-sans">
-            {/* Header */}
-            <div className="flex justify-between items-center p-4 bg-black/80 text-white z-10">
-                <span className="font-bold text-lg">Smart Scanner</span>
-                <button onClick={onClose} className="p-2 bg-white/10 rounded-full"><X /></button>
+        <div className="fixed inset-0 bg-black z-[10000] flex flex-col font-sans overflow-hidden">
+            {/* Header - Fixed Height & Solid Background to prevent overlap */}
+            <div className="h-16 flex justify-between items-center px-6 bg-black border-b border-white/10 text-white z-[20000] shrink-0">
+                <div className="flex items-center gap-4">
+                    <div className="flex flex-col">
+                        <span className="font-bold text-sm text-gray-400 capitalize -mb-1">{shgName || "Document Scan"}</span>
+                        <span className="font-bold text-lg tracking-tight">{shgId || "Smart Scanner"}</span>
+                    </div>
+                    {capturedImageData && (
+                        <div className="flex items-center gap-2 ml-4">
+                            <button
+                                onClick={() => handleRotate('left')}
+                                className="p-2.5 hover:bg-white/10 rounded-full transition-colors border border-white/10"
+                                title="Rotate Left"
+                            >
+                                <RotateCw className="scale-x-[-1]" size={20} />
+                            </button>
+                            <button
+                                onClick={() => handleRotate('right')}
+                                className="p-2.5 hover:bg-white/10 rounded-full transition-colors border border-white/10"
+                                title="Rotate Right"
+                            >
+                                <RotateCw size={20} />
+                            </button>
+                        </div>
+                    )}
+                </div>
+                <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                    <X size={24} />
+                </button>
             </div>
 
-            {/* Viewfinder */}
-            <div className="flex-1 relative bg-black flex items-center justify-center overflow-hidden">
+            {/* Viewfinder / Review Container - Strictly constrained */}
+            <div className="flex-1 relative min-h-0 bg-black flex flex-col overflow-hidden">
                 {!capturedImageData ? (
-                    <>
+                    <div className="absolute inset-0 flex flex-col">
                         <video
                             ref={videoRef}
                             playsInline
                             muted
-                            className="absolute w-full h-full object-cover"
+                            className="absolute inset-0 w-full h-full object-cover"
                         />
+                        {/* Shutter Flash Effect */}
+                        {shutterFlash && (
+                            <div className="absolute inset-0 bg-white z-[60] animate-pulse" />
+                        )}
                         <canvas
                             ref={overlayRef}
-                            className="absolute w-full h-full pointer-events-none"
+                            className="absolute inset-0 w-full h-full pointer-events-none"
                         />
                         <canvas ref={canvasRef} className="hidden" />
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/*"
+                            onChange={handleGalleryUpload}
+                            className="hidden"
+                        />
 
-                        {/* Status Message */}
-                        <div className="absolute top-8 left-0 right-0 flex flex-col items-center z-20">
-                            <div className={`px-6 py-2 rounded-full backdrop-blur-md bg-black/40 border border-white/20 font-bold ${liveStatus.color} shadow-lg transition-colors duration-300`}>
+                        {/* Status Messages */}
+                        <div className="absolute top-4 left-0 right-0 flex flex-col items-center z-20 gap-2">
+                            {/* Orientation Badge */}
+                            <div className={`px-3 py-1 ${liveStatus.isValid ? 'bg-blue-600/80' : 'bg-gray-600/50'} rounded-full text-white text-[10px] font-bold uppercase tracking-wider backdrop-blur-sm border border-white/20 transition-colors`}>
+                                {liveStatus.isValid ? liveStatus.orientation : "Detecting"} Mode
+                            </div>
+
+                            <div className={`px-4 py-1.5 rounded-full backdrop-blur-md bg-black/60 border border-white/20 font-bold text-sm ${liveStatus.color} shadow-lg transition-colors duration-300`}>
                                 {liveStatus.message}
                             </div>
                             {/* Auto-Capture Progress Bar */}
                             {captureProgress > 0 && (
-                                <div className="mt-3 w-48 h-1.5 bg-black/40 rounded-full overflow-hidden border border-white/10">
+                                <div className="mt-2 w-32 h-1 bg-black/40 rounded-full overflow-hidden border border-white/10">
                                     <div
                                         className="h-full bg-green-500 transition-all duration-100 ease-linear shadow-[0_0_10px_rgba(34,197,94,0.5)]"
                                         style={{ width: `${captureProgress}%` }}
@@ -619,8 +834,18 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
                             )}
                         </div>
 
-                        {/* Capture Button */}
-                        <div className="absolute bottom-10 left-0 right-0 flex justify-center z-20">
+                        {/* Capture Button Container */}
+                        <div className="absolute bottom-10 left-0 right-0 flex justify-center items-center z-20 gap-8">
+                            {/* Gallery Button */}
+                            <button
+                                onClick={() => fileInputRef.current?.click()}
+                                className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white hover:bg-white/20 transition-all active:scale-95 shadow-lg"
+                                title={t?.('upload.gallery') || "Upload from Gallery"}
+                            >
+                                <ImageIcon size={24} />
+                            </button>
+
+                            {/* Camera Shutter */}
                             <button
                                 onClick={() => handleCapture()} // Wrap in lambda to avoid event object pollution
                                 disabled={!isCameraActive || isProcessing}
@@ -628,6 +853,9 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
                             >
                                 <div className={`w-16 h-16 rounded-full ${liveStatus.isValid ? 'bg-green-500 animate-pulse' : 'bg-white'}`}></div>
                             </button>
+
+                            {/* Spacer to balance the layout if needed, or another button */}
+                            <div className="w-12" />
                         </div>
 
                         {/* Processing Overlay */}
@@ -639,34 +867,42 @@ const SmartCamera = ({ open, onClose, onCapture }) => {
                                 </div>
                             </div>
                         )}
-                    </>
+                    </div>
                 ) : (
-                    /* Review Screen */
-                    <div className="flex-1 flex flex-col min-h-0 bg-black">
-                        <div className="flex-1 min-h-0 flex items-center justify-center p-4">
-                            <img
-                                src={capturedImageData}
-                                className="max-w-full max-h-full object-contain shadow-2xl rounded-sm border border-white/10"
-                                alt="Scanned"
-                            />
+                    /* Review Screen - Enhanced Flex/Grid to prevent button cut-off */
+                    <div className="flex-1 flex flex-col min-h-0 bg-black w-full overflow-hidden">
+                        <div
+                            ref={reviewContainerRef}
+                            className="flex-1 min-h-0 flex items-center justify-center p-4 relative bg-black overflow-hidden"
+                        >
+                            <div className="relative w-full h-full flex items-center justify-center transition-transform duration-300 ease-out"
+                                style={{ transform: `rotate(${manualRotation}deg) scale(${rotationScale})` }}
+                            >
+                                <img
+                                    src={capturedImageData}
+                                    className="max-w-full max-h-full object-contain shadow-2xl"
+                                    alt="Scanned"
+                                />
+                            </div>
                             {/* Enhancement Label */}
                             {isEnhancing && (
-                                <div className="absolute top-8 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-md px-6 py-2 rounded-full border border-white/20 flex items-center gap-3 z-30">
-                                    <RotateCw className="animate-spin text-green-500" size={18} />
-                                    <span className="text-white font-bold text-sm tracking-wide">Applying precision sharpness...</span>
+                                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-black/70 backdrop-blur-md px-4 py-1.5 rounded-full border border-white/20 flex items-center gap-2 z-30">
+                                    <RotateCw className="animate-spin text-green-500" size={14} />
+                                    <span className="text-white font-bold text-xs tracking-wide">Enhancing details...</span>
                                 </div>
                             )}
                         </div>
-                        <div className="bg-gray-900/90 backdrop-blur-md p-6 flex gap-4 justify-center border-t border-white/10">
+                        {/* Footer - Fixed at bottom without floating gaps */}
+                        <div className="bg-gray-900 border-t border-white/10 p-4 sm:p-6 flex gap-4 shrink-0 pb-6 shadow-[0_-4px_10px_rgba(0,0,0,0.5)]">
                             <button
                                 onClick={handleRetake}
-                                className="flex-1 py-4 bg-gray-700 hover:bg-gray-600 rounded-xl font-bold text-white transition-colors"
+                                className="flex-1 py-3.5 sm:py-4 bg-gray-800 hover:bg-gray-700 rounded-xl font-bold text-white transition-colors text-sm sm:text-base border border-white/5"
                             >
                                 Retake
                             </button>
                             <button
                                 onClick={handleConfirm}
-                                className="flex-1 py-4 bg-green-600 hover:bg-green-500 rounded-xl font-bold text-white shadow-lg transition-colors"
+                                className="flex-1 py-3.5 sm:py-4 bg-green-600 hover:bg-green-500 rounded-xl font-bold text-white shadow-lg transition-colors text-sm sm:text-base"
                             >
                                 Save Scan
                             </button>

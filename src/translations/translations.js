@@ -121,6 +121,7 @@ export const translations = {
             gallery: "Upload from Gallery",
             smartScan: "Smart Scan",
             camera: "Direct Camera",
+            cameraScan: "Camera Scan",
             fileNotFound: "Upload information not found for this SHG",
             viewError: "Could not retrieve image URL"
         },
@@ -354,6 +355,7 @@ export const translations = {
             gallery: "గ్యాలరీ నుండి అప్‌లోడ్ చేయండి",
             smartScan: "స్మార్ట్ స్కాన్",
             camera: "డైరెక్ట్ కెమెరా",
+            cameraScan: "కెమెరా స్కాన్",
             fileNotFound: "ఈ SHG కోసం అప్‌లోడ్ సమాచారం కనుగొనబడలేదు",
             viewError: "చిత్రం యొక్క URLని పొందలేకపోయాము"
         },

@@ -603,9 +603,9 @@ export const warpPerspective = (canvas, points) => {
     const heightRight = Math.hypot(points[2].x - points[1].x, points[2].y - points[1].y);
     const maxHeight = Math.max(heightLeft, heightRight);
 
-    // Safety Expansion (1.5% Margin) to prevent edge cut-offs during movement
-    const marginW = maxWidth * 0.015;
-    const marginH = maxHeight * 0.015;
+    // Motion-Safe Safety Expansion (5% Margin) to prevent edge cutoffs during capture
+    const marginW = maxWidth * 0.05;
+    const marginH = maxHeight * 0.05;
 
     const dstCoords = cv.matFromArray(4, 1, cv.CV_32FC2, [
         marginW, marginH,               // TL
@@ -627,46 +627,98 @@ export const warpPerspective = (canvas, points) => {
     return outputCanvas;
 };
 
+/**
+ * Perform a one-off document detection on a canvas.
+ * Useful for secondary refinement passes on buffered captures.
+ */
+export const detectDocument = (canvas) => {
+    if (!cvReady()) return null;
+    let src;
+    try {
+        src = cv.imread(canvas);
+        const result = detectEdgesOpenCV(src);
+        src.delete();
+        return result.detected ? result.bounds.contourPoints : null;
+    } catch (e) {
+        console.error("Secondary detection failed:", e);
+        if (src) src.delete();
+        return null;
+    }
+};
+
 /* ===================== IMAGE ENHANCEMENT (Native-Grade UHD Scan v8) ===================== */
 export const enhanceImage = (canvas) => {
     if (!cvReady()) return canvas;
 
     const src = cv.imread(canvas);
+
+    // 0. Adaptive Blur Assessment for Enhancement Tuning
+    const blurScore = detectBlurOpenCV(src);
+    const isSharp = blurScore > 60; // Standard threshold for high-quality scan
+    const isExtremelyBlurry = blurScore < 25;
+
     const gray = new cv.Mat();
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
-    // 1. Pro Background Normalization (Extreme Smooth Lighting)
-    const background = new cv.Mat();
-    // Very large kernel (101x101) for UHD density ensures no local halos
-    cv.GaussianBlur(gray, background, new cv.Size(101, 101), 0);
+    // 0b. Noise Removal (Salt & Pepper Dots)
+    // Median blur specifically targets the small black/white dots without blurring edges much
+    cv.medianBlur(gray, gray, 3);
+
+    // 1. ADVANCED SHADING CORRECTION (Intensity Map)
+    // Create an illumination map to neutralize uneven shadows
+    const illuminationMap = new cv.Mat();
+    // Larger kernel for dilation to ensure text is fully covered for the lighting map
+    const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(31, 31));
+
+    // Dilate to remove text while keeping background lighting gradients
+    cv.dilate(gray, illuminationMap, kernel);
+    // Extreme blur to ensure the illumination field is perfectly smooth - no local halos
+    cv.GaussianBlur(illuminationMap, illuminationMap, new cv.Size(251, 251), 0);
+
+    // Normalize: (Source / IlluminationMap) * 255
     const normalized = new cv.Mat();
-    cv.divide(gray, background, normalized, 255);
+    cv.divide(gray, illuminationMap, normalized, 255);
 
-    // 2. High-Precision Contrast (Natural Stretching)
-    const stretched = new cv.Mat();
-    // 1.1x contrast with subtle offset for professional depth
-    normalized.convertTo(stretched, cv.CV_8U, 1.1, -10);
+    // 2. High-Precision Contrast & Local Equalization (CLAHE)
+    const balanced = new cv.Mat();
+    // Reduced clipLimit (1.5) to prevent over-amplifying grain in dark shadow regions
+    const clahe = new cv.CLAHE(1.5, new cv.Size(8, 8));
+    clahe.apply(normalized, balanced);
+    clahe.delete();
 
-    // 3. Multi-Radius Sharpening (Natural Pro v11)
+    // 2b. Global Whitening Pass (The "previous effect" user requested)
+    // This pushes light-grey shadow remnants into pure white.
+    const whitened = new cv.Mat();
+    // Dynamic whitening based on sharpness
+    const whiteScale = isSharp ? 1.15 : 1.10;
+    const whiteOffset = isSharp ? -15 : -10;
+    balanced.convertTo(whitened, cv.CV_8U, whiteScale, whiteOffset);
+
+    // 3. Multi-Radius Sharpening (Adaptive Natural Pro v15)
     // Step A: Structures (Bold lines)
     const blurStructure = new cv.Mat();
-    cv.GaussianBlur(stretched, blurStructure, new cv.Size(15, 15), 0);
+    cv.GaussianBlur(whitened, blurStructure, new cv.Size(15, 15), 0);
     const midResult = new cv.Mat();
-    cv.addWeighted(stretched, 1.2, blurStructure, -0.2, 0, midResult);
+
+    // Scale sharpening weight based on sharpness - BOOSTED for table clarity
+    const structureWeight = isSharp ? 0.45 : (isExtremelyBlurry ? 0.15 : 0.30);
+    cv.addWeighted(whitened, 1 + structureWeight, blurStructure, -structureWeight, 0, midResult);
 
     // Step B: Natural Fine Text (Subtle strokes)
     const blurText = new cv.Mat();
     cv.GaussianBlur(midResult, blurText, new cv.Size(5, 5), 0);
     const finalResult = new cv.Mat();
-    cv.addWeighted(midResult, 1.1, blurText, -0.1, 0, finalResult);
+
+    const textWeight = isSharp ? 0.20 : (isExtremelyBlurry ? 0.05 : 0.15);
+    cv.addWeighted(midResult, 1 + textWeight, blurText, -textWeight, 0, finalResult);
 
     const outputCanvas = document.createElement("canvas");
     cv.imshow(outputCanvas, finalResult);
 
     // Cleanup
-    src.delete(); gray.delete(); background.delete(); normalized.delete();
-    stretched.delete(); blurStructure.delete(); midResult.delete();
-    blurText.delete(); finalResult.delete();
+    src.delete(); gray.delete(); illuminationMap.delete(); kernel.delete();
+    normalized.delete(); balanced.delete(); whitened.delete();
+    blurStructure.delete(); midResult.delete(); blurText.delete(); finalResult.delete();
 
     return outputCanvas;
 };

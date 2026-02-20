@@ -1704,15 +1704,17 @@ const SHGUploadSection = ({
                 />
 
                 <div className="flex flex-col gap-2">
-                  <button
-                    onClick={() => fileInputRefs.current[shg.shgId]?.click()}
-                    className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-transparent active:scale-95"
-                  >
-                    <Upload size={18} />
-                    <span>{t?.('upload.uploadFile') || 'Upload File'}</span>
-                  </button>
+                  {!isMobileDevice && (
+                    <button
+                      onClick={() => fileInputRefs.current[shg.shgId]?.click()}
+                      className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-transparent active:scale-95"
+                    >
+                      <Upload size={18} />
+                      <span>{t?.('upload.uploadFile') || 'Upload File'}</span>
+                    </button>
+                  )}
 
-                  {isDeveloper && isMobileDevice && (
+                  {isMobileDevice && (
                     <button
                       onClick={() => {
                         setCameraTarget({ id: shg.shgId, name: shg.shgName });
@@ -1721,7 +1723,7 @@ const SHGUploadSection = ({
                       className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white border-transparent active:scale-95"
                     >
                       <ScanLine size={18} />
-                      <span>Camera Scan</span>
+                      <span>{t('upload.cameraScan') || 'Camera Scan'}</span>
                     </button>
                   )}
                 </div>
@@ -1868,15 +1870,17 @@ const SHGUploadSection = ({
                 </button>
               ) : (
                 <div className="flex flex-col gap-2">
-                  <button
-                    onClick={() => fileInputRefs.current[shg.shgId]?.click()}
-                    className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-transparent active:scale-95"
-                  >
-                    <Upload size={18} />
-                    <span>{t?.('upload.uploadFile') || 'Upload File'}</span>
-                  </button>
+                  {!isMobileDevice && (
+                    <button
+                      onClick={() => fileInputRefs.current[shg.shgId]?.click()}
+                      className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-transparent active:scale-95"
+                    >
+                      <Upload size={18} />
+                      <span>{t?.('upload.uploadFile') || 'Upload File'}</span>
+                    </button>
+                  )}
 
-                  {isDeveloper && isMobileDevice && (
+                  {isMobileDevice && (
                     <button
                       onClick={() => {
                         setCameraTarget({ id: shg.shgId, name: shg.shgName });
@@ -1885,7 +1889,7 @@ const SHGUploadSection = ({
                       className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white border-transparent active:scale-95"
                     >
                       <ScanLine size={18} />
-                      <span>Camera Scan</span>
+                      <span>{t('upload.cameraScan') || 'Camera Scan'}</span>
                     </button>
                   )}
                 </div>
@@ -2422,6 +2426,7 @@ const SHGUploadSection = ({
           shgId={cameraTarget.id}
           shgName={cameraTarget.name}
           debugMode={true}
+          t={t}
         />,
         document.body
       )}
