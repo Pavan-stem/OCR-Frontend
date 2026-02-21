@@ -603,15 +603,11 @@ export const warpPerspective = (canvas, points) => {
     const heightRight = Math.hypot(points[2].x - points[1].x, points[2].y - points[1].y);
     const maxHeight = Math.max(heightLeft, heightRight);
 
-    // Motion-Safe Safety Expansion (5% Margin) to prevent edge cutoffs during capture
-    const marginW = maxWidth * 0.05;
-    const marginH = maxHeight * 0.05;
-
     const dstCoords = cv.matFromArray(4, 1, cv.CV_32FC2, [
-        marginW, marginH,               // TL
-        maxWidth - marginW, marginH,        // TR
-        maxWidth - marginW, maxHeight - marginH, // BR
-        marginW, maxHeight - marginH        // BL
+        0, 0,                        // TL
+        maxWidth, 0,                 // TR
+        maxWidth, maxHeight,         // BR
+        0, maxHeight                 // BL
     ]);
 
     const M = cv.getPerspectiveTransform(srcCoords, dstCoords);

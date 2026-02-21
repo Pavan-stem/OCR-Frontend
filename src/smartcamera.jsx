@@ -367,10 +367,10 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
                         const h = Math.hypot(rawPoints[3].x - rawPoints[0].x, rawPoints[3].y - rawPoints[0].y);
                         isLandscape = h > w; // Inverted based on user feedback (Portrait camera feed)
 
-                        // Apply Orientation-Aware Padding: 
-                        // Refined Landscape: 3% Top/Bottom, 6% Side
-                        const padSide = isLandscape ? 0.06 : 0.05;
-                        const padTopBot = isLandscape ? 0.03 : 0.20;
+                        // Apply Orientation-Aware Padding: (Increased)
+                        // Refined Landscape: 6% Top/Bottom, 10% Side
+                        const padSide = isLandscape ? 0.10 : 0.08;
+                        const padTopBot = isLandscape ? 0.06 : 0.25;
 
 
                         const centerX = rawPoints.reduce((sum, p) => sum + p.x, 0) / 4;
@@ -385,7 +385,7 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
                             };
                         });
 
-                        // SYNC: Update high-speed ref for drawLoop immediately
+                        // Update high-speed ref for drawLoop immediately
                         rawPointsRef.current = rawPoints;
 
                         // High-Frequency Sync (200ms)
