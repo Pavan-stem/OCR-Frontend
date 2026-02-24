@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Download, Eye, Table2, Folder, FolderOpen, FileText, X, Info, Grid3X3, Edit3, Loader2 } from 'lucide-react';
 import { API_BASE } from './utils/apiConfig';
+import { formatDateTime } from './utils/dateUtils';
 
 const TOTAL_FILES_TARGET = 10;
 
@@ -84,7 +85,7 @@ export default function ConvertedResults({
       filename: file.filename || file.name || file,
       size: file.size || 0,
       error: file.error || 'Conversion failed',
-      timestamp: file.timestamp || new Date().toLocaleString()
+      timestamp: file.timestamp || formatDateTime(new Date())
     }));
   }, [filteredFailed]);
 
@@ -383,7 +384,7 @@ export default function ConvertedResults({
                   </p>
                 </div>
               </div>
-              <div className="text-[11px] text-gray-600 md:text-center">{file.timestamp}</div>
+              <div className="text-[11px] text-gray-600 md:text-center">{formatDateTime(file.timestamp)}</div>
               <div className="text-[11px] text-gray-600 md:text-center">{getFileType(file.filename)}</div>
               <div className="text-[11px] text-gray-600 md:text-center">{formatBytes(file.fileSize)}</div>
               <div className="flex items-center gap-1 justify-end flex-wrap">
@@ -764,7 +765,7 @@ export default function ConvertedResults({
                           )}
                         </div>
                         <p className="text-xs text-gray-400 mb-2">📍 {file.district} → {file.mandal} → {file.village}</p>
-                        <p className="text-xs text-gray-500 mb-3">🕐 {file.timestamp}</p>
+                        <p className="text-xs text-gray-500 mb-3">🕐 {formatDateTime(file.timestamp)}</p>
                         <div className="flex gap-2">
                           <button
                             onClick={() => {

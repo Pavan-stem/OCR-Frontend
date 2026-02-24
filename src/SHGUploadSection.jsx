@@ -89,7 +89,7 @@ const SHGUploadSection = ({
   };
 
   const isDeveloper = user?.role?.toLowerCase().includes('developer') || (user?.voID && String(user.voID).length === 4);
-  const isTestMode = window.location.pathname.startsWith('/Test');
+  const isTestMode = window.location.pathname.startsWith('/SMD');
   const hasAIFeatures = isTestMode && isDeveloper;
 
   // Smart Preview Logic (Handles hard rotation and cropping for modal)
@@ -782,8 +782,8 @@ const SHGUploadSection = ({
       }
     } catch (e) {
       const currentPath = window.location.pathname;
-      if (currentPath.startsWith('/Test')) {
-        basePath = '/Test';
+      if (currentPath.startsWith('/SMD')) {
+        basePath = '/SMD';
       } else {
         const pathParts = currentPath.split('/').filter(p => p);
         if (pathParts.length > 0) {
@@ -1987,25 +1987,50 @@ const SHGUploadSection = ({
           <div className="flex-1 min-w-[140px] sm:min-w-[180px]">
             <label className="block text-xs sm:text-sm font-bold text-white/90 mb-2">
               {t?.('upload.month') || 'Month'} <span className="text-yellow-300">*</span>
+              {user?.role?.toLowerCase() === 'vo' && (
+                <span className="ml-2 text-[10px] bg-white/20 px-2 py-0.5 rounded-full">Current & Past Only</span>
+              )}
             </label>
             <select
               value={selectedMonth}
-              onChange={(e) => onMonthChange?.(e.target.value)}
+              onChange={(e) => {
+                const now = new Date();
+                const currentMonth = now.getMonth() + 1;
+                const currentYear = now.getFullYear();
+                const selectedM = parseInt(e.target.value);
+                const selectedY = parseInt(selectedYear);
+
+                if (user?.role?.toLowerCase() === 'vo') {
+                  if (selectedY > currentYear || (selectedY === currentYear && selectedM > currentMonth)) {
+                    // Prevent future month selection
+                    return;
+                  }
+                }
+                onMonthChange?.(e.target.value);
+              }}
               className="w-full px-3 sm:px-4 py-2 sm:py-3 border-2 border-white/30 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-white bg-white/95 appearance-none cursor-pointer font-semibold text-sm sm:text-base"
             >
               <option value="">{t?.('upload.selectMonth') || 'Select Month'}</option>
-              <option value="01">{t?.('months.january') || 'January'}</option>
-              <option value="02">{t?.('months.february') || 'February'}</option>
-              <option value="03">{t?.('months.march') || 'March'}</option>
-              <option value="04">{t?.('months.april') || 'April'}</option>
-              <option value="05">{t?.('months.may') || 'May'}</option>
-              <option value="06">{t?.('months.june') || 'June'}</option>
-              <option value="07">{t?.('months.july') || 'July'}</option>
-              <option value="08">{t?.('months.august') || 'August'}</option>
-              <option value="09">{t?.('months.september') || 'September'}</option>
-              <option value="10">{t?.('months.october') || 'October'}</option>
-              <option value="11">{t?.('months.november') || 'November'}</option>
-              <option value="12">{t?.('months.december') || 'December'}</option>
+              {[
+                { val: "01", label: t?.('months.january') || 'January' },
+                { val: "02", label: t?.('months.february') || 'February' },
+                { val: "03", label: t?.('months.march') || 'March' },
+                { val: "04", label: t?.('months.april') || 'April' },
+                { val: "05", label: t?.('months.may') || 'May' },
+                { val: "06", label: t?.('months.june') || 'June' },
+                { val: "07", label: t?.('months.july') || 'July' },
+                { val: "08", label: t?.('months.august') || 'August' },
+                { val: "09", label: t?.('months.september') || 'September' },
+                { val: "10", label: t?.('months.october') || 'October' },
+                { val: "11", label: t?.('months.november') || 'November' },
+                { val: "12", label: t?.('months.december') || 'December' }
+              ].map(m => {
+                const now = new Date();
+                const isFuture = parseInt(selectedYear) > now.getFullYear() ||
+                  (parseInt(selectedYear) === now.getFullYear() && parseInt(m.val) > (now.getMonth() + 1));
+                const disabled = user?.role?.toLowerCase() === 'vo' && isFuture;
+                return <option key={m.val} value={m.val} disabled={disabled}>{m.label} {disabled ? '(Locked)' : ''}</option>;
+              })}
             </select>
           </div>
 
@@ -2020,9 +2045,11 @@ const SHGUploadSection = ({
               className="w-full px-3 sm:px-4 py-2 sm:py-3 border-2 border-white/30 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-white bg-white/95 appearance-none cursor-pointer font-semibold text-sm sm:text-base"
             >
               <option value="">{t?.('upload.selectYear') || 'Select Year'}</option>
-              {Array.from({ length: 10 }, (_, i) => {
-                const year = new Date().getFullYear() - i;
-                return <option key={year} value={year}>{year}</option>;
+              {Array.from({ length: 5 }, (_, i) => {
+                const y = new Date().getFullYear() - 1 + i;
+                const isFutureYear = y > new Date().getFullYear();
+                const disabled = user?.role?.toLowerCase() === 'vo' && isFutureYear;
+                return <option key={y} value={y} disabled={disabled}>{y} {disabled ? '(Locked)' : ''}</option>;
               })}
             </select>
           </div>

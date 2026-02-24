@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Plus, Edit, Trash2, FileSymlink, Filter, Loader2, X, Shield, User, MapPin, Phone, Lock, CheckCircle, Search, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, FileText, Calendar, AlertCircle, AlertTriangle, Settings, Power, Clock, Download, Eye, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { API_BASE } from '../utils/apiConfig';
+import { formatDateTime } from '../utils/dateUtils';
 const REJECTION_REASONS = [
   "Follow guidelines",
   "Table was cut off",
@@ -37,7 +38,7 @@ const UsersTab = ({ filterProps }) => {
       if (diffMins < 1) return 'Just now';
       if (diffMins < 60) return `${diffMins}m ago`;
       if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h ago`;
-      return date.toLocaleDateString();
+      return formatDate(date);
     } catch (e) {
       return 'Unknown';
     }
@@ -1346,26 +1347,7 @@ const UsersTab = ({ filterProps }) => {
     }
   };
 
-  const formatDateTime = (timestamp) => {
-    if (!timestamp) return '';
 
-    // Ensure timestamp is treated as UTC if it's an ISO string without Z/offset
-    let sanitizedTs = timestamp;
-    if (typeof timestamp === 'string' && timestamp.includes('T') && !timestamp.endsWith('Z') && !timestamp.includes('+')) {
-      sanitizedTs = timestamp + 'Z';
-    }
-
-    const date = new Date(sanitizedTs);
-
-    const dd = String(date.getDate()).padStart(2, '0');
-    const mm = String(date.getMonth() + 1).padStart(2, '0');
-    const yyyy = date.getFullYear();
-
-    const hh = String(date.getHours()).padStart(2, '0');
-    const min = String(date.getMinutes()).padStart(2, '0');
-
-    return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
-  };
 
   return (
     <div className="relative overflow-x-hidden min-h-screen">

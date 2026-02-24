@@ -78,7 +78,12 @@ const AnalyticsPage = ({ filterProps }) => {
         const fetchGlobalStats = async () => {
             try {
                 const token = localStorage.getItem('token');
-                const params = new URLSearchParams(filters).toString();
+                // When a geographic filter is active, always bypass stale cache
+                const isFiltered = filters.district !== 'all' || filters.mandal !== 'all' || filters.village !== 'all';
+                const params = new URLSearchParams({
+                    ...filters,
+                    ...(isFiltered ? { refresh: 'true' } : {})
+                }).toString();
 
                 const [sumRes, trendRes, paymentRes, paymentTrendRes] = await Promise.all([
                     fetch(`${API_BASE}/api/analytics/v2/summary?${params}`, {
@@ -105,13 +110,13 @@ const AnalyticsPage = ({ filterProps }) => {
                 if (paymentResData.success) setPaymentData(paymentResData.data);
                 if (paymentTrendData.success) setPaymentTrends(paymentTrendData.data);
 
-                // If any response is stale, set isRefreshing to true
-                setIsRefreshing(
+                // Only mark as refreshing for non-filtered (global) views — filtered views are always live
+                setIsRefreshing(!isFiltered && (
                     sumData.stale ||
                     trendData.stale ||
                     paymentResData.stale ||
                     paymentTrendData.stale
-                );
+                ));
             } catch (err) {
                 console.error("Failed to fetch analytics:", err);
             }
@@ -197,7 +202,7 @@ const AnalyticsPage = ({ filterProps }) => {
                     </h2>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto pr-4">
+                <div className="flex flex-nowrap items-center gap-2 w-full lg:w-auto pr-4">
                     <div className="flex bg-white/5 backdrop-blur-xl p-1.5 rounded-2xl border border-white/10 shadow-2xl">
                         {[
                             { id: 'charts', icon: PieChartIcon, label: 'Performance Charts' },
@@ -218,7 +223,7 @@ const AnalyticsPage = ({ filterProps }) => {
 
                     <button
                         onClick={handleDownload}
-                        className="flex items-center gap-3 px-2 py-3.5 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-indigo-500 transition-all hover:scale-[1.02] active:scale-95 border border-indigo-500/50 shadow-[0_0_25px_rgba(79,70,229,0.3)]"
+                        className="flex shrink-0 items-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-indigo-500 transition-all hover:scale-[1.02] active:scale-95 border border-indigo-500/50 shadow-[0_0_25px_rgba(79,70,229,0.3)]"
                     >
                         <Download className="w-4 h-4" />
                         Download Report
@@ -287,7 +292,11 @@ const AnalyticsPage = ({ filterProps }) => {
                             <UnifiedDistributionCard
                                 data={paymentData?.distributions}
                                 activeMetric={activeMetric}
-                                level={filters.village !== 'all' ? 'cc' : filters.mandal !== 'all' ? 'village' : filters.district !== 'all' ? 'mandal' : 'district'}
+                                level={
+                                    filters.mandal !== 'all' ? 'VO'
+                                        : filters.district !== 'all' ? 'CC'
+                                            : 'District'
+                                }
                             />
                         </div>
                     </div>

@@ -20,6 +20,7 @@ import {
     BookCheck
 } from 'lucide-react';
 import { API_BASE } from '../utils/apiConfig';
+import { formatDate } from '../utils/dateUtils';
 import SHGTableDetail from './SHGTableDetail';
 
 const ConversionView = ({ userId, userName, filterProps, onClose }) => {
@@ -480,8 +481,8 @@ const ConversionView = ({ userId, userName, filterProps, onClose }) => {
                                                         <span className="hidden sm:inline w-1 h-1 bg-gray-300 rounded-full" />
                                                         <span className="normal-case font-medium">
                                                             {activeFolder === 'success'
-                                                                ? `Converted: ${new Date(item.convertedAt).toLocaleDateString()}`
-                                                                : `Failed: ${new Date(item.failedAt).toLocaleDateString()}`}
+                                                                ? `Converted: ${formatDate(item.convertedAt)}`
+                                                                : `Failed: ${formatDate(item.failedAt)}`}
                                                         </span>
                                                     </div>
 

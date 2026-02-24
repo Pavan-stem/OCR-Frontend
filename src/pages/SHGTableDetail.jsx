@@ -21,6 +21,7 @@ import {
     BookCheck
 } from 'lucide-react';
 import { API_BASE } from '../utils/apiConfig';
+import { formatDateTime } from '../utils/dateUtils';
 
 const padSHGId = (id) => {
     if (!id) return id;
@@ -362,13 +363,21 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
     // V2.0: Use static headers, V1.0: Use headers from database
     const headers = schemaVersion === "2.0" ? SHG_COLUMN_HEADERS_V2 : (tableData.column_headers || []);
 
+    // Extract SHG ID for display and comparison
+    // We prioritize shg_mbk_id then shg_id from results, then fallback to record ID
+    const convertedSHGID = tableData.shg_mbk_id || tableData.shg_id || "";
+    const actualSHGID = data.shgID || "";
+
+    // Check if SHG ID matches using padded versions to avoid false mismatches (e.g. leading zeros)
+    const isSHGIDMismatch = convertedSHGID && actualSHGID && padSHGId(convertedSHGID) !== padSHGId(actualSHGID);
+
     // V2.0: Build header rows with dynamic SHG ID injection
     let headerRows;
     if (schemaVersion === "2.0") {
         headerRows = JSON.parse(JSON.stringify(BASE_SHG_HEADER_ROWS_V2)); // Deep copy
         // Inject dynamic SHG ID into row 2, cell 2
-        headerRows[1][1].label = tableData.shg_mbk_id || data.shgID || "";
-        headerRows[1][1].text = tableData.shg_mbk_id || data.shgID || "";
+        headerRows[1][1].label = convertedSHGID || actualSHGID;
+        headerRows[1][1].text = convertedSHGID || actualSHGID;
     } else {
         headerRows = tableData.header_rows || [];
     }
@@ -385,11 +394,6 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
         return cell?.confidence || 0.0;
     };
 
-    // Extract SHG ID from table data (backend now provides this as shg_id)
-    const extractedSHGID = tableData.shg_id || tableData.shg_mbk_id || data.shgID;
-
-    // Check if SHG ID matches
-    const isSHGIDMismatch = extractedSHGID && data.shgID && extractedSHGID !== data.shgID;
 
     // Calculate totals for each column
     const calculateColumnTotals = () => {
@@ -451,7 +455,7 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                                 <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-indigo-400" />
                                 <span className="uppercase tracking-wide hidden sm:inline">Processed:</span>
                                 <span className="text-gray-600 truncate">
-                                    {new Date(data.convertedAt).toLocaleString()}
+                                    {formatDateTime(data.convertedAt)}
                                 </span>
                             </div>
                         </div>
@@ -617,7 +621,7 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                                                             type="text"
                                                             value={tableData.shg_mbk_id || cell.label}
                                                             onChange={(e) => handleSHGIDChange(e.target.value)}
-                                                            className="w-full bg-white border border-black/30 rounded px-2 py-1 text-indigo-900 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-bold"
+                                                            className={`w-full bg-white border border-black/30 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-bold ${isSHGIDMismatch ? 'text-red-600' : 'text-indigo-900'}`}
                                                         />
                                                     ) : (
                                                         cell.label
@@ -750,23 +754,7 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                 )}
             </div>
 
-            {/* Info Panel */}
-            <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-10 rounded-[32px] shadow-lg border border-indigo-100 relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-8 text-indigo-100/30">
-                    <AlertCircle size={120} />
-                </div>
-                <div className="relative z-10 flex flex-col md:flex-row md:items-center gap-10">
-                    <div className="p-5 bg-indigo-100 text-indigo-600 rounded-3xl border border-indigo-200 shadow-md">
-                        <AlertCircle size={40} />
-                    </div>
-                    <div>
-                        <h5 className="text-xl font-black text-indigo-900 mb-3 tracking-tight">Information about the SHG Digital Table</h5>
-                        <p className="text-sm text-indigo-800/80 font-medium leading-relaxed max-w-2xl">
-                            This SHG Digital Table was reconstructed using OCR Model. Values highlighted in <span className="text-amber-600 font-bold">Gold</span> failed the 60% confidence threshold and should be validated against the original physical records.
-                        </p>
-                    </div>
-                </div>
-            </div>
+
 
         </div>
     );

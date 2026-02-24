@@ -46,10 +46,10 @@ const ReportsTab = ({ user }) => {
 
       // Batch both requests together
       const [summaryRes, trendsRes] = await Promise.all([
-        fetch(`/OCRtest/api/payments/summary?${params}`, {
+        fetch(`/OCR/api/payments/summary?${params}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         }),
-        fetch(`/OCRtest/api/payments/trends?${params}`, {
+        fetch(`/OCR/api/payments/trends?${params}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         })
       ]);

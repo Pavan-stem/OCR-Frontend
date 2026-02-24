@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { FileText, LogOut, BarChart, Users, CheckCircle, Clock, Filter } from 'lucide-react';
 import { API_BASE } from '../utils/apiConfig';
+import { formatDate } from '../utils/dateUtils';
 
 // DashboardTab Component with Server Status and Location Loading
 const DashboardTab = ({ filterProps }) => {
@@ -156,7 +157,7 @@ const DashboardTab = ({ filterProps }) => {
 
   // Chart data states
   const [uploadTrends, setUploadTrends] = useState([]);
-  const [trendWindow, setTrendWindow] = useState(30);
+  const [showFullMonth, setShowFullMonth] = useState(false);
   const [districtStats, setDistrictStats] = useState([]);
 
   // Load dashboard statistics
@@ -380,18 +381,38 @@ const DashboardTab = ({ filterProps }) => {
             {/* Time Filter Row */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
-                <label className="text-sm font-bold text-gray-700 ml-1">Select Month</label>
+                <label className="text-sm font-bold text-gray-700 ml-1">
+                  Select Month
+                  {userRole?.toLowerCase() === 'vo' && <span className="ml-2 text-[10px] text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-full font-bold">Current & Past Only</span>}
+                </label>
                 <div className="relative group">
                   <select
                     value={filterMonth}
-                    onChange={(e) => setFilterMonth(e.target.value)}
-                    className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 group-hover:bg-white"
+                    onChange={(e) => {
+                      const now = new Date();
+                      const currentMonth = now.getMonth() + 1;
+                      const currentYear = now.getFullYear();
+                      const selectedM = parseInt(e.target.value);
+                      const selectedY = parseInt(filterYear);
+
+                      if (userRole?.toLowerCase() === 'vo') {
+                        if (selectedY > currentYear || (selectedY === currentYear && selectedM > currentMonth)) {
+                          return;
+                        }
+                      }
+                      setFilterMonth(e.target.value);
+                    }}
+                    className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 group-hover:bg-white cursor-pointer"
                   >
                     {Array.from({ length: 12 }, (_, i) => {
                       const m = String(i + 1).padStart(2, '0');
+                      const now = new Date();
+                      const isFuture = parseInt(filterYear) > now.getFullYear() ||
+                        (parseInt(filterYear) === now.getFullYear() && (i + 1) > (now.getMonth() + 1));
+                      const disabled = userRole?.toLowerCase() === 'vo' && isFuture;
                       return (
-                        <option key={m} value={m}>
-                          {new Date(0, i).toLocaleString('default', { month: 'long' })}
+                        <option key={m} value={m} disabled={disabled}>
+                          {new Date(2000, i).toLocaleString('default', { month: 'long' })} {disabled ? '(Locked)' : ''}
                         </option>
                       );
                     })}
@@ -403,18 +424,23 @@ const DashboardTab = ({ filterProps }) => {
               </div>
 
               <div className="space-y-2">
-                <label className="text-xs sm:text-sm font-bold text-gray-700 ml-1">Select Year</label>
+                <label className="text-sm font-bold text-gray-700 ml-1">Select Year</label>
                 <div className="relative group">
                   <select
                     value={filterYear}
                     onChange={(e) => setFilterYear(e.target.value)}
-                    className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-xl sm:rounded-2xl px-4 sm:px-5 py-2.5 sm:py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 group-hover:bg-white text-sm sm:text-base"
+                    className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-xl sm:rounded-2xl px-4 sm:px-5 py-2.5 sm:py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 group-hover:bg-white text-sm sm:text-base cursor-pointer"
                   >
-                    {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 2 + i).map((y) => (
-                      <option key={y} value={y}>
-                        {y}
-                      </option>
-                    ))}
+                    {Array.from({ length: 5 }, (_, i) => {
+                      const y = new Date().getFullYear() - 2 + i;
+                      const isFutureYear = y > new Date().getFullYear();
+                      const disabled = userRole?.toLowerCase() === 'vo' && isFutureYear;
+                      return (
+                        <option key={y} value={y} disabled={disabled}>
+                          {y} {disabled ? '(Locked)' : ''}
+                        </option>
+                      );
+                    })}
                   </select>
                   <div className="absolute right-4 sm:right-5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-hover:text-indigo-500 transition-colors">
                     <Filter className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -532,27 +558,26 @@ const DashboardTab = ({ filterProps }) => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Daily Upload Trends Chart */}
           <div className="bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/30 p-8 overflow-hidden">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-8">
-              <div className="flex items-center gap-3">
-                <div className="bg-blue-600 p-2 rounded-xl shadow-lg">
-                  <BarChart className="w-5 h-5 text-white" />
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 sm:mb-12">
+              <div className="flex items-center gap-4">
+                <div className="w-2 h-8 sm:h-12 bg-blue-600 rounded-full shadow-[0_0_15px_rgba(37,99,235,0.4)]"></div>
+                <div>
+                  <h3 className="text-xl font-black text-gray-900 leading-tight">Upload Dates</h3>
+                  <p className="text-xs text-gray-500 font-bold mt-1">
+                    {showFullMonth ? 'Complete Monthly Timeline' : 'Recent 15 Days View'}
+                  </p>
                 </div>
-                <h3 className="text-xl font-black text-gray-900 leading-tight">Upload Dates</h3>
               </div>
-              <div className="flex bg-gray-100 p-1 rounded-xl sm:rounded-2xl self-start">
-                {[10, 15, 30].map((days) => (
-                  <button
-                    key={days}
-                    onClick={() => setTrendWindow(days)}
-                    className={`px-3 sm:px-5 py-1.5 sm:py-2 text-[10px] sm:text-xs font-black rounded-lg sm:rounded-xl transition-all ${trendWindow === days
-                      ? 'bg-blue-600 text-white shadow-lg'
-                      : 'text-gray-500 hover:text-gray-900 hover:bg-gray-200'
-                      }`}
-                  >
-                    {days}D
-                  </button>
-                ))}
-              </div>
+              <button
+                onClick={() => setShowFullMonth(!showFullMonth)}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-all font-black text-xs shadow-sm"
+              >
+                {showFullMonth ? (
+                  <>Show Last 15 Days</>
+                ) : (
+                  <>Check Complete Uploads</>
+                )}
+              </button>
             </div>
             {stats.loading ? (
               <div className="h-72 flex items-center justify-center">
@@ -566,7 +591,8 @@ const DashboardTab = ({ filterProps }) => {
               <div className="h-[250px] sm:h-[400px]">
                 <div className="h-full relative">
                   {(() => {
-                    const filteredTrends = uploadTrends.slice(-trendWindow);
+                    // Default to last 15 days if not showing full month
+                    const filteredTrends = showFullMonth ? uploadTrends : uploadTrends.slice(-15);
                     if (filteredTrends.length === 0) return null;
 
                     const maxValue = Math.max(...filteredTrends.map(t => t.count), 5);
@@ -592,9 +618,10 @@ const DashboardTab = ({ filterProps }) => {
 
                     // More aggressive label skipping on very small screens
                     const isMobile = window.innerWidth < 640;
+                    const numDays = filteredTrends.length;
                     const labelSkip = isMobile
-                      ? (trendWindow > 15 ? 7 : (trendWindow > 10 ? 4 : 2))
-                      : (trendWindow > 15 ? 5 : (trendWindow > 10 ? 2 : 1));
+                      ? (numDays > 15 ? 7 : (numDays > 10 ? 4 : 2))
+                      : (numDays > 15 ? 5 : (numDays > 10 ? 2 : 1));
 
                     return (
                       <svg className="w-full h-full" viewBox={isMobile ? "0 0 800 450" : "0 0 800 400"} preserveAspectRatio="xMidYMid meet" style={{ overflow: 'visible' }}>
@@ -686,7 +713,7 @@ const DashboardTab = ({ filterProps }) => {
                                     fill="#64748b"
                                     transform={`rotate(${isMobile ? 45 : 45}, ${p.x}, ${isMobile ? 365 : 350})`}
                                   >
-                                    {new Date(item.date).getDate()} {new Date(item.date).toLocaleString('default', { month: 'short' })}
+                                    {formatDate(item.date)}
                                   </text>
                                 </g>
                               )}
