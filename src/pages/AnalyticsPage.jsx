@@ -3,7 +3,7 @@ import {
     Download, FileBarChart, ChartPie as PieChartIcon, Activity, Clock, CheckCircle,
     FileText, Filter, LayoutGrid, List, ChevronRight, AlertCircle,
     TrendingUp, Users, MapPin, Calendar, ArrowUpRight, ArrowDownRight,
-    Shield, User, ChevronDown, Loader2
+    Shield, User, ChevronDown, Loader2, Database
 } from 'lucide-react';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -275,6 +275,23 @@ const AnalyticsPage = ({ filterProps }) => {
 
             {activeView === 'charts' && (
                 <div className="flex flex-col gap-8">
+                    {role.includes('developer') && (
+                        <div className="bg-indigo-600/10 border border-indigo-500/20 px-6 py-4 rounded-2xl flex items-center justify-between shadow-lg max-w-sm ml-auto animate-in fade-in slide-in-from-top-4">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-indigo-500/20 rounded-xl">
+                                    <Database className="w-5 h-5 text-indigo-400" />
+                                </div>
+                                <div>
+                                    <p className="text-[10px] font-black text-indigo-400/80 uppercase tracking-widest leading-none mb-1">Developer Insights</p>
+                                    <h4 className="text-white text-sm font-bold">Files Sent to DB</h4>
+                                </div>
+                            </div>
+                            <div className="text-2xl font-black text-white">
+                                {summary?.conversion?.sentToDB || 0}
+                            </div>
+
+                        </div>
+                    )}
                     <FinanceAnalytics
                         data={paymentData}
                         activeMetric={activeMetric}
