@@ -4,7 +4,7 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig(({ command, mode }) => {
   const isGitHubPages = mode === 'github';
-  const isSMD = mode === 'test';
+  const isSMD = mode === 'smd';
   const isDev = command === 'serve';
 
   let base = '/';
