@@ -2,6 +2,7 @@ import { API_BASE } from './utils/apiConfig';
 import React, { useEffect, useState } from 'react';
 import { X, FileText, Eye, Filter, AlertCircle, CheckCircle, Clock } from 'lucide-react';
 import { useLanguage } from './contexts/LanguageContext';
+import { formatDate, formatDateTime } from './utils/dateUtils';
 
 export default function DocumentHistory({ onClose }) {
   const { t } = useLanguage();
@@ -62,25 +63,6 @@ export default function DocumentHistory({ onClose }) {
     }
   };
 
-  const formatDateTime = (rawDate, options = {}) => {
-    if (!rawDate) return 'N/A';
-    let sanitizedDate = rawDate;
-
-    if (typeof rawDate === 'string' && rawDate.includes('T') && !rawDate.endsWith('Z') && !rawDate.includes('+')) {
-      sanitizedDate = rawDate + 'Z';
-    }
-
-    try {
-      return new Date(sanitizedDate).toLocaleString('en-IN', {
-        timeZone: 'Asia/Kolkata',
-        dateStyle: options.dateStyle || 'medium',
-        timeStyle: options.timeStyle || 'short'
-      });
-    } catch (e) {
-      console.error('Date formatting failed', e);
-      return 'N/A';
-    }
-  };
 
   // Client-side filtering based on selected month and year
   const filteredUploads = uploads.filter(upload => {
@@ -446,7 +428,7 @@ export default function DocumentHistory({ onClose }) {
 
                   <div className="flex items-center justify-between gap-3 pl-8">
                     <div className="text-xs text-slate-600">
-                      {formatDateTime(u.date || u.uploadTimestamp, { dateStyle: 'short' })}
+                      {formatDate(u.date || u.uploadTimestamp)}
                     </div>
                     <button
                       onClick={() => viewDocument(u)}

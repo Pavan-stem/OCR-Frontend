@@ -1077,15 +1077,15 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
                                 <div className="grid grid-cols-3 gap-3">
                                     <div className="bg-white/80 p-3 rounded-xl">
                                         <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Uploaded</span>
-                                        <span className="text-lg font-black text-indigo-600">{summary[selectedDistrict]?.uploaded || 0}</span>
+                                        <span className="text-lg font-black text-indigo-600">{(summary[selectedDistrict] || summary.all)?.uploaded || 0}</span>
                                     </div>
                                     <div className="bg-white/80 p-3 rounded-xl">
                                         <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Pending</span>
-                                        <span className="text-lg font-black text-amber-600">{summary[selectedDistrict]?.pending || 0}</span>
+                                        <span className="text-lg font-black text-amber-600">{(summary[selectedDistrict] || summary.all)?.pending || 0}</span>
                                     </div>
                                     <div className="bg-white/80 p-3 rounded-xl">
                                         <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Total</span>
-                                        <span className="text-lg font-black text-gray-900">{summary[selectedDistrict]?.total || 0}</span>
+                                        <span className="text-lg font-black text-gray-900">{(summary[selectedDistrict] || summary.all)?.total || 0}</span>
                                     </div>
                                 </div>
                             </div>
@@ -1096,15 +1096,15 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
                                 <div className="grid grid-cols-3 gap-3">
                                     <div className="bg-white/80 p-3 rounded-xl">
                                         <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Approved</span>
-                                        <span className="text-lg font-black text-green-600">{summary[selectedDistrict]?.approved || 0}</span>
+                                        <span className="text-lg font-black text-green-600">{(summary[selectedDistrict] || summary.all)?.approved || 0}</span>
                                     </div>
                                     <div className="bg-white/80 p-3 rounded-xl">
                                         <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Rejected</span>
-                                        <span className="text-lg font-black text-red-600">{summary[selectedDistrict]?.rejected || 0}</span>
+                                        <span className="text-lg font-black text-red-600">{(summary[selectedDistrict] || summary.all)?.rejected || 0}</span>
                                     </div>
                                     <div className="bg-white/80 p-3 rounded-xl">
                                         <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Pending</span>
-                                        <span className="text-lg font-black text-amber-600">{summary[selectedDistrict]?.ccPending || 0}</span>
+                                        <span className="text-lg font-black text-amber-600">{(summary[selectedDistrict] || summary.all)?.ccPending || 0}</span>
                                     </div>
                                 </div>
                             </div>
@@ -1115,25 +1115,25 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
                                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                                     <div className="bg-white/80 p-3 rounded-xl">
                                         <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Converted</span>
-                                        <span className="text-lg font-black text-purple-600">{summary[selectedDistrict]?.converted || 0}</span>
+                                        <span className="text-lg font-black text-purple-600">{(summary[selectedDistrict] || summary.all)?.converted || 0}</span>
                                     </div>
                                     <div className="bg-white/80 p-3 rounded-xl">
                                         <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Failed</span>
-                                        <span className="text-lg font-black text-red-600">{summary[selectedDistrict]?.failed || 0}</span>
+                                        <span className="text-lg font-black text-red-600">{(summary[selectedDistrict] || summary.all)?.failed || 0}</span>
                                     </div>
                                     <div className="bg-white/80 p-3 rounded-xl">
                                         <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Pending</span>
-                                        <span className="text-lg font-black text-amber-600">{summary[selectedDistrict]?.convPending || 0}</span>
+                                        <span className="text-lg font-black text-amber-600">{(summary[selectedDistrict] || summary.all)?.convPending || 0}</span>
                                     </div>
                                     <div className="bg-white/80 p-3 rounded-xl">
                                         <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Proc.</span>
-                                        <span className="text-lg font-black text-cyan-600">{summary[selectedDistrict]?.convProcessing || 0}</span>
+                                        <span className="text-lg font-black text-cyan-600">{(summary[selectedDistrict] || summary.all)?.convProcessing || 0}</span>
                                     </div>
                                 </div>
                             </div>
 
                             {/* Finance Overview Section (Simplified) */}
-                            {summary[selectedDistrict]?.financeStats && (
+                            {(summary[selectedDistrict] || summary.all)?.financeStats && (
                                 <div className="bg-gradient-to-br from-indigo-50/50 to-blue-50/50 rounded-2xl p-5 border border-indigo-100/30 shadow-sm relative overflow-hidden group">
                                     <div className="flex justify-between items-center mb-4 pb-3 border-b border-indigo-100/50">
                                         <h4 className="text-[10px] font-black text-indigo-900 uppercase tracking-widest">Finance Overview</h4>
@@ -1143,19 +1143,19 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
                                         <div className="flex justify-between items-center group/item">
                                             <span className="text-[10px] font-bold text-gray-500 uppercase tracking-tight group-hover/item:text-indigo-600 transition-colors">Total Collections</span>
                                             <span className="text-xs font-black text-indigo-700">
-                                                ₹{(summary[selectedDistrict].financeStats.totalLoanRecovered || 0).toLocaleString('en-IN')}
+                                                ₹{((summary[selectedDistrict] || summary.all)?.financeStats?.totalLoanRecovered || 0).toLocaleString('en-IN')}
                                             </span>
                                         </div>
                                         <div className="flex justify-between items-center group/item">
                                             <span className="text-[10px] font-bold text-gray-500 uppercase tracking-tight group-hover/item:text-emerald-600 transition-colors">Member Deposits</span>
                                             <span className="text-xs font-black text-emerald-700">
-                                                ₹{(summary[selectedDistrict].financeStats.totalSavings || 0).toLocaleString('en-IN')}
+                                                ₹{((summary[selectedDistrict] || summary.all)?.financeStats?.totalSavings || 0).toLocaleString('en-IN')}
                                             </span>
                                         </div>
                                         <div className="flex justify-between items-center group/item pt-2 border-t border-indigo-50">
                                             <span className="text-[10px] font-bold text-rose-500 uppercase tracking-tight group-hover/item:text-rose-700 transition-colors">Total Disbursements</span>
                                             <span className="text-xs font-black text-rose-700">
-                                                ₹{(summary[selectedDistrict].financeStats.outgoing || 0).toLocaleString('en-IN')}
+                                                ₹{((summary[selectedDistrict] || summary.all)?.financeStats?.outgoing || 0).toLocaleString('en-IN')}
                                             </span>
                                         </div>
                                     </div>
