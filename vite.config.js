@@ -30,7 +30,7 @@ export default defineConfig(({ command, mode }) => {
       ],
       proxy: {
         '/api': {
-          target: 'http://localhost:5002/OCRtest',
+          target: 'http://localhost:5004/OCRtest',
           changeOrigin: true,
           secure: false,
         },
