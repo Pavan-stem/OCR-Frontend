@@ -4,12 +4,12 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig(({ command, mode }) => {
   const isGitHubPages = mode === 'github';
-  const isSMD = mode === 'smd';
+  const isSMD = mode === 'test';
   const isDev = command === 'serve';
 
   let base = '/';
   if (isGitHubPages) base = '/OCR-Frontend/';
-  else if (isSMD) base = '/SMD/';  // SMD deployment path
+  else if (isSMD) base = '/Test/';  // SMD deployment path
   // Dev mode should use root path for proper public asset serving
 
   return {
@@ -30,7 +30,7 @@ export default defineConfig(({ command, mode }) => {
       ],
       proxy: {
         '/api': {
-          target: 'http://localhost:5002/OCR',
+          target: 'http://localhost:5002/OCRtest',
           changeOrigin: true,
           secure: false,
         },
