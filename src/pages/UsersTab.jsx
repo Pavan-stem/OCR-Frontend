@@ -817,6 +817,20 @@ const UsersTab = ({ filterProps }) => {
       setIsTransitioning(true);
     }
 
+    // Helper to find node role by ID from current users state
+    const findNodeRole = (nodeId, nodes) => {
+      if (!nodes) return null;
+      for (const node of nodes) {
+        if (node._id === nodeId) return node.role;
+        const children = node.ccs || node.vos;
+        if (children) {
+          const found = findNodeRole(nodeId, children);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+
     try {
       const token = localStorage.getItem('token');
       const params = new URLSearchParams();
@@ -832,6 +846,13 @@ const UsersTab = ({ filterProps }) => {
       // Add lazy flag for initial load or non-search loads to speed up API
       if (!debouncedSearchTerm) {
         params.append('lazy', 'true');
+        
+        // If explicitly fetching a child node's data
+        if (options.parentId) {
+           params.append('parentId', options.parentId);
+           const role = findNodeRole(options.parentId, users);
+           if (role) params.append('parentRole', role);
+        }
         // [UI STATE PERSISTENCE]: Don't reset expansions when returning to root view 
         // to preserve state from ConversionView navigation back.
         // if (!options.isBackground) {
@@ -952,17 +973,25 @@ const UsersTab = ({ filterProps }) => {
     fetchUserCounts();
   }, [serverStatus.active, page, limit, debouncedSearchTerm, selectedDistrict, selectedMandal, selectedVillage, filterMonth, filterYear]);
 
-  // Periodic refresh for users list (to update online status dots)
+  // Periodic refresh for users list (to update online status dots & stats)
   useEffect(() => {
     if (!serverStatus.active) return;
 
     const interval = setInterval(() => {
+      // 1. Refresh roots
       fetchUsers({ isBackground: true });
       fetchUserCounts();
+      
+      // 2. Refresh currently expanded nodes so their child stats update
+      if (expandedRows && expandedRows.size > 0) {
+        expandedRows.forEach(nodeId => {
+           fetchUsers({ isBackground: true, parentId: nodeId });
+        });
+      }
     }, 30000); // Every 30 seconds
 
     return () => clearInterval(interval);
-  }, [serverStatus.active, page, limit, debouncedSearchTerm, selectedDistrict, selectedMandal, selectedVillage, filterMonth, filterYear]);
+  }, [serverStatus.active, page, limit, debouncedSearchTerm, selectedDistrict, selectedMandal, selectedVillage, filterMonth, filterYear, expandedRows, users]);
 
   // Handle auto-fill for restricted roles
   useEffect(() => {
@@ -1270,6 +1299,18 @@ const UsersTab = ({ filterProps }) => {
         setShowStatusModal(false);
         setSelectedUpload(null);
         fetchUserUploads(selectedUser._id);
+        
+        // Refresh specific user tier to update main table metrics
+        if (selectedUser && selectedUser._id) {
+           // We need the parent ID of the selected user to refresh its tier
+           // In a pinch, fetching roots + expanded rows will do the trick if the user is deep.
+           fetchUsers({ isBackground: true });
+           if (expandedRows && expandedRows.size > 0) {
+             expandedRows.forEach(nodeId => {
+               fetchUsers({ isBackground: true, parentId: nodeId });
+             });
+           }
+        }
       } else {
         alert(data.message || 'Failed to update status');
       }
@@ -1303,6 +1344,16 @@ const UsersTab = ({ filterProps }) => {
       if (data.success) {
         // Refresh uploads
         fetchUserUploads(selectedUser._id);
+        
+        // Refresh underlying table stats
+        if (selectedUser && selectedUser._id) {
+           fetchUsers({ isBackground: true });
+           if (expandedRows && expandedRows.size > 0) {
+             expandedRows.forEach(nodeId => {
+               fetchUsers({ isBackground: true, parentId: nodeId });
+             });
+           }
+        }
       } else {
         alert(data.message || 'Failed to update status');
       }
