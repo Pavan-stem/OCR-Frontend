@@ -596,6 +596,19 @@ const UsersTab = ({ filterProps }) => {
     setUsers(prev => updateNodes(prev));
   };
 
+  const findParentId = (targetId, list) => {
+    if (!list) return null;
+    for (const node of list) {
+      const children = node.ccs || node.vos;
+      if (children) {
+        if (children.some(c => c._id === targetId)) return node._id;
+        const found = findParentId(targetId, children);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
   const toggleRow = async (user) => {
     const userId = typeof user === 'string' ? user : user._id;
     const isExpanding = !expandedRows.has(userId);
@@ -1305,8 +1318,9 @@ const UsersTab = ({ filterProps }) => {
   };
 
   // Fetch user uploads
-  const fetchUserUploads = async (userId) => {
-    setUploadsLoading(true);
+  const fetchUserUploads = async (userId, options = {}) => {
+    const isBackground = options.isBackground || false;
+    if (!isBackground) setUploadsLoading(true);
     try {
       const token = localStorage.getItem('token');
       const params = new URLSearchParams();
@@ -1325,9 +1339,9 @@ const UsersTab = ({ filterProps }) => {
       }
     } catch (err) {
       console.error('Error fetching user uploads:', err);
-      alert('Failed to fetch uploads');
+      if (!isBackground) alert('Failed to fetch uploads');
     } finally {
-      setUploadsLoading(false);
+      if (!isBackground) setUploadsLoading(false);
     }
   };
 
@@ -1371,12 +1385,14 @@ const UsersTab = ({ filterProps }) => {
         alert('Status updated successfully!');
         setShowStatusModal(false);
         setSelectedUpload(null);
-        fetchUserUploads(selectedUser._id);
+        fetchUserUploads(selectedUser._id, { isBackground: true });
 
         // Refresh specific user tier to update main table metrics
         if (selectedUser && selectedUser._id) {
-          // Instead of full tree re-fetches, trigger an immediate sync
-          // The useEffect will handle periodic syncs, but we want it NOW.
+          const parentId = findParentId(selectedUser._id, users);
+          const userIdsToSync = [selectedUser._id];
+          if (parentId) userIdsToSync.push(parentId);
+
           const syncUser = async () => {
             try {
               const token = localStorage.getItem('token');
@@ -1387,7 +1403,7 @@ const UsersTab = ({ filterProps }) => {
                   'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                  userIds: [selectedUser._id],
+                  userIds: userIdsToSync,
                   month: filterMonth,
                   year: filterYear
                 })
@@ -1398,9 +1414,9 @@ const UsersTab = ({ filterProps }) => {
                   const updateTargetRecursive = (list) => {
                     if (!list) return [];
                     return list.map(u => {
-                      if (u._id === selectedUser._id) {
+                      if (data.stats[u._id]) {
                         const newStats = data.stats[u._id];
-                        return { ...u, stats: newStats.stats, performance: newStats.performance };
+                        u = { ...u, stats: newStats.stats, performance: newStats.performance };
                       }
                       const children = u.ccs || u.vos;
                       if (children) {
@@ -1417,7 +1433,8 @@ const UsersTab = ({ filterProps }) => {
           };
           syncUser();
         }
-      } else {
+      }
+      else {
         alert(data.message || 'Failed to update status');
       }
     } catch (err) {
@@ -1448,17 +1465,54 @@ const UsersTab = ({ filterProps }) => {
       });
       const data = await res.json();
       if (data.success) {
-        // Refresh uploads
-        fetchUserUploads(selectedUser._id);
+        // Refresh uploads in background
+        fetchUserUploads(selectedUser._id, { isBackground: true });
 
-        // Refresh underlying table stats
+        // Refresh specific user tier to update main table metrics
         if (selectedUser && selectedUser._id) {
-          fetchUsers({ isBackground: true });
-          if (expandedRows && expandedRows.size > 0) {
-            expandedRows.forEach(nodeId => {
-              fetchUsers({ isBackground: true, parentId: nodeId });
-            });
-          }
+          const parentId = findParentId(selectedUser._id, users);
+          const userIdsToSync = [selectedUser._id];
+          if (parentId) userIdsToSync.push(parentId);
+
+          const syncUser = async () => {
+            try {
+              const token = localStorage.getItem('token');
+              const res = await fetch(`${API_BASE}/api/users/sync-stats`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  userIds: userIdsToSync,
+                  month: filterMonth,
+                  year: filterYear
+                })
+              });
+              const data = await res.json();
+              if (data.success && data.stats) {
+                setUsers(prevUsers => {
+                  const updateTargetRecursive = (list) => {
+                    if (!list) return [];
+                    return list.map(u => {
+                      if (data.stats[u._id]) {
+                        const newStats = data.stats[u._id];
+                        u = { ...u, stats: newStats.stats, performance: newStats.performance };
+                      }
+                      const children = u.ccs || u.vos;
+                      if (children) {
+                        if (u.ccs) return { ...u, ccs: updateTargetRecursive(u.ccs) };
+                        if (u.vos) return { ...u, vos: updateTargetRecursive(u.vos) };
+                      }
+                      return u;
+                    });
+                  };
+                  return updateTargetRecursive(prevUsers);
+                });
+              }
+            } catch (e) { console.error(e); }
+          };
+          syncUser();
         }
       } else {
         alert(data.message || 'Failed to update status');
