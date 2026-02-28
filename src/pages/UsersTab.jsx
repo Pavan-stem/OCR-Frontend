@@ -846,12 +846,12 @@ const UsersTab = ({ filterProps }) => {
       // Add lazy flag for initial load or non-search loads to speed up API
       if (!debouncedSearchTerm) {
         params.append('lazy', 'true');
-        
+
         // If explicitly fetching a child node's data
         if (options.parentId) {
-           params.append('parentId', options.parentId);
-           const role = findNodeRole(options.parentId, users);
-           if (role) params.append('parentRole', role);
+          params.append('parentId', options.parentId);
+          const role = findNodeRole(options.parentId, users);
+          if (role) params.append('parentRole', role);
         }
         // [UI STATE PERSISTENCE]: Don't reset expansions when returning to root view 
         // to preserve state from ConversionView navigation back.
@@ -867,6 +867,28 @@ const UsersTab = ({ filterProps }) => {
       if (data.success) {
         // [REFRESH/PERSISTENCE FIX]: Always attempt to preserve existing children if IDs match
         setUsers(prevUsers => {
+          // SCENARIO 1: Targeted Update for a specific Parent's children
+          if (options.parentId) {
+            const updateChildrenRecursive = (list) => {
+              if (!list) return [];
+              return list.map(u => {
+                if (u._id === options.parentId) {
+                  const role = (u.role || '').toLowerCase();
+                  if (role.includes('apm')) return { ...u, ccs: data.users };
+                  return { ...u, vos: data.users };
+                }
+                const children = u.ccs || u.vos;
+                if (children) {
+                  if (u.ccs) return { ...u, ccs: updateChildrenRecursive(u.ccs) };
+                  if (u.vos) return { ...u, vos: updateChildrenRecursive(u.vos) };
+                }
+                return u;
+              });
+            };
+            return updateChildrenRecursive(prevUsers);
+          }
+
+          // SCENARIO 2: Root Refresh - Preserve all existing expanded children
           const childMap = {}; // parentId -> children
           const collectChildren = (list) => {
             if (!list) return;
@@ -887,7 +909,6 @@ const UsersTab = ({ filterProps }) => {
               if (existingChildren) {
                 const role = (u.role || '').toLowerCase();
                 if (role.includes('apm')) return { ...u, ccs: reInjectChildren(existingChildren) };
-                if (role.includes('cc')) return { ...u, vos: reInjectChildren(existingChildren) };
                 return { ...u, vos: reInjectChildren(existingChildren) };
               }
               return u;
@@ -977,21 +998,73 @@ const UsersTab = ({ filterProps }) => {
   useEffect(() => {
     if (!serverStatus.active) return;
 
-    const interval = setInterval(() => {
-      // 1. Refresh roots
-      fetchUsers({ isBackground: true });
-      fetchUserCounts();
-      
-      // 2. Refresh currently expanded nodes so their child stats update
-      if (expandedRows && expandedRows.size > 0) {
-        expandedRows.forEach(nodeId => {
-           fetchUsers({ isBackground: true, parentId: nodeId });
+    const syncVisibleStats = async () => {
+      // 1. Collect all visible IDs from the current tree
+      const visibleIds = [];
+      const collectIds = (list) => {
+        if (!list) return;
+        list.forEach(u => {
+          visibleIds.push(u._id);
+          const children = u.ccs || u.vos;
+          if (children) collectIds(children);
         });
+      };
+      collectIds(users);
+
+      if (visibleIds.length === 0) return;
+
+      try {
+        const token = localStorage.getItem('token');
+        const res = await fetch(`${API_BASE}/api/users/sync-stats`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            userIds: visibleIds,
+            month: filterMonth,
+            year: filterYear
+          })
+        });
+        const data = await res.json();
+        if (data.success && data.stats) {
+          // 2. Surgical "In-Place" Update
+          setUsers(prevUsers => {
+            const updateStatsRecursive = (list) => {
+              if (!list) return [];
+              return list.map(u => {
+                const newStats = data.stats[u._id];
+                const updatedUser = newStats ? {
+                  ...u,
+                  stats: newStats.stats,
+                  performance: newStats.performance
+                } : u;
+
+                const children = u.ccs || u.vos;
+                if (children) {
+                  if (u.ccs) return { ...updatedUser, ccs: updateStatsRecursive(u.ccs) };
+                  if (u.vos) return { ...updatedUser, vos: updateStatsRecursive(u.vos) };
+                }
+                return updatedUser;
+              });
+            };
+            return updateStatsRecursive(prevUsers);
+          });
+        }
+      } catch (err) {
+        console.error('Error syncing stats:', err);
       }
-    }, 30000); // Every 30 seconds
+    };
+
+    const interval = setInterval(() => {
+      // Refresh counts and surgical sync
+      fetchUserCounts();
+      syncVisibleStats();
+    }, 15000); // More frequent (15s) since it's lightweight
 
     return () => clearInterval(interval);
-  }, [serverStatus.active, page, limit, debouncedSearchTerm, selectedDistrict, selectedMandal, selectedVillage, filterMonth, filterYear, expandedRows, users]);
+  }, [serverStatus.active, users, filterMonth, filterYear]);
 
   // Handle auto-fill for restricted roles
   useEffect(() => {
@@ -1299,17 +1372,50 @@ const UsersTab = ({ filterProps }) => {
         setShowStatusModal(false);
         setSelectedUpload(null);
         fetchUserUploads(selectedUser._id);
-        
+
         // Refresh specific user tier to update main table metrics
         if (selectedUser && selectedUser._id) {
-           // We need the parent ID of the selected user to refresh its tier
-           // In a pinch, fetching roots + expanded rows will do the trick if the user is deep.
-           fetchUsers({ isBackground: true });
-           if (expandedRows && expandedRows.size > 0) {
-             expandedRows.forEach(nodeId => {
-               fetchUsers({ isBackground: true, parentId: nodeId });
-             });
-           }
+          // Instead of full tree re-fetches, trigger an immediate sync
+          // The useEffect will handle periodic syncs, but we want it NOW.
+          const syncUser = async () => {
+            try {
+              const token = localStorage.getItem('token');
+              const res = await fetch(`${API_BASE}/api/users/sync-stats`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  userIds: [selectedUser._id],
+                  month: filterMonth,
+                  year: filterYear
+                })
+              });
+              const data = await res.json();
+              if (data.success && data.stats) {
+                setUsers(prevUsers => {
+                  const updateTargetRecursive = (list) => {
+                    if (!list) return [];
+                    return list.map(u => {
+                      if (u._id === selectedUser._id) {
+                        const newStats = data.stats[u._id];
+                        return { ...u, stats: newStats.stats, performance: newStats.performance };
+                      }
+                      const children = u.ccs || u.vos;
+                      if (children) {
+                        if (u.ccs) return { ...u, ccs: updateTargetRecursive(u.ccs) };
+                        if (u.vos) return { ...u, vos: updateTargetRecursive(u.vos) };
+                      }
+                      return u;
+                    });
+                  };
+                  return updateTargetRecursive(prevUsers);
+                });
+              }
+            } catch (e) { console.error(e); }
+          };
+          syncUser();
         }
       } else {
         alert(data.message || 'Failed to update status');
@@ -1344,15 +1450,15 @@ const UsersTab = ({ filterProps }) => {
       if (data.success) {
         // Refresh uploads
         fetchUserUploads(selectedUser._id);
-        
+
         // Refresh underlying table stats
         if (selectedUser && selectedUser._id) {
-           fetchUsers({ isBackground: true });
-           if (expandedRows && expandedRows.size > 0) {
-             expandedRows.forEach(nodeId => {
-               fetchUsers({ isBackground: true, parentId: nodeId });
-             });
-           }
+          fetchUsers({ isBackground: true });
+          if (expandedRows && expandedRows.size > 0) {
+            expandedRows.forEach(nodeId => {
+              fetchUsers({ isBackground: true, parentId: nodeId });
+            });
+          }
         }
       } else {
         alert(data.message || 'Failed to update status');
