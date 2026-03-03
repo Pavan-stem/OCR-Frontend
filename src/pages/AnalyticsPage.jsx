@@ -190,6 +190,13 @@ const AnalyticsPage = ({ filterProps }) => {
                     ...(isFiltered ? { refresh: 'true' } : {})
                 }).toString();
 
+                // Clear stale map data immediately when switching filters so
+                // the old district's values don't flash before the new ones load.
+                if (isFiltered) {
+                    setSummary(null);
+                    setPaymentData(null);
+                }
+
                 const [sumRes, trendRes, paymentRes, paymentTrendRes] = await Promise.all([
                     fetch(`${API_BASE}/api/analytics/v2/summary?${params}`, {
                         headers: { 'Authorization': `Bearer ${token}` }
@@ -229,6 +236,7 @@ const AnalyticsPage = ({ filterProps }) => {
 
         fetchGlobalStats();
     }, [filters, refreshKey]);
+
 
     // SSE Real-time Updates
     useEffect(() => {
