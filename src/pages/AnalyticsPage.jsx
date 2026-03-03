@@ -527,22 +527,41 @@ const AnalyticsPage = ({ filterProps }) => {
             <div className="animate-in fade-in slide-in-from-top-4 duration-1000 overflow-hidden mb-5">
                 <InteractiveAPMap
                     forceCalibration={false}
-                    summary={{
-                        ...(summary?.mapStats || {}),
-                        all: {
-                            uploaded: summary?.shgStats?.uploaded,
-                            pending: summary?.shgStats?.pending,
-                            total: summary?.shgStats?.total,
-                            approved: summary?.ccActions?.approved,
-                            rejected: summary?.ccActions?.rejected,
-                            ccPending: summary?.ccActions?.pending,
-                            converted: summary?.conversion?.converted,
-                            failed: summary?.conversion?.failed,
-                            convPending: summary?.conversion?.pending,
-                            convProcessing: summary?.conversion?.processing,
-                            financeStats: paymentData?.financeStats
-                        }
-                    }}
+                    summary={(() => {
+                        // mapStats has upload-level stats per district, but no conversion data.
+                        // summary.conversion has the correct conversion stats for the current scope
+                        // (all filters applied). Inject it into each mapStats entry so the district
+                        // panel shows real numbers instead of 0.
+                        const conv = summary?.conversion || {};
+                        const rawMapStats = summary?.mapStats || {};
+                        const enrichedMapStats = {};
+                        Object.entries(rawMapStats).forEach(([districtKey, stats]) => {
+                            enrichedMapStats[districtKey] = {
+                                ...stats,
+                                converted: conv.converted || 0,
+                                sentToDB: conv.sentToDB || 0,
+                                failed: conv.failed || 0,
+                                convPending: conv.pending || 0,
+                                convProcessing: conv.processing || 0,
+                            };
+                        });
+                        return {
+                            ...enrichedMapStats,
+                            all: {
+                                uploaded: summary?.shgStats?.uploaded,
+                                pending: summary?.shgStats?.pending,
+                                total: summary?.shgStats?.total,
+                                approved: summary?.ccActions?.approved,
+                                rejected: summary?.ccActions?.rejected,
+                                ccPending: summary?.ccActions?.pending,
+                                converted: conv.converted,
+                                failed: conv.failed,
+                                convPending: conv.pending,
+                                convProcessing: conv.processing,
+                                financeStats: paymentData?.financeStats
+                            }
+                        };
+                    })()}
                     filters={filters}
                     locked={isAPM || isCC}
                     onDistrictSelect={(d) => {
