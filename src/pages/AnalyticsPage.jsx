@@ -37,11 +37,11 @@ const CumulativeFinanceSummary = ({ history, loading }) => {
         return (history || []).map(item => {
             const stats = item.stats || {};
 
-            // inflow = sum of all recoveries + savings + penalties
-            const inflow = (stats.totalCollections || 0) + (stats.totalSavings || 0) +
+            // inflow = Total Collection (loan repayments) + Member Deposit (savings) + Late Penalties + Other Savings
+            const inflow = (stats.totalLoanRecovered || 0) + (stats.totalSavings || 0) +
                 (stats.totalPenalties || 0) + (stats.otherSavings || 0);
 
-            // outflow = loans taken + returns
+            // outflow = Loan Sanctioned + Savings Withdrawals (returned to members)
             const outflow = (stats.totalLoansTaken || 0) + (stats.totalReturned || 0);
 
             const opening = runningBalance;
