@@ -186,8 +186,7 @@ const AnalyticsPage = ({ filterProps }) => {
                 // When a geographic filter is active, always bypass stale cache
                 const isFiltered = filters.district !== 'all' || filters.mandal !== 'all' || filters.village !== 'all';
                 const params = new URLSearchParams({
-                    ...filters,
-                    ...(isFiltered ? { refresh: 'true' } : {})
+                    ...filters
                 }).toString();
 
                 // Clear stale map data immediately when switching filters so
@@ -222,13 +221,13 @@ const AnalyticsPage = ({ filterProps }) => {
                 if (paymentResData.success) setPaymentData(paymentResData.data);
                 if (paymentTrendData.success) setPaymentTrends(paymentTrendData.data);
 
-                // Only mark as refreshing for non-filtered (global) views — filtered views are always live
-                setIsRefreshing(!isFiltered && (
+                // Mark as refreshing whenever any data source returns a stale (SWR) flag
+                setIsRefreshing(
                     sumData.stale ||
                     trendData.stale ||
                     paymentResData.stale ||
                     paymentTrendData.stale
-                ));
+                );
             } catch (err) {
                 console.error("Failed to fetch analytics:", err);
             }
@@ -837,14 +836,14 @@ const FinanceAnalytics = ({ data, activeMetric, onMetricChange, isExpanded, setI
     const formatFull = (val) => (val || 0).toLocaleString('en-IN');
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
             {/* Collections Breakdown */}
             <div
                 onClick={() => onMetricChange('totalCollections')}
-                className={`bg-white/90 backdrop-blur-xl p-6 rounded-[32px] border transition-all duration-300 cursor-pointer overflow-hidden group shadow-xl hover:shadow-2xl ${activeMetric === 'totalCollections' ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-white/20'}`}
+                className={`bg-white/90 backdrop-blur-xl px-4 py-6 rounded-[32px] border transition-all duration-300 cursor-pointer overflow-hidden group shadow-xl hover:shadow-2xl ${activeMetric === 'totalCollections' ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-white/20'}`}
             >
                 <div
-                    className="flex justify-between items-center group/header"
+                    className="flex justify-between items-center gap-2 group/header w-full"
                     onClick={(e) => {
                         e.stopPropagation();
                         setIsExpanded(!isExpanded);
@@ -852,13 +851,13 @@ const FinanceAnalytics = ({ data, activeMetric, onMetricChange, isExpanded, setI
                         document.getElementById('chart-totalCollections')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     }}
                 >
-                    <div>
-                        <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-1">Total Collections</p>
-                        <h4 className="text-2xl font-black text-gray-900 group-hover/header:text-indigo-600 transition-colors">
+                    <div className="min-w-0 flex-1">
+                        <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-1 whitespace-nowrap">Total Collections</p>
+                        <h4 className="text-lg font-black text-gray-900 group-hover/header:text-indigo-600 transition-colors whitespace-nowrap tabular-nums">
                             ₹{formatFull(totalLoanRecovered)}
                         </h4>
                     </div>
-                    <div className={`p-3 rounded-2xl transition-all duration-300 ${isExpanded ? 'bg-indigo-600 text-white rotate-180' : 'bg-indigo-50 text-indigo-600 group-hover/header:bg-indigo-100'}`}>
+                    <div className={`p-2.5 flex-shrink-0 rounded-2xl transition-all duration-300 ${isExpanded ? 'bg-indigo-600 text-white rotate-180' : 'bg-indigo-50 text-indigo-600 group-hover/header:bg-indigo-100'}`}>
                         <ChevronDown className="w-5 h-5" />
                     </div>
                 </div>
@@ -876,9 +875,9 @@ const FinanceAnalytics = ({ data, activeMetric, onMetricChange, isExpanded, setI
                                 { label: 'CIF Loan', val: loanRecoveryBreakdown?.cif },
                                 { label: 'VO Internal', val: loanRecoveryBreakdown?.voInternal }
                             ].map((item) => (
-                                <div key={item.label} className="flex justify-between items-center group/item hover:bg-gray-50 p-1 rounded-lg transition-colors">
-                                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter group-hover/item:text-gray-600 transition-colors">{item.label}</span>
-                                    <span className="text-[11px] font-black text-gray-900">₹{formatFull(item.val)}</span>
+                                <div key={item.label} className="flex justify-between items-center gap-2 group/item hover:bg-gray-50 p-1 rounded-lg transition-colors">
+                                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter group-hover/item:text-gray-600 transition-colors truncate">{item.label}</span>
+                                    <span className="text-[11px] font-black text-gray-900 flex-shrink-0 tabular-nums">₹{formatFull(item.val)}</span>
                                 </div>
                             ))}
                         </div>
@@ -892,10 +891,10 @@ const FinanceAnalytics = ({ data, activeMetric, onMetricChange, isExpanded, setI
                     onMetricChange('memberDeposits');
                     document.getElementById('chart-memberDeposits')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }}
-                className={`bg-white/90 backdrop-blur-xl p-6 rounded-[32px] border transition-all duration-300 cursor-pointer shadow-xl hover:shadow-2xl ${activeMetric === 'memberDeposits' ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-white/20'}`}
+                className={`bg-white/90 backdrop-blur-xl px-4 py-6 rounded-[32px] border transition-all duration-300 cursor-pointer shadow-xl hover:shadow-2xl ${activeMetric === 'memberDeposits' ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-white/20'}`}
             >
-                <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Member Deposits</p>
-                <h4 className="text-2xl font-black text-gray-900">₹{formatFull(totalSavings)}</h4>
+                <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1 whitespace-nowrap">Member Deposits</p>
+                <h4 className="text-lg font-black text-gray-900 whitespace-nowrap tabular-nums">₹{formatFull(totalSavings)}</h4>
                 <div className="mt-4 pt-4 border-t border-gray-100">
                     <p className="text-[9px] text-gray-400 font-bold uppercase flex items-center gap-2">
                         <TrendingUp className="w-3 h-3 text-emerald-500" />
@@ -910,16 +909,16 @@ const FinanceAnalytics = ({ data, activeMetric, onMetricChange, isExpanded, setI
                     onMetricChange('loansSanctioned');
                     document.getElementById('chart-loansSanctioned')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }}
-                className={`bg-white/90 backdrop-blur-xl p-6 rounded-[32px] border transition-all duration-300 cursor-pointer shadow-xl hover:shadow-2xl ${activeMetric === 'loansSanctioned' ? 'border-rose-500 ring-2 ring-rose-500/20' : 'border-white/20'}`}
+                className={`bg-white/90 backdrop-blur-xl px-4 py-6 rounded-[32px] border transition-all duration-300 cursor-pointer shadow-xl hover:shadow-2xl ${activeMetric === 'loansSanctioned' ? 'border-rose-500 ring-2 ring-rose-500/20' : 'border-white/20'}`}
             >
-                <div className="flex justify-between items-start mb-1">
-                    <p className="text-[10px] font-black text-rose-600 uppercase tracking-widest">Loans Sanctioned</p>
-                    <span className="bg-rose-50 text-rose-600 text-[10px] font-black px-2 py-0.5 rounded-lg border border-rose-100">
-                        {loanCount || 0} Loans
+                <div className="flex justify-between items-start mb-1 gap-2">
+                    <p className="text-[10px] font-black text-rose-600 uppercase tracking-widest whitespace-nowrap">Loans Sanctioned</p>
+                    <span className="bg-rose-50 text-rose-600 text-[10px] font-black px-2 py-0.5 rounded-lg border border-rose-100 flex-shrink-0">
+                        {loanCount || 0}
                     </span>
                 </div>
                 <p className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter mb-1">Number of loans taken</p>
-                <h4 className="text-2xl font-black text-gray-900">₹{formatFull(totalLoansTaken)}</h4>
+                <h4 className="text-lg font-black text-gray-900 whitespace-nowrap tabular-nums">₹{formatFull(totalLoansTaken)}</h4>
                 <div className="mt-4 pt-4 border-t border-gray-100">
                     <div className="flex items-center gap-2">
                         <ArrowUpRight className="w-3 h-3 text-rose-500" />
@@ -934,10 +933,10 @@ const FinanceAnalytics = ({ data, activeMetric, onMetricChange, isExpanded, setI
                     onMetricChange('savingsWithdrawal');
                     document.getElementById('chart-savingsWithdrawal')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }}
-                className={`bg-white/90 backdrop-blur-xl p-6 rounded-[32px] border transition-all duration-300 cursor-pointer shadow-xl hover:shadow-2xl ${activeMetric === 'savingsWithdrawal' ? 'border-orange-500 ring-2 ring-orange-500/20' : 'border-white/20'}`}
+                className={`bg-white/90 backdrop-blur-xl px-4 py-6 rounded-[32px] border transition-all duration-300 cursor-pointer shadow-xl hover:shadow-2xl ${activeMetric === 'savingsWithdrawal' ? 'border-orange-500 ring-2 ring-orange-500/20' : 'border-white/20'}`}
             >
-                <p className="text-[10px] font-black text-orange-600 uppercase tracking-widest mb-1">Savings Withdrawal</p>
-                <h4 className="text-2xl font-black text-gray-900">₹{formatFull(totalReturned)}</h4>
+                <p className="text-[10px] font-black text-orange-600 uppercase tracking-widest mb-1 whitespace-nowrap">Savings Withdrawal</p>
+                <h4 className="text-lg font-black text-gray-900 whitespace-nowrap tabular-nums">₹{formatFull(totalReturned)}</h4>
                 <div className="mt-4 pt-4 border-t border-gray-100">
                     <div className="flex items-center gap-2">
                         <Clock className="w-3 h-3 text-orange-500" />
@@ -952,10 +951,10 @@ const FinanceAnalytics = ({ data, activeMetric, onMetricChange, isExpanded, setI
                     onMetricChange('latePenalties');
                     document.getElementById('chart-latePenalties')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }}
-                className={`bg-white/90 backdrop-blur-xl p-6 rounded-[32px] border transition-all duration-300 cursor-pointer shadow-xl hover:shadow-2xl ${activeMetric === 'latePenalties' ? 'border-amber-500 ring-2 ring-amber-500/20' : 'border-white/20'}`}
+                className={`bg-white/90 backdrop-blur-xl px-4 py-6 rounded-[32px] border transition-all duration-300 cursor-pointer shadow-xl hover:shadow-2xl ${activeMetric === 'latePenalties' ? 'border-amber-500 ring-2 ring-amber-500/20' : 'border-white/20'}`}
             >
-                <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-1">Late Penalties</p>
-                <h4 className="text-2xl font-black text-gray-900">₹{formatFull(totalPenalties)}</h4>
+                <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-1 whitespace-nowrap">Late Penalties</p>
+                <h4 className="text-lg font-black text-gray-900 whitespace-nowrap tabular-nums">₹{formatFull(totalPenalties)}</h4>
                 <div className="mt-4 pt-4 border-t border-gray-100 flex items-start gap-3">
                     <div className="p-2 bg-amber-50 rounded-xl">
                         <AlertCircle className="w-4 h-4 text-amber-600" />
