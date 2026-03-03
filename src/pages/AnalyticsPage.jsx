@@ -411,10 +411,11 @@ const AnalyticsPage = ({ filterProps }) => {
                 });
                 const data = await response.json();
                 if (data.success) {
-                    exportPerformanceExcel(data.data, data.level, ccs, item);
                     if (data.coldStart) {
-                        alert('⏳ Financial data is still being calculated for this month. The file was downloaded with current values — please retry in 15–30 seconds to get the full data.');
+                        alert('⏳ Financial data is still being calculated for this month. Please retry in 15–30 seconds to get the full data.');
+                        return;
                     }
+                    exportPerformanceExcel(data.data, data.level, ccs, item);
                 } else {
                     alert(data.message || "Failed to fetch CC data");
                 }
@@ -432,10 +433,11 @@ const AnalyticsPage = ({ filterProps }) => {
                 });
                 const data = await response.json();
                 if (data.success) {
-                    exportPerformanceExcel(data.data, data.level, [], item);
                     if (data.coldStart) {
-                        alert('⏳ Financial data is still being calculated for this month. The file was downloaded with current values — please retry in 15–30 seconds to get the full data.');
+                        alert('⏳ Financial data is still being calculated for this month. Please retry in 15–30 seconds to get the full data.');
+                        return;
                     }
+                    exportPerformanceExcel(data.data, data.level, [], item);
                 } else {
                     alert(data.message || "Failed to fetch VO data");
                 }
@@ -453,10 +455,11 @@ const AnalyticsPage = ({ filterProps }) => {
                 });
                 const voData = await voResponse.json();
                 if (voData.success) {
-                    exportPerformanceExcel(voData.data, voData.level, [], item);
                     if (voData.coldStart) {
-                        alert('⏳ Financial data is still being calculated for this month. The file was downloaded with current values — please retry in 15–30 seconds to get the full data.');
+                        alert('⏳ Financial data is still being calculated for this month. Please retry in 15–30 seconds to get the full data.');
+                        return;
                     }
+                    exportPerformanceExcel(voData.data, voData.level, [], item);
                 } else {
                     alert(voData.message || "Failed to fetch VO data");
                 }
