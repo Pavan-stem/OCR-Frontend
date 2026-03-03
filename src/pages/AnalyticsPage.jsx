@@ -11,6 +11,7 @@ import {
 } from 'recharts';
 import InteractiveAPMap from '../components/InteractiveAPMap';
 import { API_BASE } from '../utils/apiConfig';
+import { exportPerformanceExcel, exportCumulativeExcel } from '../utils/excelGenerator';
 
 const formatIndianCurrency = (value) => {
     if (value === null || value === undefined) return '₹0';
@@ -19,6 +20,107 @@ const formatIndianCurrency = (value) => {
     if (absVal >= 100000) return `₹${(value / 100000).toFixed(2)}L`;
     if (absVal >= 1000) return `₹${(value / 1000).toFixed(1)}K`;
     return `₹${Math.floor(value)}`;
+};
+
+const CumulativeFinanceSummary = ({ history, loading }) => {
+    if (loading) return (
+        <div className="bg-white/10 backdrop-blur-md p-12 rounded-[32px] border border-white/10 flex flex-col items-center justify-center gap-4">
+            <Loader2 className="w-8 h-8 text-indigo-400 animate-spin" />
+            <span className="text-[10px] font-black text-indigo-300 uppercase tracking-widest">Calculating Financial Year...</span>
+        </div>
+    );
+
+    if (!history || history.length === 0) return null;
+
+    const processedHistory = useMemo(() => {
+        let runningBalance = 0;
+        return (history || []).map(item => {
+            const stats = item.stats || {};
+
+            // inflow = sum of all recoveries + savings + penalties
+            const inflow = (stats.totalCollections || 0) + (stats.totalSavings || 0) +
+                (stats.totalPenalties || 0) + (stats.otherSavings || 0);
+
+            // outflow = loans taken + returns
+            const outflow = (stats.totalLoansTaken || 0) + (stats.totalReturned || 0);
+
+            const opening = runningBalance;
+            const closing = opening + inflow - outflow;
+            runningBalance = closing;
+
+            return {
+                ...item,
+                opening,
+                inflow,
+                outflow,
+                closing
+            };
+        });
+    }, [history]);
+
+    const getMonthName = (m) => {
+        const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+        return months[m - 1] || m;
+    };
+
+    return (
+        <div className="bg-white/80 backdrop-blur-xl rounded-[32px] border border-white/20 shadow-2xl overflow-hidden flex flex-col">
+            <div className="p-8 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                <div className="flex items-center gap-3">
+                    <div className="bg-indigo-600 p-2 rounded-xl shadow-lg">
+                        <Activity className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                        <h3 className="text-xl font-black text-gray-900 tracking-tight uppercase">Cumulative Financial Summary</h3>
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-1">Jan to Current Month Breakdown</p>
+                    </div>
+                </div>
+                <button
+                    onClick={() => exportCumulativeExcel(processedHistory)}
+                    className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-lg hover:shadow-indigo-500/25 active:scale-95"
+                >
+                    <Download className="w-4 h-4" />
+                    Download Summary
+                </button>
+            </div>
+
+            <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                    <thead>
+                        <tr className="bg-slate-900 text-white">
+                            <th className="px-8 py-4 text-[9px] font-black uppercase tracking-widest">Month</th>
+                            <th className="px-8 py-4 text-[9px] font-black uppercase tracking-widest text-right">Opening Balance</th>
+                            <th className="px-8 py-4 text-[9px] font-black uppercase tracking-widest text-right">Current (Inflow)</th>
+                            <th className="px-8 py-4 text-[9px] font-black uppercase tracking-widest text-right">Closing Balance</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                        {processedHistory.map((item, idx) => (
+                            <tr key={idx} className="hover:bg-indigo-50/30 transition-colors">
+                                <td className="px-8 py-4 font-black text-gray-900 text-xs uppercase tracking-tight">
+                                    {getMonthName(item.month)} {item.year}
+                                </td>
+                                <td className="px-8 py-4 text-right">
+                                    <span className="text-gray-500 font-bold text-xs">{formatIndianCurrency(item.opening)}</span>
+                                </td>
+                                <td className="px-8 py-4 text-right">
+                                    <div className="flex flex-col items-end">
+                                        <span className="text-emerald-600 font-black text-xs">+{formatIndianCurrency(item.inflow)}</span>
+                                        <span className="text-rose-500 font-bold text-[9px]">-{formatIndianCurrency(item.outflow)}</span>
+                                    </div>
+                                </td>
+                                <td className="px-8 py-4 text-right">
+                                    <span className={`font-black text-xs ${item.closing >= 0 ? 'text-indigo-600' : 'text-rose-600'}`}>
+                                        {formatIndianCurrency(item.closing)}
+                                    </span>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
 };
 
 const AnalyticsPage = ({ filterProps }) => {
@@ -53,6 +155,8 @@ const AnalyticsPage = ({ filterProps }) => {
     // Payment Analytics State
     const [paymentData, setPaymentData] = useState(null);
     const [paymentTrends, setPaymentTrends] = useState([]);
+    const [historyData, setHistoryData] = useState([]);
+    const [isHistoryLoading, setIsHistoryLoading] = useState(false);
 
     // UI State
     const [activeView, setActiveView] = useState('charts'); // charts, table
@@ -60,6 +164,7 @@ const AnalyticsPage = ({ filterProps }) => {
     const [isCollectionsExpanded, setIsCollectionsExpanded] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [refreshKey, setRefreshKey] = useState(0);
+    const [isSSEConnected, setIsSSEConnected] = useState(false);
 
     // User Role Info
     const user = useMemo(() => {
@@ -125,25 +230,87 @@ const AnalyticsPage = ({ filterProps }) => {
         fetchGlobalStats();
     }, [filters, refreshKey]);
 
-    // Fetch Table Data
+    // SSE Real-time Updates
+    useEffect(() => {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+
+        const url = `${API_BASE}/api/analytics/v2/stream?token=${token}`;
+        const eventSource = new EventSource(url);
+
+        eventSource.onmessage = (event) => {
+            if (event.data === 'refresh') {
+                console.log("Real-time refresh signal received");
+                setRefreshKey(prev => prev + 1);
+            } else if (event.data === 'connected') {
+                setIsSSEConnected(true);
+            }
+        };
+
+        eventSource.onerror = (err) => {
+            console.error("SSE Error:", err);
+            setIsSSEConnected(false);
+            eventSource.close();
+        };
+
+        return () => eventSource.close();
+    }, []);
+
+    // Fetch History for Cumulative Summary
+    useEffect(() => {
+        const fetchHistory = async () => {
+            setIsHistoryLoading(true);
+            try {
+                const token = localStorage.getItem('token');
+                const historyParams = { ...filters };
+                // Ensure history always shows up to the current month for the selected year
+                const now = new Date();
+                if (parseInt(filters.year) === now.getFullYear()) {
+                    historyParams.month = now.getMonth() + 1;
+                } else {
+                    historyParams.month = 12; // Show full year for past years
+                }
+
+                const params = new URLSearchParams(historyParams).toString();
+
+                const res = await fetch(`${API_BASE}/api/payments/history?${params}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await res.json();
+                if (data.success) {
+                    setHistoryData(data.data || []);
+                }
+            } catch (err) {
+                console.error("Failed to fetch history:", err);
+            } finally {
+                setIsHistoryLoading(false);
+            }
+        };
+
+        fetchHistory();
+    }, [filters, refreshKey]);
+
+    // Fetch Initial Table Data (Root Level Only)
     useEffect(() => {
         const fetchTable = async () => {
             setLoading(true);
             try {
                 const token = localStorage.getItem('token');
-                const params = new URLSearchParams({ ...filters }).toString();
+                const params = new URLSearchParams({
+                    ...filters,
+                    level: 'root'
+                }).toString();
 
-                const res = await fetch(`${API_BASE}/api/analytics/v2/table?${params}`, {
+                const res = await fetch(`${API_BASE}/api/analytics/v2/hierarchy?${params}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const data = await res.json();
 
                 if (data.success) {
-                    setTableData(data.hierarchy || []);
-                    if (data.stale) setIsRefreshing(true);
+                    setTableData(data.data || []);
                 }
             } catch (err) {
-                setError("Could not load detailed table data.");
+                setError("Could not load initial hierarchy.");
             } finally {
                 setLoading(false);
             }
@@ -152,7 +319,7 @@ const AnalyticsPage = ({ filterProps }) => {
         fetchTable();
     }, [filters, refreshKey]);
 
-    // Polling Logic: If data is stale/refreshing, re-fetch every 10 seconds
+    /*
     useEffect(() => {
         let interval;
         if (isRefreshing) {
@@ -162,6 +329,7 @@ const AnalyticsPage = ({ filterProps }) => {
         }
         return () => clearInterval(interval);
     }, [isRefreshing]);
+    */
 
     const handleDownload = async () => {
         try {
@@ -183,6 +351,114 @@ const AnalyticsPage = ({ filterProps }) => {
             }
         } catch (err) {
             alert("Failed to download report.");
+        }
+    };
+
+    const handleDetailedDownload = async (item, loadedChildren = []) => {
+        try {
+            const token = localStorage.getItem('token');
+            const isVO = item.role === 'VO';
+            const isCC = item.role === 'CC';
+            const isAPM = item.role === 'APM';
+
+            const baseParams = {
+                district: item.location?.district || filters.district || 'all',
+                mandal: item.location?.mandal || filters.mandal || 'all',
+                month: filters.month,
+                year: filters.year,
+                refresh: 'true'
+            };
+
+            if (isAPM) {
+                // Use the already-loaded hierarchy children from HierarchicalRow state.
+                // These have the correct CC names (same as what shows in the table) and clusterIDs.
+                // If not yet expanded, fetch them now using the same fetchChildren logic.
+                let ccs = loadedChildren.filter(c => c.role === 'CC' || c.clusterID);
+                if (ccs.length === 0) {
+                    const hierarchyParams = new URLSearchParams({
+                        ...filters,
+                        level: 'apm',
+                        parentId: item.userID || item.id
+                    }).toString();
+                    const hRes = await fetch(`${API_BASE}/api/analytics/v2/hierarchy?${hierarchyParams}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    const hData = await hRes.json();
+                    ccs = (hData.success ? hData.data : []) || [];
+                }
+
+                // Extract clusterIDs and names exactly as hierarchy gives them
+                const ccIDs = ccs.map(c => c.clusterID || c.id).filter(Boolean);
+
+                const params = new URLSearchParams({
+                    ...baseParams,
+                    groupBy: 'clusterID',
+                    filterField: 'mandal',
+                    filterId: item.location?.mandal || filters.mandal,
+                    ccIDs: ccIDs.join(',')
+                }).toString();
+
+                const response = await fetch(`${API_BASE}/api/payments/breakdown?${params}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await response.json();
+                if (data.success) {
+                    exportPerformanceExcel(data.data, data.level, ccs, item);
+                    if (data.coldStart) {
+                        alert('⏳ Financial data is still being calculated for this month. The file was downloaded with current values — please retry in 15–30 seconds to get the full data.');
+                    }
+                } else {
+                    alert(data.message || "Failed to fetch CC data");
+                }
+
+            } else if (isCC) {
+                // CC -> VOs, filter by clusterID
+                const params = new URLSearchParams({
+                    ...baseParams,
+                    groupBy: 'voID',
+                    filterField: 'clusterID',
+                    filterId: item.clusterID || item.id
+                }).toString();
+                const response = await fetch(`${API_BASE}/api/payments/breakdown?${params}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await response.json();
+                if (data.success) {
+                    exportPerformanceExcel(data.data, data.level, [], item);
+                    if (data.coldStart) {
+                        alert('⏳ Financial data is still being calculated for this month. The file was downloaded with current values — please retry in 15–30 seconds to get the full data.');
+                    }
+                } else {
+                    alert(data.message || "Failed to fetch VO data");
+                }
+
+            } else if (isVO) {
+                // VO download → Excel contains SHG rows (groupBy shg_mbk_id)
+                const voParams = new URLSearchParams({
+                    ...baseParams,
+                    groupBy: 'shg_mbk_id',
+                    filterField: 'voID',
+                    filterId: item.voID || item.id
+                }).toString();
+                const voResponse = await fetch(`${API_BASE}/api/payments/breakdown?${voParams}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const voData = await voResponse.json();
+                if (voData.success) {
+                    exportPerformanceExcel(voData.data, voData.level, [], item);
+                    if (voData.coldStart) {
+                        alert('⏳ Financial data is still being calculated for this month. The file was downloaded with current values — please retry in 15–30 seconds to get the full data.');
+                    }
+                } else {
+                    alert(voData.message || "Failed to fetch VO data");
+                }
+            } else {
+                // fallback (should not reach for known roles)
+                alert("Download not supported for this level.");
+            }
+        } catch (err) {
+            console.error("Download Error:", err);
+            alert("Failed to download detailed report.");
         }
     };
 
@@ -301,21 +577,25 @@ const AnalyticsPage = ({ filterProps }) => {
                     />
 
                     {/* Unified Multi-Metric Visualization - Perfect Alignment */}
-                    <div className="flex flex-col xl:flex-row gap-8 items-stretch">
-                        <div className="flex-1 min-h-[500px] flex flex-col">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+                        <div className="lg:col-span-2">
                             <PaymentTrendChart data={paymentTrends} />
                         </div>
-                        <div className="xl:w-[400px] flex flex-col">
+                        <div className="lg:col-span-1">
                             <UnifiedDistributionCard
                                 data={paymentData?.distributions}
                                 activeMetric={activeMetric}
-                                level={
-                                    filters.mandal !== 'all' ? 'VO'
-                                        : filters.district !== 'all' ? 'CC'
-                                            : 'District'
-                                }
+                                level={paymentData?.distKey}
                             />
                         </div>
+                    </div>
+
+                    {/* Cumulative Financial Summary */}
+                    <div className="mb-8">
+                        <CumulativeFinanceSummary
+                            history={historyData}
+                            loading={isHistoryLoading}
+                        />
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -329,6 +609,10 @@ const AnalyticsPage = ({ filterProps }) => {
                 <DetailedTable
                     data={tableData}
                     loading={loading}
+                    handleDetailedDownload={handleDetailedDownload}
+                    filters={filters}
+                    refreshKey={refreshKey}
+                    isSSEConnected={isSSEConnected}
                 />
             )}
 
@@ -355,9 +639,10 @@ const AnalyticsFilters = ({ filterProps, user }) => {
     const isAPM = role.includes('apm');
     const isCC = role.includes('cc');
 
-    // Initialize APM filters if needed
+    // Initialize scoped filters for APM and CC roles
     useEffect(() => {
-        if (isAPM) {
+        const isScoped = isAPM || isCC;
+        if (isScoped && user) {
             if (user.district && (!selectedDistrict || selectedDistrict === 'all')) {
                 setSelectedDistrict(user.district);
             }
@@ -365,7 +650,7 @@ const AnalyticsFilters = ({ filterProps, user }) => {
                 setSelectedMandal(user.mandal);
             }
         }
-    }, [isAPM, user.district, user.mandal, setSelectedDistrict, setSelectedMandal]);
+    }, [isAPM, isCC, user, selectedDistrict, selectedMandal, setSelectedDistrict, setSelectedMandal]);
 
     // Load location logic
     useEffect(() => {
@@ -528,10 +813,12 @@ const FinanceAnalytics = ({ data, activeMetric, onMetricChange, isExpanded, setI
 
     const {
         totalSavings, totalLoanRecovered,
-        totalLoansTaken, totalSavingsRepaid,
+        totalLoansTaken, totalReturned,
         totalPenalties, loanRecoveryBreakdown,
         loanCount
     } = data.financeStats;
+
+    const formatFull = (val) => (val || 0).toLocaleString('en-IN');
 
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -552,7 +839,7 @@ const FinanceAnalytics = ({ data, activeMetric, onMetricChange, isExpanded, setI
                     <div>
                         <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-1">Total Collections</p>
                         <h4 className="text-2xl font-black text-gray-900 group-hover/header:text-indigo-600 transition-colors">
-                            ₹{totalLoanRecovered.toLocaleString('en-IN')}
+                            ₹{formatFull(totalLoanRecovered)}
                         </h4>
                     </div>
                     <div className={`p-3 rounded-2xl transition-all duration-300 ${isExpanded ? 'bg-indigo-600 text-white rotate-180' : 'bg-indigo-50 text-indigo-600 group-hover/header:bg-indigo-100'}`}>
@@ -564,18 +851,18 @@ const FinanceAnalytics = ({ data, activeMetric, onMetricChange, isExpanded, setI
                     <div className="min-h-0">
                         <div className="pt-4 border-t border-gray-100 flex flex-col gap-3">
                             {[
-                                { label: 'Bank Loan', val: loanRecoveryBreakdown.bankLoan },
-                                { label: 'SHG Internal', val: loanRecoveryBreakdown.shgInternal },
-                                { label: 'Streenidhi Micro', val: loanRecoveryBreakdown.streenidhiMicro },
-                                { label: 'Streenidhi Tenny', val: loanRecoveryBreakdown.streenidhiTenni },
-                                { label: 'Unnati (SCSP)', val: loanRecoveryBreakdown.unnatiSCSP },
-                                { label: 'Unnati (TSP)', val: loanRecoveryBreakdown.unnatiTSP },
-                                { label: 'CIF Loan', val: loanRecoveryBreakdown.cif },
-                                { label: 'VO Internal', val: loanRecoveryBreakdown.voInternal }
+                                { label: 'Bank Loan', val: loanRecoveryBreakdown?.bankLoan },
+                                { label: 'SHG Internal', val: loanRecoveryBreakdown?.shgInternal },
+                                { label: 'Streenidhi Micro', val: loanRecoveryBreakdown?.streenidhiMicro },
+                                { label: 'Streenidhi Tenny', val: loanRecoveryBreakdown?.streenidhiTenni },
+                                { label: 'Unnati (SCSP)', val: loanRecoveryBreakdown?.unnatiSCSP },
+                                { label: 'Unnati (TSP)', val: loanRecoveryBreakdown?.unnatiTSP },
+                                { label: 'CIF Loan', val: loanRecoveryBreakdown?.cif },
+                                { label: 'VO Internal', val: loanRecoveryBreakdown?.voInternal }
                             ].map((item) => (
                                 <div key={item.label} className="flex justify-between items-center group/item hover:bg-gray-50 p-1 rounded-lg transition-colors">
                                     <span className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter group-hover/item:text-gray-600 transition-colors">{item.label}</span>
-                                    <span className="text-[11px] font-black text-gray-900">₹{item.val.toLocaleString('en-IN')}</span>
+                                    <span className="text-[11px] font-black text-gray-900">₹{formatFull(item.val)}</span>
                                 </div>
                             ))}
                         </div>
@@ -592,7 +879,7 @@ const FinanceAnalytics = ({ data, activeMetric, onMetricChange, isExpanded, setI
                 className={`bg-white/90 backdrop-blur-xl p-6 rounded-[32px] border transition-all duration-300 cursor-pointer shadow-xl hover:shadow-2xl ${activeMetric === 'memberDeposits' ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-white/20'}`}
             >
                 <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Member Deposits</p>
-                <h4 className="text-2xl font-black text-gray-900">₹{totalSavings.toLocaleString('en-IN')}</h4>
+                <h4 className="text-2xl font-black text-gray-900">₹{formatFull(totalSavings)}</h4>
                 <div className="mt-4 pt-4 border-t border-gray-100">
                     <p className="text-[9px] text-gray-400 font-bold uppercase flex items-center gap-2">
                         <TrendingUp className="w-3 h-3 text-emerald-500" />
@@ -616,7 +903,7 @@ const FinanceAnalytics = ({ data, activeMetric, onMetricChange, isExpanded, setI
                     </span>
                 </div>
                 <p className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter mb-1">Number of loans taken</p>
-                <h4 className="text-2xl font-black text-gray-900">₹{totalLoansTaken.toLocaleString('en-IN')}</h4>
+                <h4 className="text-2xl font-black text-gray-900">₹{formatFull(totalLoansTaken)}</h4>
                 <div className="mt-4 pt-4 border-t border-gray-100">
                     <div className="flex items-center gap-2">
                         <ArrowUpRight className="w-3 h-3 text-rose-500" />
@@ -634,7 +921,7 @@ const FinanceAnalytics = ({ data, activeMetric, onMetricChange, isExpanded, setI
                 className={`bg-white/90 backdrop-blur-xl p-6 rounded-[32px] border transition-all duration-300 cursor-pointer shadow-xl hover:shadow-2xl ${activeMetric === 'savingsWithdrawal' ? 'border-orange-500 ring-2 ring-orange-500/20' : 'border-white/20'}`}
             >
                 <p className="text-[10px] font-black text-orange-600 uppercase tracking-widest mb-1">Savings Withdrawal</p>
-                <h4 className="text-2xl font-black text-gray-900">₹{totalSavingsRepaid.toLocaleString('en-IN')}</h4>
+                <h4 className="text-2xl font-black text-gray-900">₹{formatFull(totalReturned)}</h4>
                 <div className="mt-4 pt-4 border-t border-gray-100">
                     <div className="flex items-center gap-2">
                         <Clock className="w-3 h-3 text-orange-500" />
@@ -652,7 +939,7 @@ const FinanceAnalytics = ({ data, activeMetric, onMetricChange, isExpanded, setI
                 className={`bg-white/90 backdrop-blur-xl p-6 rounded-[32px] border transition-all duration-300 cursor-pointer shadow-xl hover:shadow-2xl ${activeMetric === 'latePenalties' ? 'border-amber-500 ring-2 ring-amber-500/20' : 'border-white/20'}`}
             >
                 <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-1">Late Penalties</p>
-                <h4 className="text-2xl font-black text-gray-900">₹{totalPenalties.toLocaleString('en-IN')}</h4>
+                <h4 className="text-2xl font-black text-gray-900">₹{formatFull(totalPenalties)}</h4>
                 <div className="mt-4 pt-4 border-t border-gray-100 flex items-start gap-3">
                     <div className="p-2 bg-amber-50 rounded-xl">
                         <AlertCircle className="w-4 h-4 text-amber-600" />
@@ -813,16 +1100,38 @@ const UnifiedDistributionCard = ({ data, activeMetric, level }) => {
 };
 
 const MiniPaymentPie = ({ data, color, level, metricLabel }) => {
+    const LEVEL_LABELS = {
+        district: 'District', mandal: 'Mandal', village: 'Village',
+        voID: 'VO', clusterID: 'CC', shg_mbk_id: 'SHG'
+    };
+    const levelLabel = LEVEL_LABELS[level] || level || 'Group';
+
+    // Filter out unknown/empty/NA/numeric IDs more robustly
+    const cleanData = (data || []).filter(d => {
+        if (!d.name || d.value <= 0) return false;
+        const name = String(d.name).toUpperCase().trim();
+        if (['UNKNOWN', 'N/A', '', 'NULL', 'UNDEFINED'].includes(name)) return false;
+
+        // GEOGRAPHIC NUMERIC GUARD: Skip numeric strings if we are viewing geography levels
+        // This prevents raw IDs from leaking as Mandal/District/Village names
+        if (['district', 'mandal', 'village'].includes(level)) {
+            if (/^\d+$/.test(d.name)) return false;
+        }
+
+        // Also skip numeric strings that look like long IDs (large numbers) for other levels
+        if (/^\d{10,}$/.test(d.name)) return false;
+        return true;
+    });
+
     // Broad, high-contrast palette for many segments (20-30+)
     const COLORS = [
         '#4f46e5', '#10b981', '#f59e0b', '#f43f5e', '#8b5cf6',
         '#06b6d4', '#ec4899', '#f97316', '#6366f1', '#14b8a6',
         '#ef4444', '#22c55e', '#3b82f6', '#a855f7', '#d946ef',
         '#64748b', '#1e293b', '#0f172a', '#475569', '#334155',
-        '#020617', '#111827', '#1f2937', '#374151', '#4b5563',
         '#7c3aed', '#db2777', '#dc2626', '#ca8a04', '#16a34a'
     ];
-    const total = data.reduce((a, b) => a + (b.value || 0), 0);
+    const total = cleanData.reduce((a, b) => a + (b.value || 0), 0);
 
     const CustomTooltip = ({ active, payload }) => {
         if (active && payload && payload.length) {
@@ -830,7 +1139,7 @@ const MiniPaymentPie = ({ data, color, level, metricLabel }) => {
             return (
                 <div className="bg-slate-900/95 backdrop-blur-md p-3 rounded-xl border border-white/10 shadow-2xl z-[1000]">
                     <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-1 border-b border-white/5 pb-1">
-                        {level.toUpperCase()}
+                        {levelLabel}
                     </p>
                     <div className="space-y-1">
                         <p className="text-[10px] font-bold text-white truncate max-w-[120px]">{item.name || item.label}</p>
@@ -845,19 +1154,28 @@ const MiniPaymentPie = ({ data, color, level, metricLabel }) => {
         return null;
     };
 
+    if (!cleanData.length) {
+        return (
+            <div className="w-full aspect-square relative min-h-[120px] flex flex-col items-center justify-center opacity-40">
+                <div className="w-16 h-16 rounded-full border-4 border-dashed border-gray-200 animate-[spin_10s_linear_infinite]"></div>
+                <span className="text-[7px] font-black text-gray-400 uppercase mt-2 tracking-widest">No Records Found</span>
+            </div>
+        );
+    }
+
     return (
         <div className="w-full aspect-square relative min-h-[120px]">
             <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                     <Pie
-                        data={data}
+                        data={cleanData}
                         innerRadius={35}
                         outerRadius={50}
                         paddingAngle={3}
                         dataKey="value"
                         stroke="none"
                     >
-                        {data.map((entry, index) => (
+                        {cleanData.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                     </Pie>
@@ -989,17 +1307,66 @@ const RowStats = ({ stats }) => (
                 <div className="flex gap-1.5 font-black text-[10px]">
                     <span className="text-purple-600 bg-purple-50 px-2 py-0.5 rounded-lg">{stats?.conversion?.converted || 0}C</span>
                     <span className="text-rose-500 bg-red-50 px-2 py-0.5 rounded-lg">{stats?.conversion?.failed || 0}F</span>
-                    <span className="text-gray-400 bg-gray-50 px-2 py-0.5 rounded-lg">{stats?.conversion?.pending || 0}P</span>
-                    <span className="text-cyan-600 bg-cyan-50 px-2 py-0.5 rounded-lg">{stats?.conversion?.processing || 0}Pr</span>
                 </div>
             </div>
         </td>
     </>
 );
 
-const HierarchicalRow = ({ item, level = 0 }) => {
-    const [isExpanded, setIsExpanded] = useState(level < 1); // APM expanded by default
-    const hasChildren = item.children && item.children.length > 0;
+const HierarchicalRow = ({ item, handleDetailedDownload, level = 0, filters, refreshKey }) => {
+    const [isExpanded, setIsExpanded] = useState(false);
+    const [children, setChildren] = useState(item.children || []);
+    const [loadingChildren, setLoadingChildren] = useState(false);
+    // VOs do NOT expand in the table (SHGs are only in the downloaded Excel)
+    const hasChildren = item.role !== 'VO' && (item.hasChildren || (item.children && item.children.length > 0));
+
+    const fetchChildren = async (force = false) => {
+        if (!force && children.length > 0) return;
+        if (!hasChildren) return;
+
+        setLoadingChildren(true);
+        try {
+            const token = localStorage.getItem('token');
+            // Level mapping: 
+            // If current item is APM, we want its children (CCs) -> level='apm'
+            // If current item is CC, we want its children (VOs) -> level='cc'
+            // If current item is VO, we want its children (SHGs) -> level='vo'
+            const nextLevel = item.role.toLowerCase();
+            // Refined parentId logic: APMs use userID, CCs use clusterID, VOs use voID
+            const parentId = item.role === 'APM' ? (item.userID || item.id) : (item.role === 'CC' ? (item.clusterID || item.id) : (item.voID || item.id));
+
+            const params = new URLSearchParams({
+                ...filters,
+                level: nextLevel,
+                parentId: parentId
+            }).toString();
+
+            const res = await fetch(`${API_BASE}/api/analytics/v2/hierarchy?${params}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (data.success) {
+                setChildren(data.data || []);
+            }
+        } catch (err) {
+            console.error("Failed to fetch children:", err);
+        } finally {
+            setLoadingChildren(false);
+        }
+    };
+
+    const getLoadingText = () => {
+        if (item.role === 'APM') return "Loading Clusters...";
+        if (item.role === 'CC') return "Loading VOs...";
+        if (item.role === 'VO') return "Loading SHGs...";
+        return "Loading...";
+    };
+
+    useEffect(() => {
+        if (isExpanded) {
+            fetchChildren(true); // Force refresh if already expanded
+        }
+    }, [isExpanded, refreshKey]);
 
     const getIcon = () => {
         if (item.role === 'APM') return <Shield className="w-4 h-4 text-indigo-600" />;
@@ -1031,6 +1398,10 @@ const HierarchicalRow = ({ item, level = 0 }) => {
                                     {item.name}
                                 </span>
                                 <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5 mt-0.5">
+                                    <span className="text-indigo-600 font-black">
+                                        {item.role === 'VO' ? `VO:${item.voID}` : (item.role === 'CC' ? `CID:${item.clusterID}` : (item.role === 'APM' ? `UID:${item.userID}` : ''))}
+                                    </span>
+                                    <span className="text-gray-300">|</span>
                                     {item.details}
                                     <span className={`px-1.5 py-0.5 rounded-md text-[8px] ${level === 0 ? 'bg-indigo-600 text-white' : level === 1 ? 'bg-emerald-600 text-white' : 'bg-gray-200 text-gray-600'}`}>{item.role}</span>
                                 </span>
@@ -1039,20 +1410,47 @@ const HierarchicalRow = ({ item, level = 0 }) => {
                     </div>
                 </td>
                 <RowStats stats={item.stats} />
+                <td className="px-8 py-6 text-center">
+                    {(item.role === 'VO' || item.role === 'CC' || item.role === 'APM') && (
+                        <button
+                            onClick={() => handleDetailedDownload(item, children)}
+                            className="p-2 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-600 hover:text-white transition-all shadow-sm border border-indigo-100 inline-flex items-center gap-2 group/btn"
+                            title={`Download Detailed Finance Excel for ${item.role}`}
+                        >
+                            <Download className="w-4 h-4" />
+                        </button>
+                    )}
+                </td>
             </tr>
-            {hasChildren && isExpanded && item.children.map(child => (
-                <HierarchicalRow key={child.id} item={child} level={level + 1} />
+            {isExpanded && loadingChildren && (
+                <tr>
+                    <td colSpan="5" className="px-8 py-4">
+                        <div className="flex items-center gap-3" style={{ paddingLeft: `${(level + 1) * 24}px` }}>
+                            <Loader2 className="w-3 h-3 text-indigo-400 animate-spin" />
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest animate-pulse">{getLoadingText()}</span>
+                        </div>
+                    </td>
+                </tr>
+            )}
+            {hasChildren && isExpanded && children.map(child => (
+                <HierarchicalRow key={child.id} item={child} handleDetailedDownload={handleDetailedDownload} level={level + 1} filters={filters} refreshKey={refreshKey} />
             ))}
         </>
     );
 };
 
-const DetailedTable = ({ data, loading }) => {
+const DetailedTable = ({ data, loading, handleDetailedDownload, filters, refreshKey, isSSEConnected }) => {
     return (
         <div className="bg-white/80 backdrop-blur-md rounded-[32px] shadow-lg border border-white/20 overflow-hidden">
             <div className="p-8 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                 <h3 className="text-lg font-black text-gray-900 uppercase tracking-tight">Users</h3>
                 <div className="flex items-center gap-3">
+                    {isSSEConnected && (
+                        <div className="flex items-center gap-2 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100 animate-pulse">
+                            <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+                            <span className="text-[9px] font-black uppercase tracking-widest">Live</span>
+                        </div>
+                    )}
                     <div className="flex items-center bg-white p-1.5 rounded-2xl border border-gray-200 shadow-sm">
                         <Users className="w-4 h-4 text-indigo-600 ml-2 mr-2" />
                         <span className="px-3 py-1 text-[10px] font-black text-gray-900 uppercase tracking-widest border-l border-gray-100">{data?.length || 0} Units Tracked</span>
@@ -1060,14 +1458,15 @@ const DetailedTable = ({ data, loading }) => {
                 </div>
             </div>
 
-            <div className="overflow-x-auto">
-                <table className="w-full text-left">
+            <div className="overflow-x-auto custom-scrollbar" style={{ scrollbarWidth: 'thin' }}>
+                <table className="w-full text-left min-w-[1000px]">
                     <thead>
                         <tr className="bg-indigo-900 text-white">
                             <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-left">User (Hierarchy)</th>
                             <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-center">Uploads (U/P/T)</th>
                             <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-center">Approved (A/R/P)</th>
-                            <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-center">Conversion (C/F/P/Pr)</th>
+                            <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-center">Conversion (C/F)</th>
+                            <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-center">Action</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 bg-white">
@@ -1076,15 +1475,15 @@ const DetailedTable = ({ data, loading }) => {
                                 <td colSpan="5" className="px-8 py-32 text-center">
                                     <div className="flex flex-col items-center gap-4">
                                         <Loader2 className="w-12 h-12 text-indigo-600 animate-spin" />
-                                        <span className="text-sm font-black text-gray-400 uppercase tracking-[0.2em] animate-pulse">Reconstructing Hierarchy...</span>
+                                        <span className="text-sm font-black text-gray-400 uppercase tracking-[0.2em] animate-pulse">Initializing Dashboard...</span>
                                     </div>
                                 </td>
                             </tr>
                         ) : data?.length > 0 ? (
-                            data.map((item) => <HierarchicalRow key={item.id} item={item} />)
+                            data.map((item) => <HierarchicalRow key={item.id} item={item} handleDetailedDownload={handleDetailedDownload} filters={filters} refreshKey={refreshKey} />)
                         ) : (
                             <tr>
-                                <td colSpan="5" className="px-8 py-32 text-center">
+                                <td colSpan="6" className="px-8 py-32 text-center">
                                     <div className="flex flex-col items-center gap-4">
                                         <div className="p-6 bg-gray-50 rounded-[32px]">
                                             <List className="w-12 h-12 text-gray-200" />
