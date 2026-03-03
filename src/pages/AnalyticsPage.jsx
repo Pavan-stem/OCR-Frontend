@@ -338,28 +338,7 @@ const AnalyticsPage = ({ filterProps }) => {
     }, [isRefreshing]);
     */
 
-    const handleDownload = async () => {
-        try {
-            const token = localStorage.getItem('token');
-            const params = new URLSearchParams(filters).toString();
-            const response = await fetch(`${API_BASE}/api/analytics/v2/download?${params}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
 
-            if (response.ok) {
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `Analytics_Report_${filters.year}_${filters.month}.xlsx`;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-            }
-        } catch (err) {
-            alert("Failed to download report.");
-        }
-    };
 
     const handleDetailedDownload = async (item, loadedChildren = []) => {
         try {
@@ -482,7 +461,7 @@ const AnalyticsPage = ({ filterProps }) => {
                         {isRefreshing && (
                             <div className="flex items-center gap-2 px-3 py-1 bg-indigo-500/20 border border-indigo-500/30 rounded-full animate-pulse ml-4">
                                 <Loader2 className="w-3 h-3 text-indigo-400 animate-spin" />
-                                <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">Refreshing</span>
+                                {/* <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">Refreshing</span> */}
                             </div>
                         )}
                     </h2>
@@ -507,13 +486,7 @@ const AnalyticsPage = ({ filterProps }) => {
                         ))}
                     </div>
 
-                    <button
-                        onClick={handleDownload}
-                        className="flex shrink-0 items-center gap-2 px-4 py-3 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-indigo-500 transition-all hover:scale-[1.02] active:scale-95 border border-indigo-500/50 shadow-[0_0_25px_rgba(79,70,229,0.3)]"
-                    >
-                        <Download className="w-4 h-4" />
-                        Download Report
-                    </button>
+
                 </div>
             </div>
 
