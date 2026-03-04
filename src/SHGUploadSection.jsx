@@ -89,7 +89,7 @@ const SHGUploadSection = ({
   };
 
   const isDeveloper = user?.role?.toLowerCase().includes('developer') || (user?.voID && String(user.voID).length === 4);
-  const isTestMode = window.location.pathname.startsWith('/SMD');
+  const isTestMode = window.location.pathname.startsWith('/Test');
   const hasAIFeatures = isTestMode && isDeveloper;
 
   // Smart Preview Logic (Handles hard rotation and cropping for modal)
@@ -782,8 +782,8 @@ const SHGUploadSection = ({
       }
     } catch (e) {
       const currentPath = window.location.pathname;
-      if (currentPath.startsWith('/SMD')) {
-        basePath = '/SMD';
+      if (currentPath.startsWith('/Test')) {
+        basePath = '/Test';
       } else {
         const pathParts = currentPath.split('/').filter(p => p);
         if (pathParts.length > 0) {
