@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { Camera, X, AlertTriangle, CheckCircle, Loader, RotateCw, Crop, RefreshCw, Image as ImageIcon, ScanLine, Flashlight } from "lucide-react";
-import { scanDocument, canvasToFile, rotateCanvas, cropCanvas, warpPerspective, enhanceImage, detectDocument } from "./utils/documentScanner";
+import { scanDocument, canvasToFile, rotateCanvas, cropCanvas, warpPerspective, enhanceImage, detectDocument, validateSHGTableStructure } from "./utils/documentScanner";
+import { validateGalleryImage } from "./utils/galleryValidator";
 
 const cvReady = () => !!(window.cv && window.cv.Mat);
 
@@ -18,6 +19,10 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [shutterFlash, setShutterFlash] = useState(false);
     const [isEnhancing, setIsEnhancing] = useState(false);
+    const [enhancementStatus, setEnhancementStatus] = useState("");
+    const [galleryError, setGalleryError] = useState(null);
+    const [isGalleryLoading, setIsGalleryLoading] = useState(false);
+    const [galleryRejection, setGalleryRejection] = useState(null); // { message } when scan fails
 
     // Live Validation State
     const [liveStatus, setLiveStatus] = useState({
@@ -41,6 +46,7 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
     const processingTimeoutId = useRef(null);
     const isLoopingRef = useRef(false);
     const captureTriggeredRef = useRef(false);
+    const isFromGalleryRef = useRef(false);
 
     const maxBlurVarRef = useRef(0);
     const bestFrameRef = useRef(null);
@@ -88,8 +94,23 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
             pointsTracker.current = null;
             setCameraError(null);
             lastStableUpdate.current = 0;
+            setGalleryRejection(null);
+            setGalleryError(null);
         }
     }, [open]);
+
+    // When gallery rejection is dismissed, restart the camera processing loop.
+    // We use useEffect (not an onClick handler) so startProcessingLoop captures fresh state.
+    const hadGalleryRejectionRef = useRef(false);
+    useEffect(() => {
+        if (galleryRejection) {
+            hadGalleryRejectionRef.current = true;
+            isLoopingRef.current = false; // Ensure loop is stopped
+        } else if (hadGalleryRejectionRef.current && open && !capturedImageData && !isLoopingRef.current) {
+            hadGalleryRejectionRef.current = false;
+            startProcessingLoop();
+        }
+    }, [galleryRejection, open, capturedImageData]);
 
     // Initialize camera
     useEffect(() => {
@@ -553,15 +574,11 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
         setIsProcessing(true);
         isLoopingRef.current = false; // Kill loop immediately
 
-        // REAL-TIME SYNC: Use sampled points for sampled frame, or live points for live frame
-        const sourceCanvas = bestFrameRef.current || videoRef.current;
-
-        // Ensure pointsFromLoop is actually a coordinate array (and not a React Event object)
-        const validPointsFromLoop = Array.isArray(pointsFromLoop) ? pointsFromLoop : null;
+        const sourceFrame = bestFrameRef.current || videoRef.current;
 
         const finalContour = (bestFrameRef.current && bestPointsRef.current)
             ? bestPointsRef.current
-            : (validPointsFromLoop || stableContour || smoothedContour);
+            : (Array.isArray(pointsFromLoop) ? pointsFromLoop : (stableContour || smoothedContour));
 
         const video = videoRef.current;
         const canvas = document.createElement("canvas");
@@ -571,10 +588,11 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
         canvas.height = (bestFrameRef.current) ? bestFrameRef.current.height : video.videoHeight;
 
         const ctx = canvas.getContext("2d");
-        ctx.drawImage(sourceCanvas, 0, 0);
+        ctx.drawImage(sourceFrame, 0, 0);
 
         try {
             let resultCanvas = canvas;
+            isFromGalleryRef.current = false; // Reset source on every manual capture
 
             // 1. CROP (Warp) FIRST using the exact synced points
             // This now uses a 5% "Safety Buffer" from documentScanner.js to handle motion
@@ -604,18 +622,25 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
             if (uiAnimationFrameId.current) cancelAnimationFrame(uiAnimationFrameId.current);
 
             // 2. APPLY FILTERS IN BACKGROUND
-            setTimeout(() => {
+            setTimeout(async () => {
                 try {
                     if (cvReady()) {
-                        const finalCanvas = enhanceImage(resultCanvas);
-                        setCapturedImageData(finalCanvas.toDataURL("image/jpeg", 0.95));
+                        setEnhancementStatus("Analyzing...");
+                        const finalCanvas = await enhanceImage(resultCanvas, (msg) => {
+                            setEnhancementStatus(msg);
+                        });
+                        if (finalCanvas) {
+                            setCapturedImageData(finalCanvas.toDataURL("image/jpeg", 0.95));
+                        }
                     }
                     setIsEnhancing(false);
+                    setEnhancementStatus("");
                 } catch (err) {
                     console.error("Enhancement failed:", err);
                     setIsEnhancing(false);
+                    setEnhancementStatus("");
                 }
-            }, 100);
+            }, 50);
 
             const stream = videoRef.current.srcObject;
             if (stream) stream.getTracks().forEach(track => track.stop());
@@ -642,6 +667,16 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
             canvas = rotateCanvas(canvas, manualRotation);
         }
 
+        // Final SHG Structure Validation
+        // Optimization: Bypass if already validated by GalleryValidator (which is more robust)
+        if (!isFromGalleryRef.current) {
+            const structure = validateSHGTableStructure(canvas);
+            if (!structure.valid) {
+                setGalleryRejection({ message: structure.reason });
+                return;
+            }
+        }
+
         const file = await canvasToFile(canvas, "scanned_doc.jpg");
         onCapture(file);
         onClose();
@@ -665,22 +700,139 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
         setCaptureProgress(0);
         setIsProcessing(false);
         captureTriggeredRef.current = false;
+        setGalleryRejection(null);
         // The initCamera side-effect will restart the stream because capturedImageData changes
     };
 
-    const handleGalleryUpload = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
+    /**
+     * Layer-1 pre-validation: metadata checks that run before any OpenCV processing.
+     * Returns a rejection reason string, or null if the file looks OK.
+     */
+    const checkScreenshotMetadata = useCallback(async (file) => {
+        // ── 1. Filename pattern (most reliable for Android & iOS) ──
+        const name = file.name.toLowerCase();
+        const SCREENSHOT_PATTERNS = [
+            /^screenshot/,        // Android: Screenshot_20240101_...
+            /screen.?shot/,       // screen_shot, screenShot, screen-shot
+            /screen.?cap/,        // screencap, screen_cap
+            /^capture/,           // Capture_...
+            /^img_\d{4}$/,        // iOS: IMG_1234 (bare numbers only — photo roll format)
+        ];
+        if (SCREENSHOT_PATTERNS.some(p => p.test(name))) {
+            return 'Screenshots are not allowed. Please capture a real photo of the document.';
+        }
 
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            setCapturedImageData(event.target.result);
+        // ── 2. EXIF binary scan (first 64 KB) ──
+        // Screenshots from some Android phones embed a "Software: Screenshot" tag in EXIF.
+        try {
+            const buf = await file.slice(0, 65536).arrayBuffer();
+            const text = new TextDecoder('latin1').decode(new Uint8Array(buf));
+            const EXIF_SCREENSHOT_MARKERS = [
+                'Screenshot', 'screencap', 'screen_shot', 'ScreenShot',
+                'com.android.systemui',  // Android system UI package in MakerNote
+                'QuickTime Screen',       // iOS screen recording metadata
+            ];
+            if (EXIF_SCREENSHOT_MARKERS.some(m => text.includes(m))) {
+                return 'Screenshots are not allowed. Please capture a real photo of the document.';
+            }
+        } catch {
+            // EXIF read failure is non-fatal — fall through to OpenCV checks
+        }
+
+        // ── 3. Image dimension / aspect-ratio check ──
+        // Phone screens are very tall portrait (aspect > 1.85) or exact device resolutions.
+        try {
+            const url = URL.createObjectURL(file);
+            const { width, height } = await new Promise((res, rej) => {
+                const img = new Image();
+                img.onload = () => { URL.revokeObjectURL(url); res({ width: img.width, height: img.height }); };
+                img.onerror = () => { URL.revokeObjectURL(url); rej(); };
+                img.src = url;
+            });
+
+            const aspect = Math.max(width, height) / Math.min(width, height);
+            // Phone screenshots: aspect > 1.85 (most phones are 9:19.5 ≈ 2.17, 9:20 ≈ 2.22)
+            // Genuine document photos: typically 4:3 (1.33) or 3:2 (1.5) from rear camera
+            // A4 paper: 1:√2 ≈ 1.41 — well below 1.85
+            if (aspect > 1.85) {
+                return 'This image appears to be a phone screenshot. Please take a real photo of the document.';
+            }
+
+            // Common exact phone screen widths (the other side is always a standard height)
+            const KNOWN_SCREEN_WIDTHS = new Set([
+                360, 375, 390, 393, 402, 412, 414, 428, 480, 540,
+                720, 750, 828, 1080, 1125, 1170, 1218, 1242, 1284
+            ]);
+            const shortSide = Math.min(width, height);
+            if (KNOWN_SCREEN_WIDTHS.has(shortSide) && aspect > 1.6) {
+                return 'This image appears to be a phone screenshot. Please take a real photo of the document.';
+            }
+        } catch {
+            // If we can't read dimensions, fall through to OpenCV
+        }
+
+        return null; // looks OK — proceed to OpenCV validation
+    }, []);
+
+    const handleGalleryUpload = useCallback(async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        e.target.value = ''; // reset so the same file can be re-selected
+
+        if (!file.type.startsWith('image/')) {
+            setGalleryError('Please select a valid image file (JPG, PNG, WebP).');
+            return;
+        }
+
+        setGalleryError(null);
+        setGalleryRejection(null);
+        setIsGalleryLoading(true);
+        setManualRotation(0);
+
+        try {
+            // ── Layer 1: Fast metadata / dimension pre-check ──
+            const metaRejection = await checkScreenshotMetadata(file);
+            if (metaRejection) {
+                // Stop the camera processing loop so it doesn't auto-capture behind the overlay
+                isLoopingRef.current = false;
+                if (processingTimeoutId.current) clearTimeout(processingTimeoutId.current);
+                if (uiAnimationFrameId.current) cancelAnimationFrame(uiAnimationFrameId.current);
+                setGalleryRejection({ message: metaRejection });
+                return;
+            }
+
+            // ── Layer 2: Full Robust Validation (Extracted from project_submission) ──
+            const result = await validateGalleryImage(file);
+
+            if (!result.isValid) {
+                // Stop the camera processing loop so it doesn't auto-capture behind the overlay
+                isLoopingRef.current = false;
+                if (processingTimeoutId.current) clearTimeout(processingTimeoutId.current);
+                if (uiAnimationFrameId.current) cancelAnimationFrame(uiAnimationFrameId.current);
+                setGalleryRejection({
+                    message: result.message,
+                    metrics: result.metrics
+                });
+                return;
+            }
+
+            // ── Validation passed ── use the pre-decoded safe canvas
+            const sourceCanvas = result.canvas;
+            isFromGalleryRef.current = true; // Mark as gallery source
+
+            // LOAD ORIGINAL DIRECTLY (User request: Bypass gallery enhancement)
+            setCapturedImageData(sourceCanvas.toDataURL('image/jpeg', 0.95));
             setIsProcessing(false);
-            setProcessingMessage("");
-            setManualRotation(0);
-        };
-        reader.readAsDataURL(file);
-    };
+            setProcessingMessage('');
+            setIsEnhancing(false);
+            setEnhancementStatus("");
+
+        } catch (err) {
+            setGalleryError(err.message || 'Failed to process image.');
+        } finally {
+            setIsGalleryLoading(false);
+        }
+    }, [checkScreenshotMetadata]);
 
     // Draw Smooth Overlay with Blue Dots
     useEffect(() => {
@@ -834,15 +986,45 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
                             )}
                         </div>
 
+                        {/* Gallery Rejection Overlay — full-screen inside the viewfinder */}
+                        {galleryRejection && (
+                            <div className="absolute inset-0 bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center z-50 p-8 text-center">
+                                <div className="w-16 h-16 rounded-full bg-red-500/20 border border-red-500/40 flex items-center justify-center mb-4">
+                                    <X size={32} className="text-red-400" />
+                                </div>
+                                <h3 className="text-white font-bold text-lg mb-2">Image Rejected</h3>
+                                <p className="text-red-300 text-sm mb-6 leading-relaxed">{galleryRejection.message}</p>
+                                <button
+                                    onClick={() => {
+                                        setGalleryRejection(null);
+                                        if (capturedImageData) handleRetake();
+                                    }}
+                                    className="px-6 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-full text-white font-bold text-sm transition-colors"
+                                >
+                                    {capturedImageData ? "Try Another Photo" : "Select Different Photo"}
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Gallery File-type Error Banner */}
+                        {galleryError && !galleryRejection && (
+                            <div className="absolute bottom-28 left-4 right-4 bg-red-900/80 backdrop-blur-sm border border-red-500/40 text-red-200 text-xs font-medium px-4 py-2 rounded-xl text-center z-30">
+                                {galleryError}
+                            </div>
+                        )}
+
                         {/* Capture Button Container */}
                         <div className="absolute bottom-10 left-0 right-0 flex justify-center items-center z-20 gap-8">
                             {/* Gallery Button */}
                             <button
                                 onClick={() => fileInputRef.current?.click()}
-                                className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white hover:bg-white/20 transition-all active:scale-95 shadow-lg"
+                                disabled={isGalleryLoading}
+                                className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white hover:bg-white/20 transition-all active:scale-95 shadow-lg disabled:opacity-50"
                                 title={t?.('upload.gallery') || "Upload from Gallery"}
                             >
-                                <ImageIcon size={24} />
+                                {isGalleryLoading
+                                    ? <Loader size={24} className="animate-spin" />
+                                    : <ImageIcon size={24} />}
                             </button>
 
                             {/* Camera Shutter */}
@@ -854,7 +1036,7 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
                                 <div className={`w-16 h-16 rounded-full ${liveStatus.isValid ? 'bg-green-500 animate-pulse' : 'bg-white'}`}></div>
                             </button>
 
-                            {/* Spacer to balance the layout if needed, or another button */}
+                            {/* Spacer to balance the layout */}
                             <div className="w-12" />
                         </div>
 
@@ -886,9 +1068,17 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
                             </div>
                             {/* Enhancement Label */}
                             {isEnhancing && (
-                                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-black/70 backdrop-blur-md px-4 py-1.5 rounded-full border border-white/20 flex items-center gap-2 z-30">
-                                    <RotateCw className="animate-spin text-green-500" size={14} />
-                                    <span className="text-white font-bold text-xs tracking-wide">Enhancing details...</span>
+                                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-md px-5 py-2.5 rounded-2xl border border-indigo-100 flex items-center gap-3 z-30 shadow-2xl animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                    <div className="relative">
+                                        <RotateCw className="animate-spin text-indigo-600" size={16} />
+                                        <div className="absolute inset-0 bg-indigo-200/50 rounded-full blur-md animate-pulse" />
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-1">Processing</span>
+                                        <span className="text-gray-900 font-bold text-xs tracking-wide leading-none">
+                                            {enhancementStatus || "Enhancing..."}
+                                        </span>
+                                    </div>
                                 </div>
                             )}
                         </div>

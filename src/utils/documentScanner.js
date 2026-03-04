@@ -1,9 +1,21 @@
-/**
- * Advanced Document Scanner Utility (FIXED & STRICT)
- * OpenCV.js based – NO false positives, NO partial crop
- */
-
 const cvReady = () => !!(window.cv && window.cv.Mat);
+
+/** 
+ * Automatically downscale canvas if it exceeds memory-safe dimensions for low-end devices.
+ * 1024px is a sweet spot for feature detection while staying < 5MB RAM.
+ */
+const _getOptimalCanvas = (srcCanvas, maxDim = 1024) => {
+    const { width, height } = srcCanvas;
+    if (width <= maxDim && height <= maxDim) return srcCanvas;
+
+    const scale = maxDim / Math.max(width, height);
+    const dst = document.createElement("canvas");
+    dst.width = Math.round(width * scale);
+    dst.height = Math.round(height * scale);
+    const ctx = dst.getContext("2d");
+    ctx.drawImage(srcCanvas, 0, 0, dst.width, dst.height);
+    return dst;
+};
 
 /* ===================== BLUR DETECTION ===================== */
 const detectBlurOpenCV = (src) => {
@@ -166,99 +178,102 @@ const detectColorStats = (src) => {
 
 /* ===================== TABLE DETECTION ===================== */
 const detectTableOpenCV = (src) => {
-    // 1. Convert to binary inverted
+    // ── 1. Binarise ──────────────────────────────────────────────────────────
     const gray = new cv.Mat();
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
     const bw = new cv.Mat();
     cv.adaptiveThreshold(gray, bw, 255, cv.ADAPTIVE_THRESH_MEAN_C, cv.THRESH_BINARY_INV, 15, -2);
+    gray.delete();
 
-    // 2. Create Horizontal and Vertical Kernels
-    const horizontalSize = bw.cols / 30;
-    const verticalSize = bw.rows / 30;
-
-    const horizontalStructure = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(horizontalSize, 1));
-    const verticalStructure = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(1, verticalSize));
+    // ── 2. Extract pure H / V line masks ─────────────────────────────────────
+    const hSize = Math.max(25, Math.round(bw.cols / 40));
+    const vSize = Math.max(25, Math.round(bw.rows / 40));
+    const hStruct = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(hSize, 1));
+    const vStruct = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(1, vSize));
 
     const horizontal = new cv.Mat();
     const vertical = new cv.Mat();
+    const anchor = new cv.Point(-1, -1);
 
-    // 3. Extract lines
-    cv.erode(bw, horizontal, horizontalStructure, new cv.Point(-1, -1));
-    cv.dilate(horizontal, horizontal, horizontalStructure, new cv.Point(-1, -1));
+    cv.erode(bw, horizontal, hStruct, anchor); cv.dilate(horizontal, horizontal, hStruct, anchor);
+    cv.erode(bw, vertical, vStruct, anchor); cv.dilate(vertical, vertical, vStruct, anchor);
 
-    cv.erode(bw, vertical, verticalStructure, new cv.Point(-1, -1));
-    cv.dilate(vertical, vertical, verticalStructure, new cv.Point(-1, -1));
+    // Immediate memory release
+    bw.delete(); hStruct.delete(); vStruct.delete();
 
-    // 4. Combine to find intersections = Table Grid
-    const tableMask = new cv.Mat();
-    cv.addWeighted(horizontal, 0.5, vertical, 0.5, 0.0, tableMask);
+    // ── 3. TRUE junctions = pixels where BOTH H and V lines exist ────────────
+    const junctionMask = new cv.Mat();
+    cv.bitwise_and(horizontal, vertical, junctionMask);
 
-    // 5. Count intersections
-    const contours = new cv.MatVector();
-    const hierarchy = new cv.Mat();
-    cv.findContours(tableMask, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    const jKernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
+    cv.dilate(junctionMask, junctionMask, jKernel, anchor);
+    jKernel.delete();
 
-    const intersectionCount = contours.size();
+    const jContours = new cv.MatVector();
+    const jHier = new cv.Mat();
+    cv.findContours(junctionMask, jContours, jHier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    const junctionCount = jContours.size();
 
-    // 6. Calculate bounding box of all detected intersections to check completeness
-    let minX = bw.cols, minY = bw.rows, maxX = 0, maxY = 0;
-    let found = false;
-    for (let i = 0; i < contours.size(); i++) {
-        const rect = cv.boundingRect(contours.get(i));
-        minX = Math.min(minX, rect.x);
-        minY = Math.min(minY, rect.y);
-        maxX = Math.max(maxX, rect.x + rect.width);
-        maxY = Math.max(maxY, rect.y + rect.height);
+    // Release early
+    jContours.delete(); jHier.delete(); junctionMask.delete();
+
+    // ── 4. Bounding box of table (for cut-off detection) ─────────────────────
+    const combined = new cv.Mat();
+    cv.bitwise_or(horizontal, vertical, combined);
+    const bbContours = new cv.MatVector();
+    const bbHier = new cv.Mat();
+    cv.findContours(combined, bbContours, bbHier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+    let minX = src.cols, minY = src.rows, maxX = 0, maxY = 0, found = false;
+    for (let i = 0; i < bbContours.size(); i++) {
+        const c = bbContours.get(i);
+        const r = cv.boundingRect(c);
+        minX = Math.min(minX, r.x);
+        minY = Math.min(minY, r.y);
+        maxX = Math.max(maxX, r.x + r.width);
+        maxY = Math.max(maxY, r.y + r.height);
         found = true;
     }
+    combined.delete(); bbContours.delete(); bbHier.delete();
 
-    // Heuristic for cut-off: 
-    // If table grid is very small and touches edge, it's likely cut off.
-    // If table grid is huge (fills the frame), it's a valid full-page capture.
     const tableWidth = maxX - minX;
     const tableHeight = maxY - minY;
-    const isFullFrame = (tableWidth > bw.cols * 0.85) || (tableHeight > bw.rows * 0.85);
-
+    const isFullFrame = tableWidth > src.cols * 0.85 || tableHeight > src.rows * 0.85;
     const margin = 2;
     let isTableCutOff = false;
     if (found && !isFullFrame) {
-        if (minX <= margin || minY <= margin || maxX >= bw.cols - margin || maxY >= bw.rows - margin) {
+        if (minX <= margin || minY <= margin || maxX >= src.cols - margin || maxY >= src.rows - margin)
             isTableCutOff = true;
-        }
     }
 
-    // 7. Count Rows and Columns
-    // Dilate lines to merge broken segments
-    const horizontalDilated = new cv.Mat();
-    const verticalDilated = new cv.Mat();
-    // Use larger kernel to merge nearby lines
-    const kernelH = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(bw.cols / 20, 1));
-    const kernelV = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(1, bw.rows / 20));
+    // ── 5. Row / col band count ──────────────────────────────────────────────
+    const kH = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(Math.round(src.cols / 20), 1));
+    const kV = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(1, Math.round(src.rows / 20)));
+    const hDil = new cv.Mat(), vDil = new cv.Mat();
+    cv.dilate(horizontal, hDil, kH, anchor);
+    cv.dilate(vertical, vDil, kV, anchor);
+    kH.delete(); kV.delete(); horizontal.delete(); vertical.delete();
 
-    cv.dilate(horizontal, horizontalDilated, kernelH);
-    cv.dilate(vertical, verticalDilated, kernelV);
+    const hC = new cv.MatVector(); const hCHier = new cv.Mat();
+    const vC = new cv.MatVector(); const vCHier = new cv.Mat();
+    cv.findContours(hDil, hC, hCHier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    cv.findContours(vDil, vC, vCHier, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    const rowCount = hC.size();
+    const colCount = vC.size();
 
-    const hContours = new cv.MatVector();
-    const vContours = new cv.MatVector();
-    cv.findContours(horizontalDilated, hContours, new cv.Mat(), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-    cv.findContours(verticalDilated, vContours, new cv.Mat(), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    // Final release
+    hDil.delete(); vDil.delete(); hC.delete(); hCHier.delete(); vC.delete(); vCHier.delete();
 
-    const rowCount = hContours.size();
-    const colCount = vContours.size();
+    console.log(`[TableDetect] junctions=${junctionCount} rows=${rowCount} cols=${colCount} (${src.cols}×${src.rows})`);
 
-    // Cleanup
-    gray.delete(); bw.delete(); horizontal.delete(); vertical.delete();
-    horizontalStructure.delete(); verticalStructure.delete(); tableMask.delete();
-    contours.delete(); hierarchy.delete();
-    horizontalDilated.delete(); verticalDilated.delete(); kernelH.delete(); kernelV.delete();
-    hContours.delete(); vContours.delete();
-
+    // ── 6. Decision ──────────────────────────────────────────────────────────
     return {
-        hasTable: intersectionCount > 3,
+        hasTable: junctionCount >= 15,
         isTableCutOff,
         isFullFrame,
         rowCount,
-        colCount
+        colCount,
+        junctionCount
     };
 };
 
@@ -299,74 +314,47 @@ const detectScreenshotOpenCV = (src) => {
     // Cleanup
     gray.delete(); srcVec.delete(); hist.delete(); mask.delete();
 
-    // Threshold:
-    // If ONE single color (bin) accounts for > 25% of the image, it's digital/screenshot.
-    // Photos rarely have > 5-10% in a single 1/256 bin unless completely blown out/black.
-    // Digital docs usually have > 60-80% background color.
+    // Threshold lowered: 0.18 → captures phone home screens with dominant background color
+    // (phone wallpapers often have one dominant color band)
     return {
-        isScreenshot: peakRatio > 0.25,
+        isScreenshot: peakRatio > 0.18,
         peakRatio
     };
 };
 
 /* ===================== DIGITAL UI DETECTION (Status Bars/Headers) ===================== */
 const detectDigitalUIOpenCV = (src) => {
-    // Check Top/Bottom 15% for perfect flat rows (Status bars, Nav bars)
     const height = src.rows;
-    const scanHeight = Math.min(150, Math.floor(height * 0.15));
+    const scanHeight = Math.min(80, Math.floor(height * 0.05));
+    if (scanHeight < 2) return { hasDigitalUI: false, zoneMean: 255 };
 
     const gray = new cv.Mat();
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
-    let maxContiguousTop = 0;
-    let currentContiguousTop = 0;
-
-    // Scan Top
+    const data = gray.data;
+    const cols = gray.cols;
+    const stride = 4;
+    let sum = 0, sumSq = 0, cnt = 0;
     for (let y = 0; y < scanHeight; y++) {
-        const row = gray.row(y);
-        const mean = new cv.Mat();
-        const std = new cv.Mat();
-        cv.meanStdDev(row, mean, std);
-        const stdDev = std.data64F[0];
-
-        // Digital row is flat (stdDev < 2.0 to catch compressed flat rows)
-        if (stdDev < 2.0) {
-            currentContiguousTop++;
-        } else {
-            maxContiguousTop = Math.max(maxContiguousTop, currentContiguousTop);
-            currentContiguousTop = 0;
+        const rowOff = y * cols;
+        for (let x = 0; x < cols; x += stride) {
+            const v = data[rowOff + x];
+            sum += v;
+            sumSq += v * v;
+            cnt++;
         }
-        row.delete(); mean.delete(); std.delete();
     }
-    maxContiguousTop = Math.max(maxContiguousTop, currentContiguousTop);
-
-    let maxContiguousBottom = 0;
-    let currentContiguousBottom = 0;
-
-    // Scan Bottom
-    for (let y = height - 1; y > height - scanHeight; y--) {
-        const row = gray.row(y);
-        const mean = new cv.Mat();
-        const std = new cv.Mat();
-        cv.meanStdDev(row, mean, std);
-        const stdDev = std.data64F[0];
-
-        if (stdDev < 2.0) {
-            currentContiguousBottom++;
-        } else {
-            maxContiguousBottom = Math.max(maxContiguousBottom, currentContiguousBottom);
-            currentContiguousBottom = 0;
-        }
-        row.delete(); mean.delete(); std.delete();
-    }
-    maxContiguousBottom = Math.max(maxContiguousBottom, currentContiguousBottom);
-
     gray.delete();
 
-    // A status bar is usually at least 20px
-    const hasDigitalUI = maxContiguousTop > 20 || maxContiguousBottom > 20;
+    const zoneMean = cnt > 0 ? sum / cnt : 255;
+    const zoneVar = cnt > 0 ? (sumSq / cnt) - (zoneMean * zoneMean) : 0;
+    const zoneStd = Math.sqrt(Math.max(0, zoneVar));
 
-    return { hasDigitalUI, maxContiguousTop, maxContiguousBottom };
+    const isDarkStatusBar = zoneMean < 80;
+    const isFlatNarrow = zoneStd < 8 && scanHeight <= Math.floor(height * 0.03);
+    const hasDigitalUI = isDarkStatusBar || isFlatNarrow;
+
+    return { hasDigitalUI, zoneMean, zoneStd };
 };
 
 /* ===================== MAIN SCAN ===================== */
@@ -374,24 +362,24 @@ export const scanDocument = async (file) => {
     return new Promise((resolve, reject) => {
         const img = new Image();
         img.onload = () => {
+            const originalCanvas = document.createElement("canvas");
+            originalCanvas.width = img.width;
+            originalCanvas.height = img.height;
+            const ctx = originalCanvas.getContext("2d");
+            ctx.drawImage(img, 0, 0);
+
+            // Mandatory downscaling for memory safety on old phones
+            const canvas = _getOptimalCanvas(originalCanvas, 1024);
+            const width = canvas.width;
+            const height = canvas.height;
+
             try {
-                const canvas = document.createElement("canvas");
-                const scale = Math.min(1500 / img.width, 1500 / img.height, 1);
-                canvas.width = img.width * scale;
-                canvas.height = img.height * scale;
-                canvas.getContext("2d", { willReadFrequently: true }).drawImage(img, 0, 0, canvas.width, canvas.height);
-
-                const issues = [];
-                let crop = null;
-
                 if (cvReady()) {
-                    const src = cv.imread(canvas);
-                    const width = src.cols;
-                    const height = src.rows;
+                    let src = cv.imread(canvas);
 
                     // 1. Blur Check
                     const blurScore = detectBlurOpenCV(src);
-                    const isBlurry = blurScore < 40; // Extremely lenient for mobile (was 60)
+                    const isBlurry = blurScore < 40;
 
                     // 2. Lighting/Shadow Check
                     const light = detectLightingOpenCV(src);
@@ -399,16 +387,15 @@ export const scanDocument = async (file) => {
 
                     // 3. Document/Object Check (Saturation)
                     const colorStats = detectColorStats(src);
-                    // Very relaxed saturation check (some documents have colorful stamps/logos)
                     const isDocument = colorStats.saturation < 140;
 
                     // 4. Cut-off Check (Edge Detection)
                     const edges = detectEdgesOpenCV(src);
                     let isCutOff = false;
+                    let crop = null;
 
                     if (edges.detected) {
                         const b = edges.bounds;
-                        // For doc edges, require it to be very close to the edge to flag as cut-off
                         const margin = 2;
                         if (b.x <= margin || b.y <= margin || (b.x + b.width) >= (width - margin) || (b.y + b.height) >= (height - margin)) {
                             isCutOff = true;
@@ -418,7 +405,6 @@ export const scanDocument = async (file) => {
                             originalDimensions: { width, height }
                         };
                     } else {
-                        // Fallback crop
                         crop = {
                             x: 0, y: 0, width, height,
                             contourPoints: [{ x: 0, y: 0 }, { x: width, y: 0 }, { x: width, y: height }, { x: 0, y: height }],
@@ -429,65 +415,30 @@ export const scanDocument = async (file) => {
                     // 5. Table Detection
                     const tableAnalysis = detectTableOpenCV(src);
                     const hasTable = tableAnalysis.hasTable;
+                    if (tableAnalysis.isTableCutOff) isCutOff = true;
 
-                    // If the table analysis says it's cut off, or if we have a table but no detected doc edges, flag as cut off.
-                    if (tableAnalysis.isTableCutOff) {
-                        isCutOff = true;
-                    }
-
-                    // 6. Screenshot / Digital Doc Detection (Multi-Signal)
+                    // 6. Screenshot / Digital UI
                     const screenshotAnalysis = detectScreenshotOpenCV(src);
-
-                    // 7. Digital UI Detection (Status bars / Headers)
                     const uiAnalysis = detectDigitalUIOpenCV(src);
 
-                    // suspicionScore Calculation:
-                    // - Digital UI Found -> +5 (Immediate Reject)
-                    // - Background Flatness (High Peak) -> +1 or +2
-                    // - No Edges Detected -> +1
-                    // - Low Saturation -> +1
-
                     let suspicionScore = 0;
-                    if (uiAnalysis.hasDigitalUI) suspicionScore += 5; // Status bars = Screenshot
+                    if (uiAnalysis.hasDigitalUI) suspicionScore += 5;
+                    if (screenshotAnalysis.peakRatio > 0.50) suspicionScore += 2;
+                    else if (screenshotAnalysis.peakRatio > 0.18) suspicionScore += 1;
+                    if (!edges.detected) suspicionScore += 1;
+                    if (colorStats.saturation < 40) suspicionScore += 1;
 
-                    if (screenshotAnalysis.peakRatio > 0.50) suspicionScore += 2; // Very flat
-                    else if (screenshotAnalysis.peakRatio > 0.25) suspicionScore += 1; // Somewhat flat
+                    const isScreenshot = hasTable ? suspicionScore >= 9 : suspicionScore >= 6;
 
-                    if (!edges.detected) suspicionScore += 1; // No document edges -> Full frame digital?
-                    if (colorStats.saturation < 40) suspicionScore += 1; // Grayscale digital?
-
-                    // THRESHOLD: 
-                    // Set to 6 for higher confidence. 
-                    // IMPORTANT: If a clear table is detected, we further reduce screenshot sensitivity.
-                    let isScreenshot = suspicionScore >= 6;
-                    if (hasTable && suspicionScore < 7) isScreenshot = false;
-
-                    if (isScreenshot) console.log("Screenshot detected with score:", suspicionScore);
-
-                    // CONSTRUCT VALIDATION RESULT
+                    // Clean up high-res src Mat immediately
+                    src.delete();
+                    src = null;
 
                     const analysis = {
-                        isDocument,
-                        isScreenshot,
-                        isBlurry,
-                        hasHeavyShadow,
-                        isCutOff,
-                        hasTable,
-                        isTableComplete: !isCutOff,
-                        isTableBlurry: isBlurry,
-                        hasTableShadow: hasHeavyShadow,
-                        suspicionScore,
-                        reason: ""
+                        isDocument, isScreenshot, isBlurry, hasHeavyShadow, isCutOff, hasTable,
+                        isTableComplete: !isCutOff, suspicionScore
                     };
 
-
-
-                    // Logic Refinement:
-                    // 1. IS SCREENSHOT? -> REJECT IMMEDIATELY.
-                    // 2. If it HAS A TABLE, we trust it more. Ignore Saturation check and lenient on CutOff.
-                    // 3. If it DOES NOT HAVE A TABLE, we are strict about saturation and cut-off.
-
-                    // DETERMINE STATUS AND MESSAGE
                     let status = "valid";
                     let message = "Complete and clear table detected";
 
@@ -500,59 +451,41 @@ export const scanDocument = async (file) => {
                     } else if (isCutOff && !tableAnalysis.isFullFrame) {
                         status = "error";
                         message = "Incomplete table detected. One or more table borders are missing.";
-                    } else if (tableAnalysis.rowCount < 18 || tableAnalysis.colCount < 16) {
-                        status = "error";
-                        message = "Incomplete table detected. One or more table borders are missing.";
                     } else if (isBlurry) {
                         status = "error";
                         message = "Invalid image. The document is blurry. Please hold the camera steady and retry.";
                     } else if (hasHeavyShadow) {
-                        // Accept minor shadow issues, but warn if severe
                         status = "fixed";
                         message = "Image accepted (minor shadows detected)";
                     }
 
-                    // MAPPING TO STRICT OUTPUT FORMAT
-                    let finalStatus = "success";
-                    let finalMessage = "Image accepted";
-                    let finalAction = "proceed";
-
-                    if (status === "error") {
-                        finalStatus = "error";
-                        finalMessage = message;
-                        finalAction = "retry";
-                    } else if (status === "fixed") {
-                        finalStatus = "success";
-                        finalMessage = "Image accepted"; // Was "Image enhanced and accepted"
-                        finalAction = "proceed";
+                    if (status === "valid" || status === "fixed") {
+                        const structure = validateSHGTableStructure(canvas);
+                        if (!structure.valid) {
+                            status = "error";
+                            message = structure.reason;
+                        }
                     }
 
-                    const finalResult = {
-                        status: finalStatus,
-                        message: finalMessage,
-                        action: finalAction,
+                    resolve({
+                        status: status === "error" ? "error" : "success",
+                        message: status === "error" ? message : "Image accepted",
+                        action: status === "error" ? "retry" : "proceed",
                         analysis,
                         crop,
                         canvas,
-                        isValid: finalStatus === "success"
-                    };
-
-                    resolve(finalResult);
+                        isValid: status !== "error"
+                    });
 
                 } else {
-                    resolve({
-                        status: "error",
-                        message: "OpenCV not loaded. Please refresh the page.",
-                        isValid: false
-                    });
+                    resolve({ status: "error", message: "OpenCV not loaded. Please refresh.", isValid: false });
                 }
-
             } catch (e) {
-                console.error("Scanner Error:", e);
-                reject(e);
+                console.error("[Scanner] Error during scan:", e);
+                resolve({ status: "error", message: `Internal processing error: ${e.message}`, isValid: false });
             }
         };
-        img.onerror = reject;
+        img.onerror = () => reject(new Error("Image failed to load"));
         img.src = URL.createObjectURL(file);
     });
 };
@@ -642,79 +575,281 @@ export const detectDocument = (canvas) => {
     }
 };
 
-/* ===================== IMAGE ENHANCEMENT (Native-Grade UHD Scan v8) ===================== */
-export const enhanceImage = (canvas) => {
-    if (!cvReady()) return canvas;
+/* ===================== IMAGE ENHANCEMENT (Native-Grade UHD Scan v9) ===================== */
+export const enhanceImage = async (canvas, onProgress = () => { }) => {
+    if (!cvReady()) {
+        console.warn("[Enhance] OpenCV not ready, returning original.");
+        return canvas;
+    }
 
-    const src = cv.imread(canvas);
+    // Yield to let React render the message before starting heavy work
+    const tick = () => new Promise(r => setTimeout(r, 0));
 
-    // 0. Adaptive Blur Assessment for Enhancement Tuning
-    const blurScore = detectBlurOpenCV(src);
-    const isSharp = blurScore > 60; // Standard threshold for high-quality scan
-    const isExtremelyBlurry = blurScore < 25;
+    console.log("[Enhance] Starting enhancement pipeline...");
+    onProgress("Analyzing...");
+    await tick();
 
-    const gray = new cv.Mat();
-    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+    let src = null, gray = null, illuminationMap = null, tinyGray = null, tinyBlur = null;
+    let kernel = null, normalized = null, balanced = null, whitened = null;
+    let blurStructure = null, midResult = null, blurText = null, finalResult = null;
 
-    // 0b. Noise Removal (Salt & Pepper Dots)
-    // Median blur specifically targets the small black/white dots without blurring edges much
-    cv.medianBlur(gray, gray, 3);
+    try {
+        src = cv.imread(canvas);
+        console.log(`[Enhance] Source Mat: ${src.rows}x${src.cols}, type=${src.type()}, channels=${src.channels()}`);
 
-    // 1. ADVANCED SHADING CORRECTION (Intensity Map)
-    // Create an illumination map to neutralize uneven shadows
-    const illuminationMap = new cv.Mat();
-    // Larger kernel for dilation to ensure text is fully covered for the lighting map
-    const kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(31, 31));
+        // --- Step 0: Intelligent Pre-Scan Detection ---
+        gray = new cv.Mat();
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
-    // Dilate to remove text while keeping background lighting gradients
-    cv.dilate(gray, illuminationMap, kernel);
-    // Extreme blur to ensure the illumination field is perfectly smooth - no local halos
-    cv.GaussianBlur(illuminationMap, illuminationMap, new cv.Size(251, 251), 0);
+        // Fast pixel sampling — no cv.calcHist needed
+        let veryDark = 0, veryBright = 0;
+        const data = gray.data;
+        for (let i = 0; i < data.length; i += 10) {
+            if (data[i] < 30) veryDark++;
+            else if (data[i] > 230) veryBright++;
+        }
+        const sampledTotal = Math.ceil(data.length / 10);
+        const extremeRatio = (veryDark + veryBright) / sampledTotal;
 
-    // Normalize: (Source / IlluminationMap) * 255
-    const normalized = new cv.Mat();
-    cv.divide(gray, illuminationMap, normalized, 255);
+        console.log(`[Enhance] extremeRatio=${extremeRatio.toFixed(3)}`);
 
-    // 2. High-Precision Contrast & Local Equalization (CLAHE)
-    const balanced = new cv.Mat();
-    // Reduced clipLimit (1.5) to prevent over-amplifying grain in dark shadow regions
-    const clahe = new cv.CLAHE(1.5, new cv.Size(8, 8));
-    clahe.apply(normalized, balanced);
-    clahe.delete();
+        if (extremeRatio > 0.90) {
+            console.log("[Enhance] Already a clean scan, bypassing.");
+            onProgress("Format accepted");
+            src.delete(); gray.delete();
+            return canvas;
+        }
 
-    // 2b. Global Whitening Pass (The "previous effect" user requested)
-    // This pushes light-grey shadow remnants into pure white.
-    const whitened = new cv.Mat();
-    // Dynamic whitening based on sharpness
-    const whiteScale = isSharp ? 1.15 : 1.10;
-    const whiteOffset = isSharp ? -15 : -10;
-    balanced.convertTo(whitened, cv.CV_8U, whiteScale, whiteOffset);
+        // --- Step 0b: Blur Assessment ---
+        const blurScore = detectBlurOpenCV(src);
+        const isSharp = blurScore > 60;
+        const isExtremelyBlurry = blurScore < 25;
+        console.log(`[Enhance] blurScore=${blurScore.toFixed(1)}, isSharp=${isSharp}`);
 
-    // 3. Multi-Radius Sharpening (Adaptive Natural Pro v15)
-    // Step A: Structures (Bold lines)
-    const blurStructure = new cv.Mat();
-    cv.GaussianBlur(whitened, blurStructure, new cv.Size(15, 15), 0);
-    const midResult = new cv.Mat();
+        // --- Step 1: Shadow Removal ---
+        onProgress("Removing shadows...");
+        await tick();
 
-    // Scale sharpening weight based on sharpness - BOOSTED for table clarity
-    const structureWeight = isSharp ? 0.45 : (isExtremelyBlurry ? 0.15 : 0.30);
-    cv.addWeighted(whitened, 1 + structureWeight, blurStructure, -structureWeight, 0, midResult);
+        cv.medianBlur(gray, gray, 3);
 
-    // Step B: Natural Fine Text (Subtle strokes)
-    const blurText = new cv.Mat();
-    cv.GaussianBlur(midResult, blurText, new cv.Size(5, 5), 0);
-    const finalResult = new cv.Mat();
+        illuminationMap = new cv.Mat();
+        tinyGray = new cv.Mat();
+        tinyBlur = new cv.Mat();
 
-    const textWeight = isSharp ? 0.20 : (isExtremelyBlurry ? 0.05 : 0.15);
-    cv.addWeighted(midResult, 1 + textWeight, blurText, -textWeight, 0, finalResult);
+        const iScale = 256 / Math.max(gray.rows, gray.cols);
+        cv.resize(gray, tinyGray, new cv.Size(Math.round(gray.cols * iScale), Math.round(gray.rows * iScale)), 0, 0, cv.INTER_AREA);
+        kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(7, 7));
+        cv.dilate(tinyGray, tinyBlur, kernel);
+        cv.GaussianBlur(tinyBlur, tinyBlur, new cv.Size(31, 31), 0);
+        cv.resize(tinyBlur, illuminationMap, new cv.Size(gray.cols, gray.rows), 0, 0, cv.INTER_LINEAR);
 
-    const outputCanvas = document.createElement("canvas");
-    cv.imshow(outputCanvas, finalResult);
+        normalized = new cv.Mat();
+        cv.divide(gray, illuminationMap, normalized, 255);
 
-    // Cleanup
-    src.delete(); gray.delete(); illuminationMap.delete(); kernel.delete();
-    normalized.delete(); balanced.delete(); whitened.delete();
-    blurStructure.delete(); midResult.delete(); blurText.delete(); finalResult.delete();
+        // --- Step 2: Contrast ---
+        onProgress("Tuning contrast...");
+        await tick();
 
-    return outputCanvas;
+        balanced = new cv.Mat();
+        const clahe = new cv.CLAHE(1.8, new cv.Size(8, 8));
+        clahe.apply(normalized, balanced);
+        clahe.delete();
+
+        // --- Step 3: Whitening ---
+        onProgress("Whitening...");
+        await tick();
+
+        whitened = new cv.Mat();
+        const whiteScale = isSharp ? 1.20 : 1.15;
+        const whiteOffset = isSharp ? -20 : -15;
+        balanced.convertTo(whitened, cv.CV_8U, whiteScale, whiteOffset);
+        console.log(`[Enhance] Whitening done (scale=${whiteScale}).`);
+
+        // --- Step 4: Sharpening ---
+        onProgress("Sharpning...");
+        await tick();
+
+        blurStructure = new cv.Mat();
+        cv.GaussianBlur(whitened, blurStructure, new cv.Size(15, 15), 0);
+        midResult = new cv.Mat();
+        const structureWeight = isSharp ? 0.35 : (isExtremelyBlurry ? 0.15 : 0.25);
+        cv.addWeighted(whitened, 1 + structureWeight, blurStructure, -structureWeight, 0, midResult);
+
+        blurText = new cv.Mat();
+        cv.GaussianBlur(midResult, blurText, new cv.Size(5, 5), 0);
+        finalResult = new cv.Mat();
+        const textWeight = isSharp ? 0.25 : (isExtremelyBlurry ? 0.10 : 0.18);
+        cv.addWeighted(midResult, 1 + textWeight, blurText, -textWeight, 0, finalResult);
+
+        // --- Step 5: Output ---
+        onProgress("Finalizing...");
+        await tick();
+
+        const outputCanvas = document.createElement("canvas");
+        outputCanvas.width = canvas.width;
+        outputCanvas.height = canvas.height;
+        cv.imshow(outputCanvas, finalResult);
+        console.log("[Enhance] Complete!");
+
+        src.delete(); gray.delete(); illuminationMap.delete(); kernel.delete();
+        tinyGray.delete(); tinyBlur.delete();
+        normalized.delete(); balanced.delete(); whitened.delete();
+        blurStructure.delete(); midResult.delete(); blurText.delete(); finalResult.delete();
+
+        return outputCanvas;
+
+    } catch (err) {
+        console.error("[Enhance] Pipeline crashed:", err);
+        try { if (src) src.delete(); } catch (_) { }
+        try { if (gray) gray.delete(); } catch (_) { }
+        try { if (illuminationMap) illuminationMap.delete(); } catch (_) { }
+        try { if (tinyGray) tinyGray.delete(); } catch (_) { }
+        try { if (tinyBlur) tinyBlur.delete(); } catch (_) { }
+        try { if (kernel) kernel.delete(); } catch (_) { }
+        try { if (normalized) normalized.delete(); } catch (_) { }
+        try { if (balanced) balanced.delete(); } catch (_) { }
+        try { if (whitened) whitened.delete(); } catch (_) { }
+        try { if (blurStructure) blurStructure.delete(); } catch (_) { }
+        try { if (midResult) midResult.delete(); } catch (_) { }
+        try { if (blurText) blurText.delete(); } catch (_) { }
+        try { if (finalResult) finalResult.delete(); } catch (_) { }
+        return canvas;
+    }
+};
+
+
+/* ===================== SHG TABLE STRUCTURE VALIDATOR ===================== */
+// Ratios from calibrated_template.json
+const SHG_ROW_RATIOS = [
+    0.035345, 0.058621, 0.02931, 0.037069, 0.053448, 0.093966,
+    0.039655, 0.039655, 0.039655, 0.039655, 0.039655, 0.038793,
+    0.039655, 0.041379, 0.040517, 0.038793, 0.040517, 0.040517,
+    0.039655, 0.040517, 0.043966, 0.05431, 0.035345
+];
+const SHG_COL_RATIOS = [
+    0.023597, 0.044573, 0.088621, 0.044048, 0.066597, 0.059255,
+    0.066597, 0.069219, 0.062402, 0.061353, 0.052963, 0.065024,
+    0.055585, 0.065024, 0.036707, 0.046146, 0.06817, 0.024122
+];
+
+/** Pearson correlation helper */
+const _pearsonCorr = (a, b) => {
+    const n = Math.min(a.length, b.length);
+    if (n < 2) return 0;
+    let ma = 0, mb = 0;
+    for (let i = 0; i < n; i++) { ma += a[i]; mb += b[i]; }
+    ma /= n; mb /= n;
+    let num = 0, den1 = 0, den2 = 0;
+    for (let i = 0; i < n; i++) {
+        let da = a[i] - ma, db = b[i] - mb;
+        num += da * db; den1 += da * da; den2 += db * db;
+    }
+    return Math.sqrt(den1 * den2) === 0 ? 0 : num / Math.sqrt(den1 * den2);
+};
+
+/** Find peaks in a 1D projection */
+const _findPeaks = (arr, threshold, minGap) => {
+    const peaks = [];
+    for (let i = 1; i < arr.length - 1; i++) {
+        if (arr[i] > threshold && arr[i] >= arr[i - 1] && arr[i] >= arr[i + 1]) {
+            if (peaks.length === 0 || i - peaks[peaks.length - 1] > minGap) {
+                peaks.push(i);
+            }
+        }
+    }
+    return peaks;
+};
+
+export const validateSHGTableStructure = (canvas) => {
+    if (!cvReady()) return { valid: true };
+
+    let src, gray, bw, hKernel, vKernel, horizontal, vertical, junctions;
+    try {
+        src = cv.imread(canvas);
+        gray = new cv.Mat();
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+        bw = new cv.Mat();
+        cv.adaptiveThreshold(gray, bw, 255, cv.ADAPTIVE_THRESH_MEAN_C, cv.THRESH_BINARY_INV, 15, -2);
+
+        // Extract junctions (scaled for structure analysis)
+        const hSize = Math.max(25, Math.round(bw.cols / 40));
+        const vSize = Math.max(25, Math.round(bw.rows / 40));
+        hKernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(hSize, 1));
+        vKernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(1, vSize));
+
+        horizontal = new cv.Mat(); vertical = new cv.Mat();
+        const anchor = new cv.Point(-1, -1);
+        cv.erode(bw, horizontal, hKernel, anchor); cv.dilate(horizontal, horizontal, hKernel, anchor);
+        cv.erode(bw, vertical, vKernel, anchor); cv.dilate(vertical, vertical, vKernel, anchor);
+        bw.delete(); bw = null;
+
+        junctions = new cv.Mat();
+        cv.bitwise_and(horizontal, vertical, junctions);
+
+        // Manual 1D Projections (Avoids cv.reduce which crashes some mobile browsers)
+        const height = junctions.rows;
+        const width = junctions.cols;
+        const jData = junctions.data8U; // Raw Uint8Array access via data8U for browser compatibility
+        const hProj = new Float32Array(height);
+        const vProj = new Float32Array(width);
+
+        for (let y = 0; y < height; y++) {
+            let rowSum = 0;
+            const rowOff = y * width;
+            for (let x = 0; x < width; x++) {
+                if (jData[rowOff + x] > 0) rowSum++;
+            }
+            hProj[y] = rowSum;
+        }
+        for (let x = 0; x < width; x++) {
+            let colSum = 0;
+            for (let y = 0; y < height; y++) {
+                if (jData[y * width + x] > 0) colSum++;
+            }
+            vProj[x] = colSum;
+        }
+
+        // Peak Detection: require at least 15 pixels density for a junction group
+        // Loosened thresholds to be more forgiving for older camera resolution/noise
+        const hPeaks = _findPeaks(Array.from(hProj), 13, 10);
+        const vPeaks = _findPeaks(Array.from(vProj), 10, 10);
+
+        console.log(`[SHG-Struct] Detected Peaks: rows=${hPeaks.length} cols=${vPeaks.length}`);
+
+        if (hPeaks.length < 13 || vPeaks.length < 10) {
+            return {
+                valid: false,
+                reason: "Table structure not clearly detected. Ensure even lighting and steady camera.",
+                peaks: { rows: hPeaks.length, cols: vPeaks.length }
+            };
+        }
+
+        const hGaps = [], vGaps = [];
+        const totalH = hPeaks[hPeaks.length - 1] - hPeaks[0] || 1;
+        const totalV = vPeaks[vPeaks.length - 1] - vPeaks[0] || 1;
+
+        for (let i = 1; i < hPeaks.length; i++) hGaps.push((hPeaks[i] - hPeaks[i - 1]) / totalH);
+        for (let i = 1; i < vPeaks.length; i++) vGaps.push((vPeaks[i] - vPeaks[i - 1]) / totalV);
+
+        const rowCorr = _pearsonCorr(hGaps, SHG_ROW_RATIOS);
+        const colCorr = _pearsonCorr(vGaps, SHG_COL_RATIOS);
+
+        console.log(`[SHG-Struct] Correlation: rows=${rowCorr.toFixed(2)} cols=${colCorr.toFixed(2)}`);
+
+        // Threshold 0.5 is very lenient for basic shape matching
+        if (rowCorr < 0.5 && colCorr < 0.5) {
+            return { valid: false, reason: "Not the correct document format. Only SHG Ledgers are accepted.", rowCorr, colCorr };
+        }
+
+        return { valid: true, rowCorr, colCorr };
+
+    } catch (e) {
+        console.error("Structure validation error:", e);
+        return { valid: true }; // Fail-safe: don't block user if check itself crashes
+    } finally {
+        if (src) src.delete(); if (gray) gray.delete(); if (bw) bw.delete();
+        if (hKernel) hKernel.delete(); if (vKernel) vKernel.delete();
+        if (horizontal) horizontal.delete(); if (vertical) vertical.delete();
+        if (junctions) junctions.delete();
+    }
 };
