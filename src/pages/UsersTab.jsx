@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, Edit, Trash2, FileSymlink, Filter, Loader2, X, Shield, User, MapPin, Phone, Lock, CheckCircle, Search, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, FileText, Calendar, AlertCircle, AlertTriangle, Settings, Power, Clock, Download, Eye, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
+import { Plus, Edit, Trash2, FileSymlink, Filter, Loader2, X, Shield, User, MapPin, Phone, Lock, Unlock, CheckCircle, Search, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, FileText, Calendar, AlertCircle, AlertTriangle, Settings, Power, Clock, Download, Eye, EyeOff, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { API_BASE } from '../utils/apiConfig';
 import { formatDateTime } from '../utils/dateUtils';
@@ -498,6 +498,7 @@ const UsersTab = ({ filterProps }) => {
   const [uploadsSummary, setUploadsSummary] = useState(null);
   const [selectedUpload, setSelectedUpload] = useState(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [status, setStatus] = useState('pending');
   const [rejectionReason, setRejectionReason] = useState('');
   const [showImageViewer, setShowImageViewer] = useState(false);
@@ -1280,6 +1281,7 @@ const UsersTab = ({ filterProps }) => {
       userID: user.userID || '',
       userName: user.userName || user.voName || ''
     });
+    setShowPassword(false);
     setShowEditModal(true);
   };
 
@@ -1314,6 +1316,7 @@ const UsersTab = ({ filterProps }) => {
       userID: '',
       userName: ''
     });
+    setShowPassword(false);
     setShowAddModal(true);
   };
 
@@ -2602,13 +2605,22 @@ const UsersTab = ({ filterProps }) => {
                               <div className="relative">
                                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300" />
                                 <input
-                                  type="password"
+                                  type={showPassword ? 'text' : 'password'}
                                   required={showAddModal}
                                   value={formData.password}
                                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                                  className="w-full bg-gray-50/50 border-2 border-gray-100 rounded-2xl pl-12 pr-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
+                                  className="w-full bg-gray-50/50 border-2 border-gray-100 rounded-2xl pl-12 pr-12 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
                                   placeholder="**********"
                                 />
+                                {formData.password && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-indigo-600 transition-colors focus:outline-none animate-in fade-in zoom-in duration-200"
+                                  >
+                                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                  </button>
+                                )}
                               </div>
                             </div>
 

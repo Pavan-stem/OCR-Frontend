@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
-import { Lock, MapPin, Users, ArrowRight, UserPlus, Home, Building, EyeClosed, Eye } from 'lucide-react';
+import { Lock, MapPin, Users, ArrowRight, UserPlus, Home, Building, EyeOff, Eye } from 'lucide-react';
 import { AUTH_API_BASE } from '../utils/apiConfig';
 
 const Register = () => {
@@ -318,13 +318,15 @@ const Register = () => {
                                 className="block w-full border rounded-lg py-2.5 px-3"
                                 required
                             />
-                            <button
-                                type="button"
-                                onClick={() => setShowPassword(!showPassword)}
-                                className="absolute inset-y-0 right-0 px-3 text-gray-500"
-                            >
-                                {showPassword ? <Eye size={20} /> : <EyeClosed size={20} />}
-                            </button>
+                            {password && (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className="absolute inset-y-0 right-0 px-3 text-gray-400 hover:text-indigo-600 transition-colors"
+                                >
+                                    {showPassword ? <Eye size={18} /> : <EyeOff size={18} />}
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -400,13 +402,15 @@ const Register = () => {
                                 className="block w-full border rounded-lg py-2.5 px-3"
                                 required
                             />
-                            <button
-                                type="button"
-                                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                                className="absolute inset-y-0 right-0 px-3 text-gray-500"
-                            >
-                                {showConfirmPassword ? <Eye size={20} /> : <EyeClosed size={20} />}
-                            </button>
+                            {confirmPassword && (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                    className="absolute inset-y-0 right-0 px-3 text-gray-400 hover:text-indigo-600 transition-colors"
+                                >
+                                    {showConfirmPassword ? <Eye size={18} /> : <EyeOff size={18} />}
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>

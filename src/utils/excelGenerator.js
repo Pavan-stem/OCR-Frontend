@@ -4,7 +4,8 @@ import * as XLSX from 'xlsx';
  * Mapping of internal stat keys to Telugu titles for SHG financial data
  */
 const TELUGU_HEADERS = {
-    totalSavings: "ఈ నెల పొదుపు",
+    totalSavings: "నెలవారీ డిపాజిట్లు (Monthly Deposits)",
+    totalCollections: "మొత్తం వసూళ్లు (Total Collections)",
     shgInternal: "SHG అంతర్గత అప్పు కట్టిన మొత్తం",
     bankLoan: "బ్యాంక్ అప్పు కట్టిన మొత్తం",
     streenidhiMicro: "స్త్రీనిధి మైక్రో అప్పు కట్టిన మొత్తం",
@@ -13,7 +14,7 @@ const TELUGU_HEADERS = {
     unnatiTSP: "ఉన్నతి (TSP) అప్పు కట్టిన మొత్తం",
     cif: "CIF అప్పు కట్టిన మొత్తం",
     voInternal: "VO అంతర్గత అప్పు కట్టిన మొత్తం",
-    totalLoansTaken: "మొత్తం (కొత్త అప్పు)",
+    totalLoansTaken: "మొత్తం అప్పు (Total Amount)",
     totalPenalties: "జరిమానా రకం",
     totalReturned: "సభ్యులకు తిరిగి ఇచ్చిన మొత్తం",
     otherSavings: "సభ్యుల ఇతర పొదుపు (విరాళం ఇతరములు)"
@@ -28,7 +29,7 @@ const TELUGU_HEADERS = {
  */
 export const exportPerformanceExcel = (breakdownData, level, allUnits = [], parentUnit = null) => {
     const FINANCIAL_HEADERS = [
-        "ఈ నెల పొదుపు",
+        "నెలవారీ డిపాజిట్లు (Monthly Deposits)",
         "SHG అంతర్గత అప్పు కట్టిన మొత్తం",
         "బ్యాంక్ అప్పు కట్టిన మొత్తం",
         "స్త్రీనిధి మైక్రో అప్పు కట్టిన మొత్తం",
@@ -37,6 +38,7 @@ export const exportPerformanceExcel = (breakdownData, level, allUnits = [], pare
         "ఉన్నతి (TSP) అప్పు కట్టిన మొత్తం",
         "CIF అప్పు కట్టిన మొత్తం",
         "VO అంతర్గత అప్పు కట్టిన మొత్తం",
+        "మొత్తం వసూళ్లు (Total Collections)",
         "మొత్తం (కొత్త అప్పు)",
         "జరిమానా రకం",
         "సభ్యులకు తిరిగి ఇచ్చిన మొత్తం",
@@ -45,7 +47,7 @@ export const exportPerformanceExcel = (breakdownData, level, allUnits = [], pare
     const FINANCIAL_KEYS = [
         'totalSavings', 'shgInternal', 'bankLoan', 'streenidhiMicro',
         'streenidhiTenni', 'unnatiSCSP', 'unnatiTSP', 'cif', 'voInternal',
-        'totalLoansTaken', 'totalPenalties', 'totalReturned', 'otherSavings'
+        'totalCollections', 'totalLoansTaken', 'totalPenalties', 'totalReturned', 'otherSavings'
     ];
 
     const headers = ["ID", "Name", ...FINANCIAL_HEADERS];

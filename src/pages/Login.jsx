@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
-import { Lock, Phone, ArrowRight, Activity, EyeClosed, Eye } from 'lucide-react';
+import { Lock, Phone, ArrowRight, Activity, EyeOff, Eye } from 'lucide-react';
 import { AUTH_API_BASE } from '../utils/apiConfig';
 
 const Login = () => {
@@ -112,13 +112,15 @@ const Login = () => {
                             placeholder="Password"
                             required
                         />
-                        <button
-                            type="button"
-                            onClick={() => setShowPassword(!showPassword)}
-                            className="absolute inset-y-0 right-0 px-3 text-gray-500"
-                        >
-                            {showPassword ? <Eye size={20} /> : <EyeClosed size={20} />}
-                        </button>
+                        {password && (
+                            <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="absolute inset-y-0 right-0 px-3 text-gray-500 hover:text-indigo-600 transition-colors"
+                            >
+                                {showPassword ? <Eye size={20} /> : <EyeOff size={20} />}
+                            </button>
+                        )}
                     </div>
                 </div>
 
