@@ -218,13 +218,91 @@ const OCRValidationTab = () => {
     );
   };
 
+  // ===================================================================
+  // V2.0 STATIC HEADERS - Same as SHGTableDetail.jsx
+  // V2.0 schema doesn't store headers in MongoDB (saves ~10-12KB per doc).
+  // Frontend loads them from these static constants instead.
+  // ===================================================================
+  const SHG_COLUMN_HEADERS_V2 = [
+    { index: 0, key: "member_mbk_id", label: "సభ్యురాలి MBK ID" },
+    { index: 1, key: "member_name", label: "సభ్యురాలు పేరు" },
+    { index: 2, key: "savings_this_month", label: "ఈ నెల పొదుపు" },
+    { index: 3, key: "shg_internal_loan_total", label: "SHG అంతర్గత అప్పు కట్టిన మొత్తం" },
+    { index: 4, key: "bank_loan_total", label: "బ్యాంక్ అప్పు కట్టిన మొత్తం" },
+    { index: 5, key: "streenidhi_micro_loan_total", label: "స్త్రీనిధి మైక్రో అప్పు కట్టిన మొత్తం" },
+    { index: 6, key: "streenidhi_tenni_loan_total", label: "స్త్రీనిధి టెన్నీ అప్పు కట్టిన మొత్తం" },
+    { index: 7, key: "unnathi_scsp_loan_total", label: "ఉన్నతి (SCSP) అప్పు కట్టిన మొత్తం" },
+    { index: 8, key: "unnathi_tsp_loan_total", label: "ఉన్నతి (TSP) అప్పు కట్టిన మొత్తం" },
+    { index: 9, key: "cif_loan_total", label: "CIF అప్పు కట్టిన మొత్తం" },
+    { index: 10, key: "vo_internal_loan_total", label: "VO అంతర్గత అప్పు కట్టిన మొత్తం" },
+    { index: 11, key: "loan_type", label: "అప్పు రకం" },
+    { index: 12, key: "loan_type_amount", label: "మొత్తం" },
+    { index: 13, key: "penalty_amount", label: "జరిమానా రకం" },
+    { index: 14, key: "returned_to_members", label: "సభ్యులకు తిరిగి ఇచ్చిన మొత్తం" },
+    { index: 15, key: "other_savings_total", label: "సభ్యుల ఇతర పొదుపు (విరాళం ఇతరములు)" },
+  ];
+
+  const BASE_SHG_HEADER_ROWS_V2 = [
+    // Row 1: Title row spanning all columns
+    [
+      { label: "………......................... స్వయం సహయక సంఘ  ................. తేదిన జరిగిన సమావేశ ఆర్థిక లావాదేవీలు వివరములు (అనుభందం - II)", col_span: 16, row_span: 1 }
+    ],
+    // Row 2: SHG MBK ID row (ID is injected dynamically)
+    [
+      { label: "SHG MBK ID", col_span: 1, row_span: 1, align: "left" },
+      { label: "", col_span: 15, row_span: 1, align: "left" } // Dynamic SHG ID goes here
+    ],
+    // Row 3: Financial transactions header
+    [
+      { label: "సభ్యుల స్థాయిలో జరిగిన ఆర్థిక లావాదేవీలు", col_span: 16, row_span: 1 }
+    ],
+    // Row 4: Main category headers
+    [
+      { label: "సభ్యురాలి MBK ID", col_span: 1, row_span: 2 },
+      { label: "సభ్యురాలు పేరు", col_span: 1, row_span: 2 },
+      { label: "ఈ నెల పొదుపు", col_span: 1, row_span: 2 },
+      { label: "అప్పు రికార్డు వివరములు", col_span: 8, row_span: 1 },
+      { label: "కొత్త అప్పు వివరాలు", col_span: 2, row_span: 1 },
+      { label: "జరిమానా రకం", col_span: 1, row_span: 2 },
+      { label: "సభ్యులకు తిరిగి ఇచ్చిన మొత్తం", col_span: 1, row_span: 2 },
+      { label: "సభ్యుల ఇతర పొదుపు (విరాళం ఇతరములు)", col_span: 1, row_span: 2 },
+    ],
+    // Row 5: Sub-headers (only appears under row 4's middle columns)
+    [
+      { label: "SHG అంతర్గత అప్పు కట్టిన మొత్తం", col_span: 1, row_span: 1 },
+      { label: "బ్యాంక్ అప్పు కట్టిన మొత్తం", col_span: 1, row_span: 1 },
+      { label: "స్త్రీనిధి మైక్రో అప్పు కట్టిన మొత్తం", col_span: 1, row_span: 1 },
+      { label: "స్త్రీనిధి టెన్నీ అప్పు కట్టిన మొత్తం", col_span: 1, row_span: 1 },
+      { label: "ఉన్నతి (SCSP) అప్పు కట్టిన మొత్తం", col_span: 1, row_span: 1 },
+      { label: "ఉన్నతి (TSP) అప్పు కట్టిన మొత్తం", col_span: 1, row_span: 1 },
+      { label: "CIF అప్పు కట్టిన మొత్తం", col_span: 1, row_span: 1 },
+      { label: "VO అంతర్గత అప్పు కట్టిన మొత్తం", col_span: 1, row_span: 1 },
+      { label: "అప్పు రకం", col_span: 1, row_span: 1 },
+      { label: "మొత్తం", col_span: 1, row_span: 1 },
+    ],
+  ];
+
   const renderTable = () => {
     if (!results?.table_data) return null;
 
     const tableData = results.table_data;
-    const headers = tableData.column_headers || [];
+    const schemaVersion = tableData.schema_version || "1.0";
+
+    // V2.0: Use static headers, V1.0: Use headers from API response
+    const headers = schemaVersion === "2.0" ? SHG_COLUMN_HEADERS_V2 : (tableData.column_headers || []);
     const dataRows = tableData.data_rows || [];
-    const headerRows = tableData.header_rows || [];
+
+    // V2.0: Build header rows with dynamic SHG ID injection
+    let headerRows;
+    if (schemaVersion === "2.0") {
+      headerRows = JSON.parse(JSON.stringify(BASE_SHG_HEADER_ROWS_V2)); // Deep copy
+      // Inject dynamic SHG ID into row 2, cell 2
+      const shgId = tableData.shg_mbk_id || tableData.shg_id || "";
+      headerRows[1][1].label = shgId;
+      headerRows[1][1].text = shgId;
+    } else {
+      headerRows = tableData.header_rows || [];
+    }
 
     return (
       <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
