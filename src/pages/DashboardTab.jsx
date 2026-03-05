@@ -233,7 +233,9 @@ const DashboardTab = ({ filterProps }) => {
         }
 
       } catch (error) {
-        console.error('Failed to load stats:', error);
+        console.error('Failed to load upload stats:', error);
+        setStats(prev => ({ ...prev, loading: false }));
+      } finally {
         setStats(prev => ({ ...prev, loading: false }));
       }
     };

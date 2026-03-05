@@ -9,7 +9,7 @@ export default defineConfig(({ command, mode }) => {
 
   let base = '/';
   if (isGitHubPages) base = '/OCR-Frontend/';
-  else if (isSMD) base = '/Test/';  // SMD deployment path
+  else if (isSMD) base = '/SMD/';  // SMD deployment path
   // Dev mode should use root path for proper public asset serving
 
   return {
@@ -29,11 +29,13 @@ export default defineConfig(({ command, mode }) => {
         '192.168.1.*',    // Allow any 192.168.1.x
       ],
       proxy: {
+
         '/api': {
-          target: 'http://localhost:5004/OCRtest',
+          target: 'http://localhost:5002/OCR',
           changeOrigin: true,
           secure: false,
         },
+
       },
     },
     build: {

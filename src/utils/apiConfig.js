@@ -31,7 +31,7 @@ export const getApiBase = () => {
 
   // 3️⃣ Production (deployed site)
   console.log(`[API Config] Using production backend`);
-  return "https://api.stemverse.app/OCRtest";
+  return "https://api.stemverse.app/OCR";
 };
 
 export const getAuthApiBase = () => {
@@ -49,7 +49,7 @@ export const getAuthApiBase = () => {
     }
   }
 
-  return "https://api.stemverse.app/OCRtest";
+  return "https://api.stemverse.app/OCR";
 };
 
 export const API_BASE = getApiBase();
