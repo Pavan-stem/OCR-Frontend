@@ -6,20 +6,20 @@ import * as XLSX from 'xlsx';
  * Order matches the analytics cards shown in the UI.
  */
 const FINANCIAL_COLUMNS = [
-    { key: 'totalSavings', header: 'నెలవారీ డిపాజిట్లు (Monthly Deposits)' },
-    { key: 'bankLoan', header: 'బ్యాంక్ అప్పు కట్టిన మొత్తం (Bank Loan Repaid)' },
+    { key: 'totalSavings', header: 'ఈ నెల పొదుపు (Monthly Savings)' },
     { key: 'shgInternal', header: 'SHG అంతర్గత అప్పు కట్టిన మొత్తం (SHG Internal)' },
+    { key: 'bankLoan', header: 'బ్యాంక్ అప్పు కట్టిన మొత్తం (Bank Loan Repaid)' },
     { key: 'streenidhiMicro', header: 'స్త్రీనిధి మైక్రో అప్పు కట్టిన మొత్తం (Streenidhi Micro)' },
     { key: 'streenidhiTenni', header: 'స్త్రీనిధి టెన్నీ అప్పు కట్టిన మొత్తం (Streenidhi Tenny)' },
     { key: 'unnatiSCSP', header: 'ఉన్నతి (SCSP) అప్పు కట్టిన మొత్తం (Unnati SCSP)' },
     { key: 'unnatiTSP', header: 'ఉన్నతి (TSP) అప్పు కట్టిన మొత్తం (Unnati TSP)' },
     { key: 'cif', header: 'CIF అప్పు కట్టిన మొత్తం (CIF Loan)' },
     { key: 'voInternal', header: 'VO అంతర్గత అప్పు కట్టిన మొత్తం (VO Internal)' },
-    { key: 'totalCollections', header: 'మొత్తం వసూళ్లు (Total Collections = Sum of Loans Repaid)' },
-    { key: 'totalLoansTaken', header: 'మంజూరు చేసిన అప్పు (Loans Sanctioned / New Loans)' },
-    { key: 'totalPenalties', header: 'జరిమానా (Late Penalties)' },
+    { key: 'totalCollections', header: 'మొత్తం వసూళ్లు (Total Collections)' },
+    { key: 'totalLoansTaken', header: 'మొత్తం (New Loans / Loans Sanctioned)' },
+    { key: 'totalPenalties', header: 'జరిమానా రకం (Penalties)' },
     { key: 'totalReturned', header: 'సభ్యులకు తిరిగి ఇచ్చిన మొత్తం (Savings Withdrawal)' },
-    { key: 'otherSavings', header: 'సభ్యుల ఇతర పొదుపు (Other Savings)' },
+    { key: 'otherSavings', header: 'సభ్యుల ఇతర పొదుపు (విరాళం ఇతరములు) (Other Savings)' },
 ];
 
 const HEADERS = ['#', 'ID', 'Name', ...FINANCIAL_COLUMNS.map(c => c.header)];
