@@ -166,6 +166,17 @@ const AnalyticsPage = ({ filterProps }) => {
     const [refreshKey, setRefreshKey] = useState(0);
     const [isSSEConnected, setIsSSEConnected] = useState(false);
 
+    // Toast Notification State
+    const [toast, setToast] = useState(null); // { type: 'info'|'success'|'error'|'loading', message, countdown }
+
+    const showToast = (type, message, duration = 5000) => {
+        setToast({ type, message });
+        if (type !== 'loading') {
+            setTimeout(() => setToast(null), duration);
+        }
+    };
+    const clearToast = () => setToast(null);
+
     // User Role Info
     const user = useMemo(() => {
         try {
@@ -341,24 +352,44 @@ const AnalyticsPage = ({ filterProps }) => {
 
 
     const handleDetailedDownload = async (item, loadedChildren = []) => {
+        const MAX_RETRIES = 3;
+        const RETRY_DELAY_MS = 8000;
+
+        const fetchBreakdown = async (url, retryCount = 0) => {
+            const token = localStorage.getItem('token');
+            const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+            const data = await response.json();
+
+            if (data.success && data.coldStart) {
+                if (retryCount < MAX_RETRIES) {
+                    const remaining = MAX_RETRIES - retryCount;
+                    showToast('loading', `⏳ Financial data is being calculated... Auto-retrying in 8s (${remaining} attempt${remaining > 1 ? 's' : ''} left)`);
+                    await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+                    return fetchBreakdown(url, retryCount + 1);
+                } else {
+                    clearToast();
+                    showToast('error', '❌ Financial data is still building. Please try downloading again in 30 seconds.', 7000);
+                    return null;
+                }
+            }
+            return data;
+        };
+
         try {
             const token = localStorage.getItem('token');
             const isVO = item.role === 'VO';
             const isCC = item.role === 'CC';
             const isAPM = item.role === 'APM';
 
+            showToast('loading', `⏳ Calculating dependent flows for ${item.role} report: ${item.name}... (This may take a moment)`);
+
             const baseParams = {
-                district: item.location?.district || filters.district || 'all',
-                mandal: item.location?.mandal || filters.mandal || 'all',
                 month: filters.month,
                 year: filters.year,
-                refresh: 'true'
             };
 
             if (isAPM) {
-                // Use the already-loaded hierarchy children from HierarchicalRow state.
-                // These have the correct CC names (same as what shows in the table) and clusterIDs.
-                // If not yet expanded, fetch them now using the same fetchChildren logic.
+                // Fetch CCs from hierarchy if not already loaded to get the list of CC IDs
                 let ccs = loadedChildren.filter(c => c.role === 'CC' || c.clusterID);
                 if (ccs.length === 0) {
                     const hierarchyParams = new URLSearchParams({
@@ -373,86 +404,89 @@ const AnalyticsPage = ({ filterProps }) => {
                     ccs = (hData.success ? hData.data : []) || [];
                 }
 
-                // Extract clusterIDs and names exactly as hierarchy gives them
                 const ccIDs = ccs.map(c => c.clusterID || c.id).filter(Boolean);
-
                 const params = new URLSearchParams({
                     ...baseParams,
-                    groupBy: 'clusterID',
-                    filterField: 'mandal',
-                    filterId: item.location?.mandal || filters.mandal,
+                    level: 'apm',
+                    parentId: item.userID || item.id,
                     ccIDs: ccIDs.join(',')
                 }).toString();
 
-                const response = await fetch(`${API_BASE}/api/payments/breakdown?${params}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const data = await response.json();
+                const data = await fetchBreakdown(`${API_BASE}/api/payments/deep-breakdown?${params}`);
+                if (!data) return;
                 if (data.success) {
-                    if (data.coldStart) {
-                        alert('⏳ Financial data is still being calculated for this month. Please retry in 15–30 seconds to get the full data.');
-                        return;
-                    }
+                    clearToast();
                     exportPerformanceExcel(data.data, data.level, ccs, item);
+                    showToast('success', `✅ APM report for "${item.name}" downloaded successfully!`, 4000);
                 } else {
-                    alert(data.message || "Failed to fetch CC data");
+                    clearToast();
+                    showToast('error', data.message || 'Failed to fetch CC data', 5000);
                 }
 
             } else if (isCC) {
-                // CC -> VOs, filter by clusterID
+                // CC → VOs (Deep Breakdown will roll up from SHGs)
                 const params = new URLSearchParams({
                     ...baseParams,
-                    groupBy: 'voID',
-                    filterField: 'clusterID',
-                    filterId: item.clusterID || item.id
+                    level: 'cc',
+                    parentId: item.clusterID || item.id
                 }).toString();
-                const response = await fetch(`${API_BASE}/api/payments/breakdown?${params}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const data = await response.json();
+
+                const data = await fetchBreakdown(`${API_BASE}/api/payments/deep-breakdown?${params}`);
+                if (!data) return;
                 if (data.success) {
-                    if (data.coldStart) {
-                        alert('⏳ Financial data is still being calculated for this month. Please retry in 15–30 seconds to get the full data.');
-                        return;
-                    }
+                    clearToast();
                     exportPerformanceExcel(data.data, data.level, [], item);
+                    showToast('success', `✅ CC report for "${item.name}" downloaded successfully!`, 4000);
                 } else {
-                    alert(data.message || "Failed to fetch VO data");
+                    clearToast();
+                    showToast('error', data.message || 'Failed to fetch VO data', 5000);
                 }
 
             } else if (isVO) {
-                // VO download → Excel contains SHG rows (groupBy shg_mbk_id)
+                // VO → SHGs
                 const voParams = new URLSearchParams({
                     ...baseParams,
-                    groupBy: 'shg_mbk_id',
-                    filterField: 'voID',
-                    filterId: item.voID || item.id
+                    level: 'vo',
+                    parentId: item.voID || item.id
                 }).toString();
-                const voResponse = await fetch(`${API_BASE}/api/payments/breakdown?${voParams}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const voData = await voResponse.json();
+
+                const voData = await fetchBreakdown(`${API_BASE}/api/payments/deep-breakdown?${voParams}`);
+                if (!voData) return;
                 if (voData.success) {
-                    if (voData.coldStart) {
-                        alert('⏳ Financial data is still being calculated for this month. Please retry in 15–30 seconds to get the full data.');
-                        return;
-                    }
+                    clearToast();
                     exportPerformanceExcel(voData.data, voData.level, [], item);
+                    showToast('success', `✅ VO report for "${item.name}" downloaded successfully!`, 4000);
                 } else {
-                    alert(voData.message || "Failed to fetch VO data");
+                    clearToast();
+                    showToast('error', voData.message || 'Failed to fetch SHG data', 5000);
                 }
             } else {
-                // fallback (should not reach for known roles)
-                alert("Download not supported for this level.");
+                clearToast();
+                showToast('error', 'Download not supported for this level.', 4000);
             }
         } catch (err) {
-            console.error("Download Error:", err);
-            alert("Failed to download detailed report.");
+            console.error('Download Error:', err);
+            clearToast();
+            showToast('error', 'Failed to download report. Please check connection and try again.', 5000);
         }
     };
 
     return (
         <div className="min-h-screen text-white p-4 lg:p-8 animate-in fade-in duration-700 pb-16">
+            {/* Toast Notification */}
+            {toast && (
+                <div className={`fixed bottom-6 right-6 z-[9999] flex items-start gap-3 px-5 py-4 rounded-2xl shadow-2xl border max-w-sm animate-in slide-in-from-bottom-4 fade-in duration-300 ${toast.type === 'loading' ? 'bg-indigo-900 border-indigo-700 text-white' :
+                    toast.type === 'success' ? 'bg-emerald-900 border-emerald-700 text-white' :
+                        toast.type === 'error' ? 'bg-rose-900 border-rose-700 text-white' :
+                            'bg-slate-900 border-slate-700 text-white'
+                    }`}>
+                    {toast.type === 'loading' && <Loader2 className="w-4 h-4 text-indigo-300 animate-spin mt-0.5 shrink-0" />}
+                    {toast.type === 'success' && <CheckCircle className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />}
+                    {toast.type === 'error' && <AlertCircle className="w-4 h-4 text-rose-400 mt-0.5 shrink-0" />}
+                    <p className="text-xs font-bold leading-relaxed">{toast.message}</p>
+                    <button onClick={clearToast} className="ml-auto text-white/40 hover:text-white/80 transition-colors shrink-0 mt-0.5">✕</button>
+                </div>
+            )}
             {/* Header & Controls */}
             <div className="flex flex-col lg:flex-row bg-white/[0.03] backdrop-blur-3xl p-8 rounded-[32px] border border-white/10 shadow-2xl justify-between items-start lg:items-center gap-6 mb-8">
                 <div className="w-[25rem]">
