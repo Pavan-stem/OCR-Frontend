@@ -22,7 +22,7 @@ const FINANCIAL_COLUMNS = [
     { key: 'otherSavings', header: 'సభ్యుల ఇతర పొదుపు (విరాళం ఇతరములు) (Other Savings)' },
 ];
 
-const HEADERS = ['#', 'ID', 'Name', ...FINANCIAL_COLUMNS.map(c => c.header)];
+const HEADERS = ['S.No', 'ID', 'Name', ...FINANCIAL_COLUMNS.map(c => c.header)];
 
 
 /**
@@ -91,16 +91,16 @@ export const exportPerformanceExcel = (breakdownData, level, allUnits = [], pare
     // ── 2. Build sheet data ─────────────────────────────────────────────────
     const sheetData = [HEADERS];
 
+    // Children rows
+    rows.forEach((item, idx) => {
+        sheetData.push(buildRow(idx + 1, item.id ?? '', item.name ?? '', item.stats ?? {}));
+    });
+
     // Parent summary row (overall totals)
     if (parentUnit) {
         const pId = parentUnit.userID || parentUnit.clusterID || parentUnit.voID || parentUnit.id || '';
         sheetData.push(buildRow('TOTAL', pId, `[${parentUnit.role}] ${parentUnit.name} — Grand Total`, parentStats));
     }
-
-    // Children rows
-    rows.forEach((item, idx) => {
-        sheetData.push(buildRow(idx + 1, item.id ?? '', item.name ?? '', item.stats ?? {}));
-    });
 
     // ── 3. Create Worksheet ─────────────────────────────────────────────────
     const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
