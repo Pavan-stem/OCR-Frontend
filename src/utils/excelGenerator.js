@@ -99,7 +99,8 @@ export const exportPerformanceExcel = (breakdownData, level, allUnits = [], pare
     // Parent summary row (overall totals)
     if (parentUnit) {
         const pId = parentUnit.userID || parentUnit.clusterID || parentUnit.voID || parentUnit.id || '';
-        sheetData.push(buildRow('TOTAL', pId, `[${parentUnit.role}] ${parentUnit.name} — Grand Total`, parentStats));
+        sheetData.push([])
+        sheetData.push(buildRow('TOTAL', pId, `[${parentUnit.role}] ${parentUnit.name}`, parentStats));
     }
 
     // ── 3. Create Worksheet ─────────────────────────────────────────────────
