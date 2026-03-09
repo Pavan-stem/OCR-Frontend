@@ -23,6 +23,7 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
     const [galleryError, setGalleryError] = useState(null);
     const [isGalleryLoading, setIsGalleryLoading] = useState(false);
     const [galleryRejection, setGalleryRejection] = useState(null); // { message } when scan fails
+    const [isGalleryMode, setIsGalleryMode] = useState(false); // Explicitly track gallery flow
 
     // Live Validation State
     const [liveStatus, setLiveStatus] = useState({
@@ -96,6 +97,7 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
             lastStableUpdate.current = 0;
             setGalleryRejection(null);
             setGalleryError(null);
+            setIsGalleryMode(false); // Ensure fresh start on open
         }
     }, [open]);
 
@@ -108,13 +110,36 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
             isLoopingRef.current = false; // Ensure loop is stopped
         } else if (hadGalleryRejectionRef.current && open && !capturedImageData && !isLoopingRef.current) {
             hadGalleryRejectionRef.current = false;
-            startProcessingLoop();
+            // Only restart the loop if we aren't in gallery mode
+            if (!isGalleryMode) {
+                startProcessingLoop();
+            }
         }
-    }, [galleryRejection, open, capturedImageData]);
+    }, [galleryRejection, open, capturedImageData, isGalleryMode]);
 
-    // Initialize camera
+    // Initialize camera and recovery-from-cancel logic
     useEffect(() => {
-        if (!open || capturedImageData) return;
+        // Recovery: If window gets focus and we are stuck in gallery mode without loading, return to camera
+        const handleFocus = () => {
+            // Delay slightly to allow handleGalleryUpload to set isGalleryLoading if a file was picked
+            setTimeout(() => {
+                if (isGalleryMode && !isGalleryLoading && !capturedImageData && open) {
+                    console.log("Gallery picker likely cancelled, returning to camera...");
+                    setIsGalleryMode(false);
+                }
+            }, 500);
+        };
+
+        if (isGalleryMode) {
+            window.addEventListener('focus', handleFocus);
+        }
+
+        // CRITICAL: Block initialization if in gallery mode or if image already captured
+        if (!open || capturedImageData || isGalleryMode) {
+            return () => {
+                window.removeEventListener('focus', handleFocus);
+            };
+        }
 
         let stream = null;
         const initCamera = async () => {
@@ -156,23 +181,22 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
         }
 
         return () => {
+            window.removeEventListener('focus', handleFocus);
             isLoopingRef.current = false;
             if (stream) {
                 stream.getTracks().forEach(track => track.stop());
+            } else if (videoRef.current?.srcObject) {
+                // Persistent track stopping on unmount
+                videoRef.current.srcObject.getTracks().forEach(track => track.stop());
             }
-            if (uiAnimationFrameId.current) {
-                cancelAnimationFrame(uiAnimationFrameId.current);
-            }
-            if (processingTimeoutId.current) {
-                clearTimeout(processingTimeoutId.current);
-            }
-            // Deep Memory Cleanup
+            if (uiAnimationFrameId.current) cancelAnimationFrame(uiAnimationFrameId.current);
+            if (processingTimeoutId.current) clearTimeout(processingTimeoutId.current);
             maxBlurVarRef.current = 0;
             bestFrameRef.current = null;
             bestPointsRef.current = null;
             rawPointsRef.current = null;
         };
-    }, [open, capturedImageData]);
+    }, [open, capturedImageData, isGalleryMode, isGalleryLoading]);
 
     const startProcessingLoop = () => {
         if (isLoopingRef.current) return; // Prevent multiple loops
@@ -691,6 +715,7 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
         setManualRotation(0);
         setStableContour(null);
         setSmoothedContour(null);
+        setIsGalleryMode(false); // Returning to live camera
         pointsTracker.current = null;
         rawPointsRef.current = null;
         maxBlurVarRef.current = 0;
@@ -701,7 +726,7 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
         setIsProcessing(false);
         captureTriggeredRef.current = false;
         setGalleryRejection(null);
-        // The initCamera side-effect will restart the stream because capturedImageData changes
+        setIsGalleryMode(false); // Returning to manual scanning
     };
 
     /**
@@ -916,11 +941,12 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
         const height = videoRef.current.offsetHeight;
 
         if (width === 0 || height === 0) return;
-
         canvas.width = width;
         canvas.height = height;
-
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Don't draw if camera is hidden or in gallery mode
+        if (capturedImageData || isGalleryMode) return;
 
         if (smoothedContour) {
             const video = videoRef.current;
@@ -1086,25 +1112,45 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
 
                         {/* Capture Button Container */}
                         <div className="absolute bottom-10 left-0 right-0 flex justify-center items-center z-20 gap-8">
-                            {/* Gallery Button */}
-                            <button
-                                onClick={() => fileInputRef.current?.click()}
-                                disabled={isGalleryLoading}
-                                className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white hover:bg-white/20 transition-all active:scale-95 shadow-lg disabled:opacity-50"
-                                title={t?.('upload.gallery') || "Upload from Gallery"}
-                            >
-                                {isGalleryLoading
-                                    ? <Loader size={24} className="animate-spin" />
-                                    : <ImageIcon size={24} />}
-                            </button>
+                            {/* Gallery/Back Button */}
+                            {isGalleryMode && !isGalleryLoading ? (
+                                <button
+                                    onClick={() => setIsGalleryMode(false)}
+                                    className="w-12 h-12 rounded-full bg-blue-600/80 backdrop-blur-md border border-white/20 flex items-center justify-center text-white hover:bg-blue-500 transition-all active:scale-95 shadow-lg"
+                                    title="Back to Camera"
+                                >
+                                    <ScanLine size={24} />
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={() => {
+                                        // 1. Set explicit gallery mode to prevent re-init
+                                        setIsGalleryMode(true);
+                                        setSmoothedContour(null); // Clear overlay ghosting
+                                        // 2. Stop active tracks immediately
+                                        if (videoRef.current?.srcObject) {
+                                            videoRef.current.srcObject.getTracks().forEach(track => track.stop());
+                                        }
+                                        setIsCameraActive(false);
+                                        fileInputRef.current?.click();
+                                    }}
+                                    disabled={isGalleryLoading}
+                                    className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white hover:bg-white/20 transition-all active:scale-95 shadow-lg disabled:opacity-50"
+                                    title={t?.('upload.gallery') || "Upload from Gallery"}
+                                >
+                                    {isGalleryLoading
+                                        ? <Loader size={24} className="animate-spin" />
+                                        : <ImageIcon size={24} />}
+                                </button>
+                            )}
 
                             {/* Camera Shutter */}
                             <button
                                 onClick={() => handleCapture()} // Wrap in lambda to avoid event object pollution
-                                disabled={!isCameraActive || isProcessing}
-                                className={`w-20 h-20 rounded-full border-4 flex items-center justify-center transition-all duration-300 ${liveStatus.isValid ? 'border-green-500 scale-110' : 'border-white'}`}
+                                disabled={!isCameraActive || isProcessing || isGalleryMode}
+                                className={`w-20 h-20 rounded-full border-4 flex items-center justify-center transition-all duration-300 ${isGalleryMode ? 'border-gray-500/50 opacity-50' : liveStatus.isValid ? 'border-green-500 scale-110' : 'border-white'}`}
                             >
-                                <div className={`w-16 h-16 rounded-full ${liveStatus.isValid ? 'bg-green-500 animate-pulse' : 'bg-white'}`}></div>
+                                <div className={`w-16 h-16 rounded-full ${isGalleryMode ? 'bg-gray-500/50' : liveStatus.isValid ? 'bg-green-500 animate-pulse' : 'bg-white'}`}></div>
                             </button>
 
                             {/* Spacer to balance the layout */}
