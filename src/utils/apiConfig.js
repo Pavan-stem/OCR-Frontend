@@ -5,7 +5,7 @@
  */
 export const getApiBase = () => {
   // Browser check
-  if (typeof window === "undefined") return "/OCR";
+  if (typeof window === "undefined") return "/OCRTest";
 
   // 1️⃣ Environment variable takes highest priority
   if (import.meta.env.VITE_OCR_API_URL) {
