@@ -67,6 +67,153 @@ function detectBlur(cv, src) {
     }
 }
 
+/* ═══════════════ Obstruction Detection ═══════════════ */
+/**
+ * Improved Detect significant obstructions (fingers, earbuds, pens) on the document.
+ * Using Area, Aspect Ratio, and Solidity filters for high accuracy and low false positives.
+ */
+/**
+ * Robust "Erase and Detect" obstruction detection.
+ * Optimized for sensitivity to pens/fingers and tolerance for dense text.
+ */
+function detectObstructions(cv, src, tableMask = null) {
+    const release = (...mats) => mats.forEach(m => { if (m) try { m.delete(); } catch (e) { } });
+
+    let gray, thresh, deskewed, hLines, vLines, gridThick, masked, contours, hierarchy;
+
+    try {
+        const height = src.rows;
+        const width = src.cols;
+        const imgArea = height * width;
+
+        // Resolution adaptive kernel scaling
+        const kLarge = Math.max(3, Math.round(Math.min(width, height) / 40));
+        const kMedium = Math.max(3, Math.round(Math.min(width, height) / 80));
+
+        gray = new cv.Mat();
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+
+        // 1. DESKEWING (Dominant Angle Adaptation)
+        thresh = new cv.Mat();
+        cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_MEAN_C, cv.THRESH_BINARY_INV, 11, 2);
+
+        let lines = new cv.Mat();
+        cv.HoughLinesP(thresh, lines, 1, Math.PI / 180, 80, width / 4, 10);
+        let angles = [];
+        for (let i = 0; i < lines.rows; ++i) {
+            let x1 = lines.data32S[i * 4], y1 = lines.data32S[i * 4 + 1];
+            let x2 = lines.data32S[i * 4 + 2], y2 = lines.data32S[i * 4 + 3];
+            let angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
+            if (angle > 45) angle -= 90;
+            if (angle < -45) angle += 90;
+            if (Math.abs(angle) < 15) angles.push(angle);
+        }
+        release(lines);
+
+        let medianAngle = 0;
+        if (angles.length > 0) {
+            angles.sort((a, b) => a - b);
+            medianAngle = angles[Math.floor(angles.length / 2)];
+        }
+
+        deskewed = new cv.Mat();
+        if (Math.abs(medianAngle) > 1.5) {
+            let center = new cv.Point(width / 2, height / 2);
+            let M = cv.getRotationMatrix2D(center, medianAngle, 1);
+            cv.warpAffine(thresh, deskewed, M, new cv.Size(width, height), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
+            M.delete();
+        } else {
+            thresh.copyTo(deskewed);
+        }
+
+        // Apply provided table mask if available (Table Area Masking)
+        if (tableMask) {
+            let temp = new cv.Mat();
+            cv.bitwise_and(deskewed, tableMask, temp);
+            temp.copyTo(deskewed);
+            temp.delete();
+        }
+
+        // 2. GRID ERASURE (THICK SUBTRACTION)
+        const hKernelSize = Math.max(kLarge, Math.round(width / 30));
+        const vKernelSize = Math.max(kLarge, Math.round(height / 30));
+        let hKernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(hKernelSize, 1));
+        let vKernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(1, vKernelSize));
+
+        hLines = new cv.Mat();
+        vLines = new cv.Mat();
+        cv.morphologyEx(deskewed, hLines, cv.MORPH_OPEN, hKernel);
+        cv.morphologyEx(deskewed, vLines, cv.MORPH_OPEN, vKernel);
+
+        gridThick = new cv.Mat();
+        cv.bitwise_or(hLines, vLines, gridThick);
+
+        // Ensure 100% erasure by thickening grid lines
+        let kDialateGrid = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
+        cv.dilate(gridThick, gridThick, kDialateGrid);
+
+        masked = new cv.Mat();
+        cv.subtract(deskewed, gridThick, masked);
+
+        hKernel.delete(); vKernel.delete(); kDialateGrid.delete();
+
+        // 3. OBJECT RECONNECTION
+        let kReconnect = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(kMedium, kMedium));
+        cv.dilate(masked, masked, kReconnect);
+        kReconnect.delete();
+
+        let kCleanup = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(kMedium, kMedium));
+        cv.morphologyEx(masked, masked, cv.MORPH_OPEN, kCleanup);
+        kCleanup.delete();
+
+        // 4. CENTER-WEIGHTED DETECTION
+        contours = new cv.MatVector();
+        hierarchy = new cv.Mat();
+        cv.findContours(masked, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+        let hasObstruction = false;
+        const areaThreshold = 0.007;     // 0.7% of image area
+        const solidityThreshold = 0.72;  // High solidity check
+
+        // ROI: Central region to ignore edge artifacts
+        const roiLeft = width * 0.1, roiRight = width * 0.9;
+        const roiTop = height * 0.1, roiBottom = height * 0.9;
+
+        for (let i = 0; i < contours.size(); ++i) {
+            const cnt = contours.get(i);
+            const area = cv.contourArea(cnt);
+
+            if (area > imgArea * areaThreshold) {
+                const rect = cv.boundingRect(cnt);
+                const centerX = rect.x + rect.width / 2;
+                const centerY = rect.y + rect.height / 2;
+
+                if (tableMask || (centerX > roiLeft && centerX < roiRight && centerY > roiTop && centerY < roiBottom)) {
+                    const hull = new cv.Mat();
+                    cv.convexHull(cnt, hull);
+                    const hullArea = cv.contourArea(hull);
+                    const solidity = hullArea > 0 ? area / hullArea : 0;
+                    hull.delete();
+
+                    const aspectRatio = rect.width / rect.height;
+                    if (aspectRatio > 0.25 && aspectRatio < 4.5 && solidity > solidityThreshold) {
+                        hasObstruction = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        return { hasObstruction };
+
+    } catch (e) {
+        console.error("Gallery Obstruction Pipeline Error:", e);
+        return { hasObstruction: false };
+    } finally {
+        release(gray, thresh, deskewed, hLines, vLines, gridThick, masked, contours, hierarchy);
+    }
+}
+
 /* ═══════════════ Structural Validation ═══════════════ */
 function validateStructure(cv, src) {
     const reasons = [];
@@ -180,12 +327,17 @@ function validateStructure(cv, src) {
         const tblW = Math.max(dist(ordered[0], ordered[1]), dist(ordered[3], ordered[2]));
         const tblH = Math.max(dist(ordered[0], ordered[3]), dist(ordered[1], ordered[2]));
 
-        // Obstacle Detection (Diagonal lines)
+        // Obstacle Detection (Diagonal lines + Robust Obstruction Pipeline)
         const tableDiag = Math.sqrt(tblW ** 2 + tblH ** 2);
         const totalDLength = dLines.reduce((s, l) => s + l.length, 0);
         const dRatio = tableDiag > 0 ? totalDLength / tableDiag : 0;
         metrics.diagonalRatio = Math.round(dRatio * 100) / 100;
-        if (dRatio > 1.5) reasons.push('Obstacles detected covering the table (remove fingers/objects)');
+
+        // Use the table boundary to mask obstruction detection (Requirement: "lie on the table/document itself")
+        const obstruction = detectObstructions(cv, src, roiMask);
+        if (dRatio > 1.8 || obstruction.hasObstruction) {
+            reasons.push('Object detected on document. Please remove any objects (fingers, pens, etc.) and retry.');
+        }
 
         // Grid Integrity Detection
         if (rowCenters.length >= 3 && colCenters.length >= 3) {

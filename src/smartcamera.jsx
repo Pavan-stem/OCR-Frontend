@@ -820,12 +820,83 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
             const sourceCanvas = result.canvas;
             isFromGalleryRef.current = true; // Mark as gallery source
 
-            // LOAD ORIGINAL DIRECTLY (User request: Bypass gallery enhancement)
-            setCapturedImageData(sourceCanvas.toDataURL('image/jpeg', 0.95));
-            setIsProcessing(false);
-            setProcessingMessage('');
-            setIsEnhancing(false);
-            setEnhancementStatus("");
+            // ── New: Auto-crop and Enhance Gallery Image (Mirroring handleCapture) ──
+            setIsProcessing(true);
+            setProcessingMessage('Cropping document...');
+
+            let resultCanvas = sourceCanvas;
+            let finalContour = result.corners;
+
+            try {
+                // 1. Apply Orientation-Aware Padding (Mirroring processFrame logic)
+                if (finalContour && cvReady()) {
+                    const videoWidth = sourceCanvas.width;
+                    const videoHeight = sourceCanvas.height;
+
+                    // Calculate orientation
+                    const w = Math.hypot(finalContour[1].x - finalContour[0].x, finalContour[1].y - finalContour[0].y);
+                    const h = Math.hypot(finalContour[3].x - finalContour[0].x, finalContour[3].y - finalContour[0].y);
+                    const isLandscape = h > w;
+
+                    const padSide = isLandscape ? 0.10 : 0.08;
+                    const padTopBot = isLandscape ? 0.06 : 0.25;
+
+                    const centerX = finalContour.reduce((sum, p) => sum + p.x, 0) / 4;
+                    const centerY = finalContour.reduce((sum, p) => sum + p.y, 0) / 4;
+
+                    finalContour = finalContour.map(p => {
+                        let newX = p.x + (p.x - centerX) * padSide;
+                        let newY = p.y + (p.y - centerY) * padTopBot;
+                        return {
+                            x: Math.max(0, Math.min(newX, videoWidth)),
+                            y: Math.max(0, Math.min(newY, videoHeight))
+                        };
+                    });
+
+                    // Perform Warp with Padded Points
+                    resultCanvas = warpPerspective(sourceCanvas, finalContour);
+
+                    // 1b. SECONDARY PASS: Detect and tighten crop
+                    const refinedContour = detectDocument(resultCanvas);
+                    if (refinedContour) {
+                        resultCanvas = warpPerspective(resultCanvas, refinedContour);
+                    }
+                }
+
+                // SHOW RAW CROP IMMEDIATELY
+                setCapturedImageData(resultCanvas.toDataURL('image/jpeg', 0.95));
+                setIsProcessing(false);
+                setProcessingMessage('');
+                setIsEnhancing(true);
+
+                // 2. APPLY FILTERS IN BACKGROUND
+                setTimeout(async () => {
+                    try {
+                        if (cvReady()) {
+                            setEnhancementStatus("Analyzing...");
+                            const finalCanvas = await enhanceImage(resultCanvas, (msg) => {
+                                setEnhancementStatus(msg);
+                            });
+                            if (finalCanvas) {
+                                setCapturedImageData(finalCanvas.toDataURL("image/jpeg", 0.95));
+                            }
+                        }
+                        setIsEnhancing(false);
+                        setEnhancementStatus("");
+                    } catch (err) {
+                        console.error("Gallery enhancement failed:", err);
+                        setIsEnhancing(false);
+                        setEnhancementStatus("");
+                    }
+                }, 50);
+
+            } catch (cropErr) {
+                console.error("Gallery crop error:", cropErr);
+                // Fallback to original if crop fails
+                setCapturedImageData(sourceCanvas.toDataURL('image/jpeg', 0.95));
+                setIsProcessing(false);
+                setProcessingMessage('');
+            }
 
         } catch (err) {
             setGalleryError(err.message || 'Failed to process image.');
@@ -1045,7 +1116,7 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
                             <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center z-[100] backdrop-blur-sm">
                                 <div className="w-16 h-16 border-4 border-green-500 border-t-transparent rounded-full animate-spin mb-4 shadow-[0_0_15px_rgba(34,197,94,0.5)]"></div>
                                 <div className="bg-black/40 px-6 py-2 rounded-full border border-white/10 text-white font-bold animate-pulse">
-                                    Processing HD Image...
+                                    {processingMessage || "Processing HD Image..."}
                                 </div>
                             </div>
                         )}
