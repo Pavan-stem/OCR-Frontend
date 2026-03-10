@@ -203,7 +203,7 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
         isLoopingRef.current = true;
 
         const processFrame = () => {
-            if (!videoRef.current || !canvasRef.current || !open || capturedImageData || !isLoopingRef.current) {
+            if (!videoRef.current || !canvasRef.current || !open || capturedImageData || !isLoopingRef.current || isGalleryMode) {
                 isLoopingRef.current = false;
                 return;
             }
@@ -1124,10 +1124,21 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
                             ) : (
                                 <button
                                     onClick={() => {
-                                        // 1. Set explicit gallery mode to prevent re-init
-                                        setIsGalleryMode(true);
+                                        // 1. Stop active loops first
+                                        isLoopingRef.current = false;
+                                        if (processingTimeoutId.current) clearTimeout(processingTimeoutId.current);
+                                        if (uiAnimationFrameId.current) cancelAnimationFrame(uiAnimationFrameId.current);
+
+                                        // 2. Reset capture state
+                                        steadyCount.current = 0;
+                                        setCaptureProgress(0);
                                         setSmoothedContour(null); // Clear overlay ghosting
-                                        // 2. Stop active tracks immediately
+                                        setStableContour(null);
+
+                                        // 3. Set explicit gallery mode to prevent re-init
+                                        setIsGalleryMode(true);
+
+                                        // 4. Stop active tracks immediately
                                         if (videoRef.current?.srcObject) {
                                             videoRef.current.srcObject.getTracks().forEach(track => track.stop());
                                         }
