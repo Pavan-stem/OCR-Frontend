@@ -5,7 +5,7 @@
  */
 export const getApiBase = () => {
   // Browser check
-  if (typeof window === "undefined") return "/OCRTest";
+  if (typeof window === "undefined") return "/OCR";
 
   // 1️⃣ Environment variable takes highest priority
   if (import.meta.env.VITE_OCR_API_URL) {
@@ -31,7 +31,7 @@ export const getApiBase = () => {
 
   // 3️⃣ Production (deployed site)
   console.log(`[API Config] Using production backend`);
-  return "https://api.stemverse.app/OCRTest";
+  return "https://api.stemverse.app/OCR";
 };
 
 export const getAuthApiBase = () => {
@@ -49,7 +49,7 @@ export const getAuthApiBase = () => {
     }
   }
 
-  return "https://api.stemverse.app/OCRTest";
+  return "https://api.stemverse.app/OCR";
 };
 
 export const API_BASE = getApiBase();
