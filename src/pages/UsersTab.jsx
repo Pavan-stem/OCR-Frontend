@@ -2949,9 +2949,14 @@ const UsersTab = ({ filterProps }) => {
                                           <button
                                             onClick={() => handleQuickStatusUpdate(upload, 'validated')}
                                             disabled={uploading}
-                                            className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1"
+                                            className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1 disabled:opacity-70 disabled:grayscale"
                                           >
-                                            <CheckCircle size={14} /> Approve
+                                            {uploading ? (
+                                              <Loader2 size={14} className="animate-spin" />
+                                            ) : (
+                                              <CheckCircle size={14} />
+                                            )}
+                                            {uploading ? 'Processing...' : 'Approve'}
                                           </button>
                                           <button
                                             onClick={() => openStatusModal(upload)}
