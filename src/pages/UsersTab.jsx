@@ -576,6 +576,13 @@ const UsersTab = ({ filterProps }) => {
   const [isConnected, setIsConnected] = useState(true);
   const [updatingMaintenance, setUpdatingMaintenance] = useState(false);
   const [isMaintenanceCollapsed, setIsMaintenanceCollapsed] = useState(true);
+  
+  // Approval Gate States
+  const [gateStatus, setGateStatus] = useState({ isOpen: false, message: '', lastUpdatedAt: null, lastUpdatedBy: null });
+  const [showGateModal, setShowGateModal] = useState(false);
+  const [isTogglingGate, setIsTogglingGate] = useState(false);
+  const [gateMessage, setGateMessage] = useState('');
+  const [isGateCollapsed, setIsGateCollapsed] = useState(true);
   // [MOVED TO PROPS]: expandedRows, loadingNodes
 
   // Helper to update children in a nested tree
@@ -1162,6 +1169,99 @@ const UsersTab = ({ filterProps }) => {
     }
   };
 
+  // Approval Gate Functions
+  useEffect(() => {
+    fetchGateStatus();
+    const interval = setInterval(fetchGateStatus, 15000); // Sync every 15s
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchGateStatus = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_BASE}/api/approval-gate/status`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setGateStatus(data.gateStatus);
+      }
+    } catch (err) {
+      console.error('Error fetching gate status:', err);
+    }
+  };
+
+  const handleToggleGate = async () => {
+    setIsTogglingGate(true);
+    try {
+      const token = localStorage.getItem('token');
+      const newStatus = !gateStatus.isOpen;
+      
+      // If opening gate and it has a backlog, auto-process
+      const autoProcessBacklog = newStatus; // Auto-process when opening
+      
+      const res = await fetch(`${API_BASE}/api/approval-gate/toggle`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          isOpen: newStatus,
+          message: gateMessage,
+          autoProcessBacklog: autoProcessBacklog
+        })
+      });
+      
+      const data = await res.json();
+      if (data.success) {
+        setGateStatus(data.gateStatus);
+        setShowGateModal(false);
+        setGateMessage('');
+        
+        const statusMsg = newStatus ? 'OPENED' : 'CLOSED';
+        const backlogMsg = data.gateStatus.backlogQueued > 0 
+          ? ` and queued ${data.gateStatus.backlogQueued} previously approved uploads`
+          : '';
+        alert(`Gate ${statusMsg} successfully!${backlogMsg}`);
+      } else {
+        alert(data.message || 'Failed to toggle gate');
+      }
+    } catch (err) {
+      console.error('Error toggling gate:', err);
+      alert('Error toggling approval gate');
+    } finally {
+      setIsTogglingGate(false);
+    }
+  };
+
+  const handleApproveAndQueue = async (uploadId, userId) => {
+    try {
+      const token = localStorage.getItem('token');
+      
+      const res = await fetch(`${API_BASE}/api/approval-gate/approve-and-queue/${uploadId}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      const data = await res.json();
+      if (data.success) {
+        alert('Upload approved and queued for conversion!');
+        if (selectedUser && selectedUser._id === userId) {
+          fetchUserUploads(userId, { isBackground: true });
+        }
+      } else {
+        alert(data.message || 'Failed to approve upload');
+      }
+    } catch (err) {
+      console.error('Error approving upload:', err);
+      alert('Error approving upload');
+    }
+  };
+
   const handleAddUser = async (e) => {
     e.preventDefault();
     setIsSaving(true);
@@ -1358,87 +1458,173 @@ const UsersTab = ({ filterProps }) => {
     setUploading(true);
     if (!selectedUpload) return;
 
-    const finalStatus = 'rejected'; // ← source of truth
+    // Determine final status based on user selection
+    const finalStatus = status || 'rejected'; // User selects status in UI
 
     try {
       const token = localStorage.getItem('token');
 
       console.log('Update Status Payload:', {
         status: finalStatus,
-        rejectionReason
+        rejectionReason,
+        viaGate: finalStatus === 'validated'
       });
 
-      const res = await fetch(
-        `${API_BASE}/api/admin/uploads/${selectedUpload._id}/status`,
-        {
-          method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            status: finalStatus,
-            rejectionReason
-          })
-        }
-      );
+      // If approving (validating), use the gated approval endpoint
+      if (finalStatus === 'validated') {
+        const res = await fetch(
+          `${API_BASE}/api/approval-gate/approve/${selectedUpload._id}`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
 
-      const data = await res.json();
-      if (data.success) {
-        alert('Status updated successfully!');
-        setShowStatusModal(false);
-        setSelectedUpload(null);
-        fetchUserUploads(selectedUser._id, { isBackground: true });
+        const data = await res.json();
+        if (data.success) {
+          const message = data.upload.queued
+            ? 'Upload approved and queued for conversion!'
+            : 'Upload approved! Conversion queuing is skipped (gate is CLOSED).';
+          alert(message);
+          setShowStatusModal(false);
+          setSelectedUpload(null);
+          setStatus('pending');
+          setRejectionReason('');
+          fetchUserUploads(selectedUser._id, { isBackground: true });
 
-        // Refresh specific user tier to update main table metrics
-        if (selectedUser && selectedUser._id) {
-          const parentId = findParentId(selectedUser._id, users);
-          const userIdsToSync = [selectedUser._id];
-          if (parentId) userIdsToSync.push(parentId);
+          // Refresh specific user tier to update main table metrics
+          if (selectedUser && selectedUser._id) {
+            const parentId = findParentId(selectedUser._id, users);
+            const userIdsToSync = [selectedUser._id];
+            if (parentId) userIdsToSync.push(parentId);
 
-          const syncUser = async () => {
-            try {
-              const token = localStorage.getItem('token');
-              const res = await fetch(`${API_BASE}/api/users/sync-stats`, {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${token}`,
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                  userIds: userIdsToSync,
-                  month: filterMonth,
-                  year: filterYear
-                })
-              });
-              const data = await res.json();
-              if (data.success && data.stats) {
-                setUsers(prevUsers => {
-                  const updateTargetRecursive = (list) => {
-                    if (!list) return [];
-                    return list.map(u => {
-                      if (data.stats[u._id]) {
-                        const newStats = data.stats[u._id];
-                        u = { ...u, stats: newStats.stats, performance: newStats.performance };
-                      }
-                      const children = u.ccs || u.vos;
-                      if (children) {
-                        if (u.ccs) return { ...u, ccs: updateTargetRecursive(u.ccs) };
-                        if (u.vos) return { ...u, vos: updateTargetRecursive(u.vos) };
-                      }
-                      return u;
-                    });
-                  };
-                  return updateTargetRecursive(prevUsers);
+            const syncUser = async () => {
+              try {
+                const token = localStorage.getItem('token');
+                const res = await fetch(`${API_BASE}/api/users/sync-stats`, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({
+                    userIds: userIdsToSync,
+                    month: filterMonth,
+                    year: filterYear
+                  })
                 });
-              }
-            } catch (e) { console.error(e); }
-          };
-          syncUser();
+                const data = await res.json();
+                if (data.success && data.stats) {
+                  setUsers(prevUsers => {
+                    const updateTargetRecursive = (list) => {
+                      if (!list) return [];
+                      return list.map(u => {
+                        if (data.stats[u._id]) {
+                          const newStats = data.stats[u._id];
+                          u = { ...u, stats: newStats.stats, performance: newStats.performance };
+                        }
+                        const children = u.ccs || u.vos;
+                        if (children) {
+                          if (u.ccs) return { ...u, ccs: updateTargetRecursive(u.ccs) };
+                          if (u.vos) return { ...u, vos: updateTargetRecursive(u.vos) };
+                        }
+                        return u;
+                      });
+                    };
+                    return updateTargetRecursive(prevUsers);
+                  });
+                }
+              } catch (e) { console.error(e); }
+            };
+            syncUser();
+          }
+        } else {
+          // Check if it's an already-validated error
+          if (res.status === 409) {
+            alert('Upload was already validated by another admin.');
+          } else {
+            alert(data.message || 'Failed to approve upload');
+          }
         }
-      }
-      else {
-        alert(data.message || 'Failed to update status');
+      } else {
+        // Rejection flow - use regular endpoint
+        const res = await fetch(
+          `${API_BASE}/api/admin/uploads/${selectedUpload._id}/status`,
+          {
+            method: 'PUT',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              status: finalStatus,
+              rejectionReason
+            })
+          }
+        );
+
+        const data = await res.json();
+        if (data.success) {
+          alert('Status updated successfully!');
+          setShowStatusModal(false);
+          setSelectedUpload(null);
+          setStatus('pending');
+          setRejectionReason('');
+          fetchUserUploads(selectedUser._id, { isBackground: true });
+
+          // Refresh specific user tier to update main table metrics
+          if (selectedUser && selectedUser._id) {
+            const parentId = findParentId(selectedUser._id, users);
+            const userIdsToSync = [selectedUser._id];
+            if (parentId) userIdsToSync.push(parentId);
+
+            const syncUser = async () => {
+              try {
+                const token = localStorage.getItem('token');
+                const res = await fetch(`${API_BASE}/api/users/sync-stats`, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({
+                    userIds: userIdsToSync,
+                    month: filterMonth,
+                    year: filterYear
+                  })
+                });
+                const data = await res.json();
+                if (data.success && data.stats) {
+                  setUsers(prevUsers => {
+                    const updateTargetRecursive = (list) => {
+                      if (!list) return [];
+                      return list.map(u => {
+                        if (data.stats[u._id]) {
+                          const newStats = data.stats[u._id];
+                          u = { ...u, stats: newStats.stats, performance: newStats.performance };
+                        }
+                        const children = u.ccs || u.vos;
+                        if (children) {
+                          if (u.ccs) return { ...u, ccs: updateTargetRecursive(u.ccs) };
+                          if (u.vos) return { ...u, vos: updateTargetRecursive(u.vos) };
+                        }
+                        return u;
+                      });
+                    };
+                    return updateTargetRecursive(prevUsers);
+                  });
+                }
+              } catch (e) { console.error(e); }
+            };
+            syncUser();
+          }
+        }
+        else {
+          alert(data.message || 'Failed to update status');
+        }
       }
     } catch (err) {
       console.error('Error updating status:', err);
@@ -1742,6 +1928,88 @@ const UsersTab = ({ filterProps }) => {
                 <div className="flex items-center gap-2 p-3 bg-amber-50 text-amber-700 rounded-2xl border border-amber-100 text-[10px] font-bold">
                   <Shield className="w-4 h-4 shrink-0" />
                   Note: System maintenance will log out all non-admin users and block new logins.
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Approval Gate Controls - Admin/Dev Only */}
+        {isDeveloperUser && (
+          <div className="bg-white rounded-3xl p-4 sm:p-6 shadow-md border border-gray-100">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-xl ${gateStatus.isOpen ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>
+                  {gateStatus.isOpen ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-gray-900 flex items-center gap-2">
+                    Approval Gate
+                    <span className={`text-xs font-black px-2 py-1 rounded-full ${gateStatus.isOpen
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : 'bg-red-100 text-red-700'
+                      }`}>
+                      {gateStatus.isOpen ? 'OPEN' : 'CLOSED'}
+                    </span>
+                  </h3>
+                  <p className="text-[10px] sm:text-xs text-gray-400 font-bold uppercase tracking-wider mt-0.5">
+                    {gateStatus.lastUpdatedAt 
+                      ? `Last updated by ${gateStatus.lastUpdatedBy} at ${new Date(gateStatus.lastUpdatedAt).toLocaleTimeString()}`
+                      : 'Gate status'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 w-full sm:w-auto flex-wrap">
+                <button
+                  onClick={() => setIsGateCollapsed(!isGateCollapsed)}
+                  className="px-4 py-2 text-xs font-black text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all border border-indigo-100 flex items-center gap-2"
+                >
+                  <Settings className="w-4 h-4" />
+                  {isGateCollapsed ? 'Open Controls' : 'Close Controls'}
+                </button>
+                <button
+                  onClick={() => setShowGateModal(true)}
+                  disabled={isTogglingGate}
+                  className={`flex-1 sm:flex-none px-6 py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 shadow-sm ${gateStatus.isOpen
+                    ? 'bg-red-50 text-red-600 border border-red-100 hover:bg-red-600 hover:text-white'
+                    : 'bg-emerald-50 text-emerald-600 border border-emerald-100 hover:bg-emerald-600 hover:text-white'
+                    }`}
+                >
+                  <Power className="w-4 h-4" />
+                  <span>{gateStatus.isOpen ? 'Close Gate' : 'Open Gate'}</span>
+                </button>
+              </div>
+            </div>
+
+            {!isGateCollapsed && (
+              <div className="mt-6 pt-6 border-t border-gray-100 space-y-4 animate-in fade-in slide-in-from-top-4 duration-300">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-gray-500 ml-1 uppercase tracking-widest">Gate Message (Optional)</label>
+                  <div className="relative">
+                    <AlertCircle className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      value={gateMessage}
+                      onChange={(e) => setGateMessage(e.target.value)}
+                      placeholder="e.g., Maintenance in progress, wait for approval"
+                      className="w-full pl-11 pr-4 py-3 bg-gray-50 border-2 border-gray-100 rounded-2xl text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
+                    />
+                  </div>
+                </div>
+
+                {gateStatus.message && (
+                  <div className="flex items-center gap-2 p-3 bg-blue-50 text-blue-700 rounded-2xl border border-blue-100 text-[10px] font-bold">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    Current message: "{gateStatus.message}"
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2 p-3 bg-blue-50 text-blue-700 rounded-2xl border border-blue-100 text-[10px] font-bold">
+                  <Shield className="w-4 h-4 shrink-0" />
+                  {gateStatus.isOpen
+                    ? '✓ Gate is OPEN. New approvals will be queued for conversion automatically.'
+                    : '⚠️ Gate is CLOSED. New approvals will succeed, but conversion will NOT be queued.'}
                 </div>
               </div>
             )}
@@ -3152,31 +3420,113 @@ const UsersTab = ({ filterProps }) => {
                     )}
 
                     <div className="space-y-4">
+                      {/* Action Selection */}
                       <div>
-                        <label className="block text-sm font-black text-gray-700 mb-2">Reason for Rejection</label>
-                        <select
-                          value={rejectionReason}
-                          onChange={e => {
-                            setRejectionReason(e.target.value);
-                            setStatus('rejected');
-                          }}
-                          className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl font-bold focus:border-indigo-500 focus:outline-none transition-all"
-                        >
-                          {REJECTION_REASONS.map((reason, idx) => (
-                            <option key={idx} value={reason}>{reason}</option>
-                          ))}
-                        </select>
-                        <p className="mt-1 text-xs text-gray-600 font-bold">This will be shown to VO users. Default is "Follow guidelines".</p>
-                        <p className="mt-2 text-xs text-indigo-600 font-bold flex items-center gap-2">
-                          <AlertCircle className="w-4 h-4" />
-                          Note: File will be kept in rejected history and VO will see the rejection reason.
-                        </p>
+                        <label className="block text-sm font-black text-gray-700 mb-3">Select Action</label>
+                        <div className="grid grid-cols-2 gap-3">
+                          <button
+                            onClick={() => {
+                              setStatus('validated');
+                              setRejectionReason('');
+                            }}
+                            className={`p-4 rounded-2xl border-2 transition-all font-black text-sm ${status === 'validated'
+                              ? 'bg-emerald-50 border-emerald-500 text-emerald-700'
+                              : 'bg-gray-50 border-gray-200 text-gray-700 hover:border-gray-300'
+                              }`}
+                          >
+                            <div className="flex items-center justify-center gap-2">
+                              <CheckCircle className="w-5 h-5" />
+                              Approve & Queue
+                            </div>
+                            <p className="text-[11px] font-bold text-gray-600 mt-1 opacity-75">Send to conversion</p>
+                          </button>
+                          
+                          <button
+                            onClick={() => {
+                              setStatus('rejected');
+                              setRejectionReason(REJECTION_REASONS[0]);
+                            }}
+                            className={`p-4 rounded-2xl border-2 transition-all font-black text-sm ${status === 'rejected'
+                              ? 'bg-red-50 border-red-500 text-red-700'
+                              : 'bg-gray-50 border-gray-200 text-gray-700 hover:border-gray-300'
+                              }`}
+                          >
+                            <div className="flex items-center justify-center gap-2">
+                              <AlertCircle className="w-5 h-5" />
+                              Reject
+                            </div>
+                            <p className="text-[11px] font-bold text-gray-600 mt-1 opacity-75">Return to VO</p>
+                          </button>
+                        </div>
                       </div>
+
+                      {/* Status-Specific UI */}
+                      {status === 'validated' && (
+                        <div className="p-4 bg-emerald-50 border-2 border-emerald-200 rounded-2xl">
+                          <p className="text-sm font-bold text-emerald-700 flex items-center gap-2">
+                            <CheckCircle className="w-4 h-4" />
+                            This upload will be approved immediately.
+                          </p>
+                          <p className="text-xs text-emerald-600 mt-2 font-bold">
+                            {gateStatus.isOpen
+                              ? '✓ Gate is OPEN → Conversion will be queued automatically'
+                              : '⚠️ Gate is CLOSED → Approval only (no conversion queuing)'}
+                          </p>
+                        </div>
+                      )}
+
+                      {status === 'rejected' && (
+                        <div>
+                          <label className="block text-sm font-black text-gray-700 mb-2">Reason for Rejection</label>
+                          <select
+                            value={rejectionReason}
+                            onChange={e => setRejectionReason(e.target.value)}
+                            className="w-full px-4 py-3 border-2 border-gray-100 rounded-xl font-bold focus:border-indigo-500 focus:outline-none transition-all"
+                          >
+                            {REJECTION_REASONS.map((reason, idx) => (
+                              <option key={idx} value={reason}>{reason}</option>
+                            ))}
+                          </select>
+                          <p className="mt-2 text-xs text-indigo-600 font-bold flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4" />
+                            VO will see this rejection reason and can resubmit.
+                          </p>
+                        </div>
+                      )}
                     </div>
+
+                    {/* Gate Status Warning */}
+                    {status === 'validated' && !gateStatus.isOpen && (
+                      <div className="mt-4 p-3 bg-amber-50 border-2 border-amber-200 rounded-xl flex items-start gap-3">
+                        <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                        <div>
+                          <p className="text-sm font-black text-amber-700">ℹ️ Gate is CLOSED</p>
+                          <p className="text-xs text-amber-600 font-bold mt-1">
+                            This upload will be approved, but conversion will NOT be queued until the gate is reopened.
+                          </p>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="flex gap-3 mt-6">
                       <button onClick={() => setShowStatusModal(false)} className="flex-1 px-6 py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-xl font-black transition-all">Cancel</button>
-                      <button onClick={handleUpdateStatus} disabled={uploading} className="flex-1 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black transition-all flex items-center justify-center gap-3 disabled:opacity-70 disabled:grayscale shadow-md">Update Status</button>
+                      <button 
+                        onClick={handleUpdateStatus} 
+                        disabled={uploading}
+                        className={`flex-1 px-6 py-3 text-white rounded-xl font-black transition-all flex items-center justify-center gap-3 disabled:opacity-70 disabled:grayscale shadow-md ${status === 'validated'
+                          ? 'bg-emerald-600 hover:bg-emerald-700'
+                          : 'bg-red-600 hover:bg-red-700'
+                          }`}
+                      >
+                        {uploading ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Processing...
+                          </>
+                        ) : (
+                          status === 'validated' ? 'Approve & Queue' : 'Reject Upload'
+                        )}
+                      </button>
                     </div>
                   </div>
                 </div>,
@@ -3185,7 +3535,7 @@ const UsersTab = ({ filterProps }) => {
               )
             }
 
-            {/* Full Image Viewer Mo dal */}
+            {/* Full Image Viewer Modal */}
 
             {
               showImageViewer && createPortal(
@@ -3211,6 +3561,89 @@ const UsersTab = ({ filterProps }) => {
                       <button onClick={() => downloadImage(viewerImageData.url, viewerImageData.filename)} className="px-8 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-black transition-all shadow-md flex items-center gap-2">
                         <Download size={18} /> Download Original
                       </button>
+                    </div>
+                  </div>
+                </div>,
+                document.body
+              )
+            }
+
+            {/* Approval Gate Toggle Modal */}
+            {
+              showGateModal && createPortal(
+                <div className="fixed inset-0 bg-indigo-950/60 backdrop-blur-md flex items-center justify-center z-[100] p-2 sm:p-4 !mt-0 animate-in fade-in duration-300">
+                  <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-md overflow-hidden border border-white/20 animate-in zoom-in-95 duration-200">
+                    <div className="px-6 sm:px-8 py-4 sm:py-6 border-b border-gray-100 bg-gradient-to-r from-indigo-600 to-purple-600">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <h3 className="text-lg sm:text-2xl font-black text-white leading-tight">
+                            {gateStatus.isOpen ? 'Close Approval Gate' : 'Open Approval Gate'}
+                          </h3>
+                          <p className="text-[11px] sm:text-xs text-white/70 font-bold uppercase tracking-wider mt-1">
+                            This controls whether new upload approvals are processed
+                          </p>
+                        </div>
+                        <button onClick={() => setShowGateModal(false)} className="p-2 bg-white/20 text-white hover:bg-white/30 rounded-xl transition-all">
+                          <X className="w-5 h-5 sm:w-6 sm:h-6" />
+                        </button>
+                      </div>
+                    </div>
+                    
+                    <div className="px-6 sm:px-8 py-6 space-y-6">
+                      <div className={`p-4 rounded-2xl border-2 ${gateStatus.isOpen
+                        ? 'bg-red-50 border-red-200 text-red-700'
+                        : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                        }`}>
+                        <p className="text-sm font-bold">
+                          {gateStatus.isOpen
+                            ? '⚠️ You\'re about to CLOSE the gate. New approvals will be BLOCKED.'
+                            : '✓ You\'re about to OPEN the gate. New approvals will be queued for conversion.'}
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-gray-500 ml-1 uppercase tracking-widest">
+                          Reason (Optional)
+                        </label>
+                        <textarea
+                          value={gateMessage}
+                          onChange={(e) => setGateMessage(e.target.value)}
+                          placeholder="e.g., Database maintenance in progress..."
+                          className="w-full p-3 bg-gray-50 border-2 border-gray-100 rounded-2xl text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all placeholder:text-gray-400 resize-none h-24"
+                        />
+                      </div>
+
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => {
+                            setShowGateModal(false);
+                            setGateMessage('');
+                          }}
+                          className="flex-1 px-6 py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-xl font-black transition-all"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleToggleGate}
+                          disabled={isTogglingGate}
+                          className={`flex-1 px-6 py-3 rounded-xl font-black transition-all flex items-center justify-center gap-2 text-white ${gateStatus.isOpen
+                            ? 'bg-red-600 hover:bg-red-700 disabled:opacity-70'
+                            : 'bg-emerald-600 hover:bg-emerald-700 disabled:opacity-70'
+                            }`}
+                        >
+                          {isTogglingGate ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              Processing...
+                            </>
+                          ) : (
+                            <>
+                              {gateStatus.isOpen ? 'Close Gate' : 'Open Gate'}
+                              {!gateStatus.isOpen && ' (auto-queue backlog)'}
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>,
