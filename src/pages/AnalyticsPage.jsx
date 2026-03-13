@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
     Download, FileBarChart, ChartPie as PieChartIcon, Activity, Clock, CheckCircle,
     FileText, Filter, LayoutGrid, List, ChevronRight, AlertCircle,
@@ -165,9 +165,14 @@ const AnalyticsPage = ({ filterProps }) => {
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [refreshKey, setRefreshKey] = useState(0);
     const [isSSEConnected, setIsSSEConnected] = useState(false);
+    const [sseErrorCount, setSSEErrorCount] = useState(0);
 
     // Toast Notification State
     const [toast, setToast] = useState(null); // { type: 'info'|'success'|'error'|'loading', message, countdown }
+    
+    // SSE Refs
+    const sseTimeoutRef = useRef(null);
+    const refreshTimeoutRef = useRef(null);
 
     const showToast = (type, message, duration = 5000) => {
         setToast({ type, message });
@@ -189,89 +194,197 @@ const AnalyticsPage = ({ filterProps }) => {
     const isAPM = role.includes('admin - apm');
     const isCC = role.includes('admin - cc');
 
-    // Fetch Summary & Trends & Payment Analytics
+    // Fetch Summary & Trends & Payment Analytics (Prioritized Loading)
     useEffect(() => {
+        let isMounted = true;
+
         const fetchGlobalStats = async () => {
             try {
                 const token = localStorage.getItem('token');
-                // When a geographic filter is active, always bypass stale cache
-                const isFiltered = filters.district !== 'all' || filters.mandal !== 'all' || filters.village !== 'all';
+                // When ANY filter is active (geographic or temporal), bypass stale cache
+                const isGeographicFiltered = filters.district !== 'all' || filters.mandal !== 'all' || filters.village !== 'all';
                 const params = new URLSearchParams({
                     ...filters
                 }).toString();
 
-                // Clear stale map data immediately when switching filters so
-                // the old district's values don't flash before the new ones load.
-                if (isFiltered) {
+                // Clear stale map and payment data immediately when switching ANY filter
+                // This ensures data is fresh when month/year/district/mandal/village changes
+                if (isGeographicFiltered) {
                     setSummary(null);
                     setPaymentData(null);
+                    setPaymentTrends([]); // Also clear payment trends
+                    setTrends([]); // Also clear trends to force re-fetch
                 }
 
-                const [sumRes, trendRes, paymentRes, paymentTrendRes] = await Promise.all([
-                    fetch(`${API_BASE}/api/analytics/v2/summary?${params}`, {
+                // PRIORITY 1: Fetch summary first (most critical for map)
+                try {
+                    const sumRes = await fetch(`${API_BASE}/api/analytics/v2/summary?${params}`, {
                         headers: { 'Authorization': `Bearer ${token}` }
-                    }),
-                    fetch(`${API_BASE}/api/analytics/v2/trends?${params}`, {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    }),
-                    fetch(`${API_BASE}/api/payments/summary?${params}`, {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    }),
-                    fetch(`${API_BASE}/api/payments/trends?${params}`, {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    })
-                ]);
+                    });
+                    const sumData = await sumRes.json();
+                    if (isMounted && sumData.success) {
+                        setSummary(sumData.summary);
+                        setIsRefreshing(sumData.stale || false);
+                    }
+                } catch (err) {
+                    console.error("Failed to fetch summary:", err);
+                }
 
-                const sumData = await sumRes.json();
-                const trendData = await trendRes.json();
-                const paymentResData = await paymentRes.json();
-                const paymentTrendData = await paymentTrendRes.json();
+                // PRIORITY 2: Fetch trends in parallel
+                try {
+                    const trendRes = await fetch(`${API_BASE}/api/analytics/v2/trends?${params}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    const trendData = await trendRes.json();
+                    if (isMounted && trendData.success) {
+                        setTrends(trendData.data);
+                    }
+                } catch (err) {
+                    console.error("Failed to fetch trends:", err);
+                }
 
-                if (sumData.success) setSummary(sumData.summary);
-                if (trendData.success) setTrends(trendData.data);
-                if (paymentResData.success) setPaymentData(paymentResData.data);
-                if (paymentTrendData.success) setPaymentTrends(paymentTrendData.data);
+                // PRIORITY 3: Fetch payments (only when needed for active view)
+                if (activeView === 'charts') {
+                    try {
+                        const [paymentRes, paymentTrendRes] = await Promise.all([
+                            fetch(`${API_BASE}/api/payments/summary?${params}`, {
+                                headers: { 'Authorization': `Bearer ${token}` }
+                            }),
+                            fetch(`${API_BASE}/api/payments/trends?${params}`, {
+                                headers: { 'Authorization': `Bearer ${token}` }
+                            })
+                        ]);
 
-                // Mark as refreshing whenever any data source returns a stale (SWR) flag
-                setIsRefreshing(
-                    sumData.stale ||
-                    trendData.stale ||
-                    paymentResData.stale ||
-                    paymentTrendData.stale
-                );
+                        const paymentResData = await paymentRes.json();
+                        const paymentTrendData = await paymentTrendRes.json();
+
+                        if (isMounted) {
+                            if (paymentResData.success) {
+                                setPaymentData(paymentResData.data);
+                                console.log("✓ Payment summary loaded:", paymentResData.data);
+                            } else {
+                                console.warn("⚠ Payment summary not successful:", paymentResData);
+                            }
+                            
+                            if (paymentTrendData.success) {
+                                setPaymentTrends(paymentTrendData.data || []);
+                                console.log("✓ Payment trends loaded:", paymentTrendData.data);
+                            } else {
+                                console.warn("⚠ Payment trends not successful:", paymentTrendData);
+                                setPaymentTrends([]); // Set empty array on error
+                            }
+                        }
+                    } catch (err) {
+                        console.error("Failed to fetch payment data:", err);
+                        if (isMounted) {
+                            setPaymentTrends([]); // Clear on error
+                        }
+                    }
+                }
             } catch (err) {
                 console.error("Failed to fetch analytics:", err);
             }
         };
 
         fetchGlobalStats();
-    }, [filters, refreshKey]);
+
+        return () => {
+            isMounted = false;
+        };
+    }, [filters, refreshKey, activeView]);
 
 
-    // SSE Real-time Updates
+    // SSE Real-time Updates with Auto-Reconnect
     useEffect(() => {
-        const token = localStorage.getItem('token');
-        if (!token) return;
+        const connectSSE = () => {
+            const token = localStorage.getItem('token');
+            if (!token) return;
 
-        const url = `${API_BASE}/api/analytics/v2/stream?token=${token}`;
-        const eventSource = new EventSource(url);
+            try {
+                const url = `${API_BASE}/api/analytics/v2/stream?token=${token}`;
+                const eventSource = new EventSource(url);
 
-        eventSource.onmessage = (event) => {
-            if (event.data === 'refresh') {
-                console.log("Real-time refresh signal received");
-                setRefreshKey(prev => prev + 1);
-            } else if (event.data === 'connected') {
-                setIsSSEConnected(true);
+                eventSource.onmessage = (event) => {
+                    try {
+                        if (event.data === 'refresh' || event.data.includes('refresh')) {
+                            console.log("✓ Real-time refresh signal received", event.data);
+                            debouncedRefresh();
+                        } else if (event.data === 'connected') {
+                            setIsSSEConnected(true);
+                            setSSEErrorCount(0);
+                            console.log("✓ SSE Connected");
+                        } else if (event.data === 'heartbeat') {
+                            // Silently update connection status
+                            setIsSSEConnected(true);
+                        } else if (event.data.startsWith('{')) {
+                            // Handle JSON payloads
+                            const payload = JSON.parse(event.data);
+                            if (payload.type === 'refresh') {
+                                debouncedRefresh();
+                            }
+                        }
+                    } catch (err) {
+                        console.warn("Error processing SSE message:", err);
+                    }
+                };
+
+                eventSource.onerror = (err) => {
+                    console.error("✗ SSE Error:", err);
+                    setIsSSEConnected(false);
+                    eventSource.close();
+
+                    // Exponential backoff reconnection
+                    const delay = Math.min(1000 * Math.pow(2, sseErrorCount), 30000);
+                    console.log(`Reconnecting in ${delay}ms (attempt ${sseErrorCount + 1})`);
+                    
+                    sseTimeoutRef.current = setTimeout(() => {
+                        setSSEErrorCount(prev => prev + 1);
+                        connectSSE();
+                    }, delay);
+                };
+
+                // Store current event source for cleanup
+                return eventSource;
+            } catch (err) {
+                console.error("Failed to create EventSource:", err);
+                const delay = Math.min(1000 * Math.pow(2, sseErrorCount), 30000);
+                sseTimeoutRef.current = setTimeout(() => {
+                    setSSEErrorCount(prev => prev + 1);
+                    connectSSE();
+                }, delay);
             }
         };
 
-        eventSource.onerror = (err) => {
-            console.error("SSE Error:", err);
-            setIsSSEConnected(false);
-            eventSource.close();
-        };
+        const eventSource = connectSSE();
 
-        return () => eventSource.close();
+        return () => {
+            if (sseTimeoutRef.current) {
+                clearTimeout(sseTimeoutRef.current);
+                sseTimeoutRef.current = null;
+            }
+            if (eventSource) {
+                eventSource.close();
+            }
+        };
+    }, [sseErrorCount]);
+
+    // Debounced refresh to batch multiple SSE signals
+    const debouncedRefresh = useCallback(() => {
+        if (refreshTimeoutRef.current) {
+            clearTimeout(refreshTimeoutRef.current);
+        }
+        refreshTimeoutRef.current = setTimeout(() => {
+            setRefreshKey(prev => prev + 1);
+            showToast('info', '🔄 Data updated', 2000);
+        }, 500); // Wait 500ms to batch multiple refresh signals
+    }, []);
+
+    // Cleanup all timeouts on unmount
+    useEffect(() => {
+        return () => {
+            if (sseTimeoutRef.current) clearTimeout(sseTimeoutRef.current);
+            if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+        };
     }, []);
 
     // Fetch History for Cumulative Summary
@@ -1014,7 +1127,20 @@ const TrendChart = ({ data }) => {
 };
 
 const PaymentTrendChart = ({ data }) => {
-    if (!data || data.length === 0) return null;
+    // Handle empty or missing data gracefully
+    if (!data || (Array.isArray(data) && data.length === 0)) {
+        return (
+            <div className="bg-white/80 backdrop-blur-md p-8 rounded-[32px] border border-white/20 shadow-lg h-full flex flex-col items-center justify-center min-h-[400px]">
+                <div className="flex flex-col items-center gap-3">
+                    <div className="p-3 bg-gray-100 rounded-xl">
+                        <TrendingUp className="w-5 h-5 text-gray-400" />
+                    </div>
+                    <p className="text-center text-sm font-black text-gray-400 uppercase">No Financial Data Available</p>
+                    <p className="text-center text-[10px] text-gray-300">Please check your filters or wait for data to load</p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="bg-white/80 backdrop-blur-md p-8 rounded-[32px] border border-white/20 shadow-lg h-full flex flex-col" id="payment-trends">
