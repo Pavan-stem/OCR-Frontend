@@ -576,7 +576,7 @@ const UsersTab = ({ filterProps }) => {
   const [isConnected, setIsConnected] = useState(true);
   const [updatingMaintenance, setUpdatingMaintenance] = useState(false);
   const [isMaintenanceCollapsed, setIsMaintenanceCollapsed] = useState(true);
-  
+
   // Approval Gate States
   const [gateStatus, setGateStatus] = useState({ isOpen: false, message: '', lastUpdatedAt: null, lastUpdatedBy: null });
   const [showGateModal, setShowGateModal] = useState(false);
@@ -797,6 +797,42 @@ const UsersTab = ({ filterProps }) => {
   useEffect(() => {
     isFirstRender.current = false;
     isAutoFilling.current = false;
+  }, []);
+
+  // ✅ CRITICAL: Listen for tree refresh events from backend (approval broadcasts)
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    // Create a new SSE connection just for tree refresh events
+    const eventSource = new EventSource(`${API_BASE}/api/sse/subscribe?token=${encodeURIComponent(token)}`);
+    
+    const handleTreeRefresh = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        
+        // Handle tree_refresh messages (from approvals)
+        if (message.type === 'tree_refresh') {
+          console.log('📡 Received tree_refresh event:', message);
+          
+          // Trigger a background refresh of the users tree
+          // This fetches fresh aggregated stats from backend
+          fetchUsers({ isBackground: true });
+          
+          console.log(`✅ Tree refreshed due to: ${message.reason}`);
+        }
+      } catch (err) {
+        console.error('Error parsing SSE message:', err);
+      }
+    };
+
+    eventSource.addEventListener('message', handleTreeRefresh);
+
+    // Cleanup on unmount
+    return () => {
+      eventSource.removeEventListener('message', handleTreeRefresh);
+      eventSource.close();
+    };
   }, []);
 
   // Explicit handlers for user-initiated filter changes
@@ -1196,10 +1232,10 @@ const UsersTab = ({ filterProps }) => {
     try {
       const token = localStorage.getItem('token');
       const newStatus = !gateStatus.isOpen;
-      
+
       // If opening gate and it has a backlog, auto-process
       const autoProcessBacklog = newStatus; // Auto-process when opening
-      
+
       const res = await fetch(`${API_BASE}/api/approval-gate/toggle`, {
         method: 'POST',
         headers: {
@@ -1212,15 +1248,15 @@ const UsersTab = ({ filterProps }) => {
           autoProcessBacklog: autoProcessBacklog
         })
       });
-      
+
       const data = await res.json();
       if (data.success) {
         setGateStatus(data.gateStatus);
         setShowGateModal(false);
         setGateMessage('');
-        
+
         const statusMsg = newStatus ? 'OPENED' : 'CLOSED';
-        const backlogMsg = data.gateStatus.backlogQueued > 0 
+        const backlogMsg = data.gateStatus.backlogQueued > 0
           ? ` and queued ${data.gateStatus.backlogQueued} previously approved uploads`
           : '';
         alert(`Gate ${statusMsg} successfully!${backlogMsg}`);
@@ -1238,7 +1274,7 @@ const UsersTab = ({ filterProps }) => {
   const handleApproveAndQueue = async (uploadId, userId) => {
     try {
       const token = localStorage.getItem('token');
-      
+
       const res = await fetch(`${API_BASE}/api/approval-gate/approve-and-queue/${uploadId}`, {
         method: 'POST',
         headers: {
@@ -1246,12 +1282,15 @@ const UsersTab = ({ filterProps }) => {
           'Content-Type': 'application/json'
         }
       });
-      
+
       const data = await res.json();
       if (data.success) {
         alert('Upload approved and queued for conversion!');
         if (selectedUser && selectedUser._id === userId) {
           fetchUserUploads(userId, { isBackground: true });
+          
+          // 🔄 LIVE UPDATE: Refresh user stats immediately
+          await refreshUserStatsInTree(userId);
         }
       } else {
         alert(data.message || 'Failed to approve upload');
@@ -1259,6 +1298,99 @@ const UsersTab = ({ filterProps }) => {
     } catch (err) {
       console.error('Error approving upload:', err);
       alert('Error approving upload');
+    }
+  };
+
+  // 🔄 NEW: Refresh user stats in the tree dynamically (ALL LEVELS: VO, CC, APM)
+  const refreshUserStatsInTree = async (userId) => {
+    try {
+      const token = localStorage.getItem('token');
+      
+      // ✅ Step 1: Find ENTIRE hierarchy chain - VO → CC → APM
+      // This ensures we refresh the approved VO AND recalculate parent aggregates
+      const userIdsToSync = [userId];
+      let currentParentId = findParentId(userId, users);
+      while (currentParentId) {
+        userIdsToSync.push(currentParentId);
+        currentParentId = findParentId(currentParentId, users);
+      }
+
+      // ✅ Step 2: Fetch fresh stats for entire chain
+      const res = await fetch(`${API_BASE}/api/users/sync-stats`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userIds: userIdsToSync,
+          month: filterMonth,
+          year: filterYear
+        })
+      });
+
+      const data = await res.json();
+      if (data.success && data.stats) {
+        console.log('📊 Received refreshed stats:', data.stats);
+        
+        // ✅ Step 3: Update tree with new stats - keeps structure intact!
+        // IMPORTANT: Updates ALL levels (VO gets direct stats, CC/APM get recalculated aggregates)
+        setUsers(prevUsers => {
+          const updateRecursive = (list) => {
+            if (!list) return [];
+            return list.map(u => {
+              // Create updated version starting with current state
+              let updated = { ...u };
+              
+              // ✅ ALWAYS recurse into both CC and VO children (all hierarchy levels!)
+              if (u.ccs && u.ccs.length > 0) {
+                updated.ccs = updateRecursive(u.ccs);
+              }
+              if (u.vos && u.vos.length > 0) {
+                updated.vos = updateRecursive(u.vos);
+              }
+              
+              // ✅ If this user has updated stats, apply them (VO, CC, or APM)
+              if (data.stats[u._id]) {
+                const newStats = data.stats[u._id];
+                console.log(`✅ Updating stats for ${u._id}:`, newStats);
+                
+                updated = { 
+                  ...updated, 
+                  stats: newStats.stats, 
+                  performance: newStats.performance,
+                  // ✅ Update display fields for table - works for all levels!
+                  totalFiles: newStats.stats?.total || 0,
+                  uploadedFiles: newStats.stats?.uploaded || 0,
+                  pendingFiles: newStats.stats?.pending || 0,
+                  performanceStats: {
+                    uploads: {
+                      approved: newStats.performance?.uploads?.approved || 0,
+                      rejected: newStats.performance?.uploads?.rejected || 0,
+                      pending: newStats.performance?.uploads?.pending || 0
+                    },
+                    conversion: {
+                      success: newStats.performance?.conversion?.success || 0,
+                      failed: newStats.performance?.conversion?.failed || 0,
+                      pending: newStats.performance?.conversion?.pending || 0,
+                      processing: newStats.performance?.conversion?.processing || 0
+                    }
+                  }
+                };
+              } else {
+                console.warn(`⚠️ No stats found for ${u._id} - may not be in refresh set`);
+              }
+              
+              return updated;
+            });
+          };
+          return updateRecursive(prevUsers);
+        });
+        
+        console.log('✅ Tree stats refresh complete - all levels updated!');
+      }
+    } catch (err) {
+      console.error('❌ Error refreshing user stats:', err);
     }
   };
 
@@ -1495,52 +1627,8 @@ const UsersTab = ({ filterProps }) => {
           setRejectionReason('');
           fetchUserUploads(selectedUser._id, { isBackground: true });
 
-          // Refresh specific user tier to update main table metrics
-          if (selectedUser && selectedUser._id) {
-            const parentId = findParentId(selectedUser._id, users);
-            const userIdsToSync = [selectedUser._id];
-            if (parentId) userIdsToSync.push(parentId);
-
-            const syncUser = async () => {
-              try {
-                const token = localStorage.getItem('token');
-                const res = await fetch(`${API_BASE}/api/users/sync-stats`, {
-                  method: 'POST',
-                  headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                  },
-                  body: JSON.stringify({
-                    userIds: userIdsToSync,
-                    month: filterMonth,
-                    year: filterYear
-                  })
-                });
-                const data = await res.json();
-                if (data.success && data.stats) {
-                  setUsers(prevUsers => {
-                    const updateTargetRecursive = (list) => {
-                      if (!list) return [];
-                      return list.map(u => {
-                        if (data.stats[u._id]) {
-                          const newStats = data.stats[u._id];
-                          u = { ...u, stats: newStats.stats, performance: newStats.performance };
-                        }
-                        const children = u.ccs || u.vos;
-                        if (children) {
-                          if (u.ccs) return { ...u, ccs: updateTargetRecursive(u.ccs) };
-                          if (u.vos) return { ...u, vos: updateTargetRecursive(u.vos) };
-                        }
-                        return u;
-                      });
-                    };
-                    return updateTargetRecursive(prevUsers);
-                  });
-                }
-              } catch (e) { console.error(e); }
-            };
-            syncUser();
-          }
+          // 🔄 LIVE UPDATE: Refresh tree immediately
+          await refreshUserStatsInTree(selectedUser._id);
         } else {
           // Check if it's an already-validated error
           if (res.status === 409) {
@@ -1575,52 +1663,8 @@ const UsersTab = ({ filterProps }) => {
           setRejectionReason('');
           fetchUserUploads(selectedUser._id, { isBackground: true });
 
-          // Refresh specific user tier to update main table metrics
-          if (selectedUser && selectedUser._id) {
-            const parentId = findParentId(selectedUser._id, users);
-            const userIdsToSync = [selectedUser._id];
-            if (parentId) userIdsToSync.push(parentId);
-
-            const syncUser = async () => {
-              try {
-                const token = localStorage.getItem('token');
-                const res = await fetch(`${API_BASE}/api/users/sync-stats`, {
-                  method: 'POST',
-                  headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                  },
-                  body: JSON.stringify({
-                    userIds: userIdsToSync,
-                    month: filterMonth,
-                    year: filterYear
-                  })
-                });
-                const data = await res.json();
-                if (data.success && data.stats) {
-                  setUsers(prevUsers => {
-                    const updateTargetRecursive = (list) => {
-                      if (!list) return [];
-                      return list.map(u => {
-                        if (data.stats[u._id]) {
-                          const newStats = data.stats[u._id];
-                          u = { ...u, stats: newStats.stats, performance: newStats.performance };
-                        }
-                        const children = u.ccs || u.vos;
-                        if (children) {
-                          if (u.ccs) return { ...u, ccs: updateTargetRecursive(u.ccs) };
-                          if (u.vos) return { ...u, vos: updateTargetRecursive(u.vos) };
-                        }
-                        return u;
-                      });
-                    };
-                    return updateTargetRecursive(prevUsers);
-                  });
-                }
-              } catch (e) { console.error(e); }
-            };
-            syncUser();
-          }
+          // 🔄 LIVE UPDATE: Refresh tree immediately
+          await refreshUserStatsInTree(selectedUser._id);
         }
         else {
           alert(data.message || 'Failed to update status');
@@ -1657,52 +1701,8 @@ const UsersTab = ({ filterProps }) => {
         // Refresh uploads in background
         fetchUserUploads(selectedUser._id, { isBackground: true });
 
-        // Refresh specific user tier to update main table metrics
-        if (selectedUser && selectedUser._id) {
-          const parentId = findParentId(selectedUser._id, users);
-          const userIdsToSync = [selectedUser._id];
-          if (parentId) userIdsToSync.push(parentId);
-
-          const syncUser = async () => {
-            try {
-              const token = localStorage.getItem('token');
-              const res = await fetch(`${API_BASE}/api/users/sync-stats`, {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${token}`,
-                  'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                  userIds: userIdsToSync,
-                  month: filterMonth,
-                  year: filterYear
-                })
-              });
-              const data = await res.json();
-              if (data.success && data.stats) {
-                setUsers(prevUsers => {
-                  const updateTargetRecursive = (list) => {
-                    if (!list) return [];
-                    return list.map(u => {
-                      if (data.stats[u._id]) {
-                        const newStats = data.stats[u._id];
-                        u = { ...u, stats: newStats.stats, performance: newStats.performance };
-                      }
-                      const children = u.ccs || u.vos;
-                      if (children) {
-                        if (u.ccs) return { ...u, ccs: updateTargetRecursive(u.ccs) };
-                        if (u.vos) return { ...u, vos: updateTargetRecursive(u.vos) };
-                      }
-                      return u;
-                    });
-                  };
-                  return updateTargetRecursive(prevUsers);
-                });
-              }
-            } catch (e) { console.error(e); }
-          };
-          syncUser();
-        }
+        // 🔄 LIVE UPDATE: Refresh tree immediately
+        await refreshUserStatsInTree(selectedUser._id);
       } else {
         alert(data.message || 'Failed to update status');
       }
@@ -1953,7 +1953,7 @@ const UsersTab = ({ filterProps }) => {
                     </span>
                   </h3>
                   <p className="text-[10px] sm:text-xs text-gray-400 font-bold uppercase tracking-wider mt-0.5">
-                    {gateStatus.lastUpdatedAt 
+                    {gateStatus.lastUpdatedAt
                       ? `Last updated by ${gateStatus.lastUpdatedBy} at ${new Date(gateStatus.lastUpdatedAt).toLocaleTimeString()}`
                       : 'Gate status'}
                   </p>
@@ -3440,7 +3440,7 @@ const UsersTab = ({ filterProps }) => {
                             </div>
                             <p className="text-[11px] font-bold text-gray-600 mt-1 opacity-75">Send to conversion</p>
                           </button>
-                          
+
                           <button
                             onClick={() => {
                               setStatus('rejected');
@@ -3510,8 +3510,8 @@ const UsersTab = ({ filterProps }) => {
 
                     <div className="flex gap-3 mt-6">
                       <button onClick={() => setShowStatusModal(false)} className="flex-1 px-6 py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-xl font-black transition-all">Cancel</button>
-                      <button 
-                        onClick={handleUpdateStatus} 
+                      <button
+                        onClick={handleUpdateStatus}
                         disabled={uploading}
                         className={`flex-1 px-6 py-3 text-white rounded-xl font-black transition-all flex items-center justify-center gap-3 disabled:opacity-70 disabled:grayscale shadow-md ${status === 'validated'
                           ? 'bg-emerald-600 hover:bg-emerald-700'
@@ -3588,7 +3588,7 @@ const UsersTab = ({ filterProps }) => {
                         </button>
                       </div>
                     </div>
-                    
+
                     <div className="px-6 sm:px-8 py-6 space-y-6">
                       <div className={`p-4 rounded-2xl border-2 ${gateStatus.isOpen
                         ? 'bg-red-50 border-red-200 text-red-700'

@@ -1749,8 +1749,36 @@ export default function EnhancedTableOCRSystem() {
                 onYearChange={setSelectedYear}
                 user={user}
                 setMaintenance={setMaintenance}
-                onUploadComplete={(data) => {
+                onUploadComplete={async (data) => {
                   console.log('SHG Upload complete:', data);
+                  // ✅ FIX: Trigger backend stats sync after uploads complete
+                  // This ensures all uploaded files are counted in backend stats
+                  try {
+                    const token = localStorage.getItem('token');
+                    if (!token) return;
+                    
+                    console.log('📊 Syncing backend stats after upload completion...');
+                    const response = await fetch(`${API_BASE}/api/users/sync-stats`, {
+                      method: 'POST',
+                      headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                      },
+                      body: JSON.stringify({
+                        userIds: [user._id],
+                        month: selectedMonth,
+                        year: selectedYear
+                      })
+                    });
+                    
+                    if (response.ok) {
+                      console.log('✅ Backend stats synced successfully');
+                    } else {
+                      console.warn('⚠️ Backend stats sync failed:', response.status);
+                    }
+                  } catch (err) {
+                    console.error('❌ Error syncing backend stats:', err);
+                  }
                 }}
                 t={t}
               />

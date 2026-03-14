@@ -169,7 +169,7 @@ const AnalyticsPage = ({ filterProps }) => {
 
     // Toast Notification State
     const [toast, setToast] = useState(null); // { type: 'info'|'success'|'error'|'loading', message, countdown }
-    
+
     // SSE Refs
     const sseTimeoutRef = useRef(null);
     const refreshTimeoutRef = useRef(null);
@@ -265,7 +265,7 @@ const AnalyticsPage = ({ filterProps }) => {
                             } else {
                                 console.warn("⚠ Payment summary not successful:", paymentResData);
                             }
-                            
+
                             if (paymentTrendData.success) {
                                 setPaymentTrends(paymentTrendData.data || []);
                                 console.log("✓ Payment trends loaded:", paymentTrendData.data);
@@ -336,7 +336,7 @@ const AnalyticsPage = ({ filterProps }) => {
                     // Exponential backoff reconnection
                     const delay = Math.min(1000 * Math.pow(2, sseErrorCount), 30000);
                     console.log(`Reconnecting in ${delay}ms (attempt ${sseErrorCount + 1})`);
-                    
+
                     sseTimeoutRef.current = setTimeout(() => {
                         setSSEErrorCount(prev => prev + 1);
                         connectSSE();
