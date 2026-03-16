@@ -484,6 +484,10 @@ const UsersTab = ({ filterProps }) => {
   });
   const isAutoFilling = useRef(true);
   const isFirstRender = useRef(true);
+  const usersRef = useRef(users);
+  useEffect(() => {
+    usersRef.current = users;
+  }, [users]);
   const [limit] = useState(10);
   const [isTransitioning, setIsTransitioning] = useState(false);
 
@@ -801,37 +805,59 @@ const UsersTab = ({ filterProps }) => {
 
   // ✅ CRITICAL: Listen for tree refresh events from backend (approval broadcasts)
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) return;
+    const initSSE = async () => {
+      const token = localStorage.getItem('token');
+      if (!token) return;
 
-    // Create a new SSE connection just for tree refresh events
-    const eventSource = new EventSource(`${API_BASE}/api/sse/subscribe?token=${encodeURIComponent(token)}`);
-    
-    const handleTreeRefresh = (event) => {
-      try {
-        const message = JSON.parse(event.data);
-        
-        // Handle tree_refresh messages (from approvals)
-        if (message.type === 'tree_refresh') {
-          console.log('📡 Received tree_refresh event:', message);
-          
-          // Trigger a background refresh of the users tree
-          // This fetches fresh aggregated stats from backend
-          fetchUsers({ isBackground: true });
-          
-          console.log(`✅ Tree refreshed due to: ${message.reason}`);
+      // 1️⃣ create connection
+      const res = await fetch(`${API_BASE}/api/sse/connect`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`
         }
-      } catch (err) {
-        console.error('Error parsing SSE message:', err);
-      }
+      });
+
+      const data = await res.json();
+      const connectionId = data.connection_id;
+
+      // 2️⃣ open SSE stream
+      const eventSource = new EventSource(
+        `${API_BASE}/api/sse/stream/${connectionId}`
+      );
+
+      const handleTreeRefresh = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+
+          if (message.type === 'tree_refresh') {
+            console.log('📡 Received tree_refresh event:', message);
+
+            fetchUsers({ isBackground: true });
+
+            console.log(`✅ Tree refreshed due to: ${message.reason}`);
+          }
+        } catch (err) {
+          console.error('Error parsing SSE message:', err);
+        }
+      };
+
+      eventSource.addEventListener('message', handleTreeRefresh);
+
+      // cleanup
+      return () => {
+        eventSource.removeEventListener('message', handleTreeRefresh);
+        eventSource.close();
+      };
     };
 
-    eventSource.addEventListener('message', handleTreeRefresh);
+    let cleanup;
 
-    // Cleanup on unmount
+    initSSE().then((fn) => {
+      cleanup = fn;
+    });
+
     return () => {
-      eventSource.removeEventListener('message', handleTreeRefresh);
-      eventSource.close();
+      if (cleanup) cleanup();
     };
   }, []);
 
@@ -1066,7 +1092,7 @@ const UsersTab = ({ filterProps }) => {
           if (children) collectIds(children);
         });
       };
-      collectIds(users);
+      collectIds(usersRef.current);
 
       if (visibleIds.length === 0) return;
 
@@ -1091,11 +1117,27 @@ const UsersTab = ({ filterProps }) => {
             const updateStatsRecursive = (list) => {
               if (!list) return [];
               return list.map(u => {
-                const newStats = data.stats[u._id];
+                const newStats = data.stats[String(u._id)];
                 const updatedUser = newStats ? {
                   ...u,
                   stats: newStats.stats,
-                  performance: newStats.performance
+                  performance: newStats.performance,
+                  totalFiles: newStats.stats?.total ?? u.totalFiles,
+                  uploadedFiles: newStats.stats?.uploaded ?? u.uploadedFiles,
+                  pendingFiles: newStats.stats?.pending ?? u.pendingFiles,
+                  performanceStats: newStats.performance ? {
+                    uploads: {
+                      approved: newStats.performance.uploads?.approved ?? 0,
+                      rejected: newStats.performance.uploads?.rejected ?? 0,
+                      pending:  newStats.performance.uploads?.pending  ?? 0
+                    },
+                    conversion: {
+                      success:    newStats.performance.conversion?.success    ?? 0,
+                      failed:     newStats.performance.conversion?.failed     ?? 0,
+                      pending:    newStats.performance.conversion?.pending    ?? 0,
+                      processing: newStats.performance.conversion?.processing ?? 0
+                    }
+                  } : u.performanceStats
                 } : u;
 
                 const children = u.ccs || u.vos;
@@ -1121,7 +1163,7 @@ const UsersTab = ({ filterProps }) => {
     }, 15000); // More frequent (15s) since it's lightweight
 
     return () => clearInterval(interval);
-  }, [serverStatus.active, users, filterMonth, filterYear]);
+  }, [serverStatus.active, filterMonth, filterYear]);
 
   // Handle auto-fill for restricted roles
   useEffect(() => {
