@@ -194,102 +194,107 @@ const AnalyticsPage = ({ filterProps }) => {
     const isAPM = role.includes('admin - apm');
     const isCC = role.includes('admin - cc');
 
-    // Fetch Summary & Trends & Payment Analytics (Prioritized Loading)
+    // Fetch all analytics data in parallel — summary, trends, payments, history
+    // Replaces 2 separate sequential useEffects; all 5 calls fire simultaneously so
+    // total wait = slowest single call instead of sum of all calls.
+    // `activeView` is intentionally NOT in the dep array — switching tabs should not
+    // re-fetch data (the table's own useEffect handles its own data separately).
     useEffect(() => {
         let isMounted = true;
 
-        const fetchGlobalStats = async () => {
-            try {
-                const token = localStorage.getItem('token');
-                // When ANY filter is active (geographic or temporal), bypass stale cache
-                const isGeographicFiltered = filters.district !== 'all' || filters.mandal !== 'all' || filters.village !== 'all';
-                const params = new URLSearchParams({
-                    ...filters
-                }).toString();
+        const fetchAll = async () => {
+            const token = localStorage.getItem('token');
+            const isGeographicFiltered =
+                filters.district !== 'all' || filters.mandal !== 'all' || filters.village !== 'all';
+            const params = new URLSearchParams({ ...filters }).toString();
 
-                // Clear stale map and payment data immediately when switching ANY filter
-                // This ensures data is fresh when month/year/district/mandal/village changes
-                if (isGeographicFiltered) {
-                    setSummary(null);
-                    setPaymentData(null);
-                    setPaymentTrends([]); // Also clear payment trends
-                    setTrends([]); // Also clear trends to force re-fetch
-                }
-
-                // PRIORITY 1: Fetch summary first (most critical for map)
-                try {
-                    const sumRes = await fetch(`${API_BASE}/api/analytics/v2/summary?${params}`, {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    const sumData = await sumRes.json();
-                    if (isMounted && sumData.success) {
-                        setSummary(sumData.summary);
-                        setIsRefreshing(sumData.stale || false);
-                    }
-                } catch (err) {
-                    console.error("Failed to fetch summary:", err);
-                }
-
-                // PRIORITY 2: Fetch trends in parallel
-                try {
-                    const trendRes = await fetch(`${API_BASE}/api/analytics/v2/trends?${params}`, {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    const trendData = await trendRes.json();
-                    if (isMounted && trendData.success) {
-                        setTrends(trendData.data);
-                    }
-                } catch (err) {
-                    console.error("Failed to fetch trends:", err);
-                }
-
-                // PRIORITY 3: Fetch payments
-                try {
-                    const [paymentRes, paymentTrendRes] = await Promise.all([
-                        fetch(`${API_BASE}/api/payments/summary?${params}`, {
-                            headers: { 'Authorization': `Bearer ${token}` }
-                        }),
-                        fetch(`${API_BASE}/api/payments/trends?${params}`, {
-                            headers: { 'Authorization': `Bearer ${token}` }
-                        })
-                    ]);
-
-                    const paymentResData = await paymentRes.json();
-                    const paymentTrendData = await paymentTrendRes.json();
-
-                    if (isMounted) {
-                        if (paymentResData.success) {
-                            setPaymentData(paymentResData.data);
-                            console.log("✓ Payment summary loaded:", paymentResData.data);
-                        } else {
-                            console.warn("⚠ Payment summary not successful:", paymentResData);
-                        }
-
-                        if (paymentTrendData.success) {
-                            setPaymentTrends(paymentTrendData.data || []);
-                            console.log("✓ Payment trends loaded:", paymentTrendData.data);
-                        } else {
-                            console.warn("⚠ Payment trends not successful:", paymentTrendData);
-                            setPaymentTrends([]); // Set empty array on error
-                        }
-                    }
-                } catch (err) {
-                    console.error("Failed to fetch payment data:", err);
-                    if (isMounted) {
-                        setPaymentTrends([]); // Clear on error
-                    }
-                }
-            } catch (err) {
-                console.error("Failed to fetch analytics:", err);
+            // Build history params — always fetch up to current month for current year,
+            // full year (12 months) for past years.
+            const now = new Date();
+            const historyParams = { ...filters };
+            if (parseInt(filters.year) === now.getFullYear()) {
+                historyParams.month = now.getMonth() + 1;
+            } else {
+                historyParams.month = 12;
             }
+            const histParams = new URLSearchParams(historyParams).toString();
+
+            // Clear stale data immediately when geographic filter changes
+            if (isGeographicFiltered) {
+                setSummary(null);
+                setPaymentData(null);
+                setPaymentTrends([]);
+                setTrends([]);
+            }
+
+            // Kick off all 5 fetches at the same time
+            setIsHistoryLoading(true);
+            const [sumResult, trendResult, payResult, payTrendResult, histResult] =
+                await Promise.allSettled([
+                    fetch(`${API_BASE}/api/analytics/v2/summary?${params}`,   { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()),
+                    fetch(`${API_BASE}/api/analytics/v2/trends?${params}`,    { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()),
+                    fetch(`${API_BASE}/api/payments/summary?${params}`,        { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()),
+                    fetch(`${API_BASE}/api/payments/trends?${params}`,         { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()),
+                    fetch(`${API_BASE}/api/payments/history?${histParams}`,    { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()),
+                ]);
+
+            if (!isMounted) return;
+
+            // Analytics summary
+            if (sumResult.status === 'fulfilled' && sumResult.value?.success) {
+                setSummary(sumResult.value.summary);
+                setIsRefreshing(sumResult.value.stale || false);
+            } else if (sumResult.status === 'rejected') {
+                console.error("Failed to fetch summary:", sumResult.reason);
+            }
+
+            // Analytics upload trends
+            if (trendResult.status === 'fulfilled' && trendResult.value?.success) {
+                setTrends(trendResult.value.data);
+            } else if (trendResult.status === 'rejected') {
+                console.error("Failed to fetch trends:", trendResult.reason);
+            }
+
+            // Payment summary
+            if (payResult.status === 'fulfilled') {
+                if (payResult.value?.success) {
+                    setPaymentData(payResult.value.data);
+                    console.log("✓ Payment summary loaded:", payResult.value.data);
+                } else {
+                    console.warn("⚠ Payment summary not successful:", payResult.value);
+                }
+            } else {
+                console.error("Failed to fetch payment summary:", payResult.reason);
+            }
+
+            // Payment trends
+            if (payTrendResult.status === 'fulfilled') {
+                if (payTrendResult.value?.success) {
+                    setPaymentTrends(payTrendResult.value.data || []);
+                    console.log("✓ Payment trends loaded:", payTrendResult.value.data);
+                } else {
+                    console.warn("⚠ Payment trends not successful:", payTrendResult.value);
+                    setPaymentTrends([]);
+                }
+            } else {
+                console.error("Failed to fetch payment trends:", payTrendResult.reason);
+                setPaymentTrends([]);
+            }
+
+            // Payment history (cumulative summary table)
+            if (histResult.status === 'fulfilled' && histResult.value?.success) {
+                setHistoryData(histResult.value.data || []);
+            } else if (histResult.status === 'rejected') {
+                console.error("Failed to fetch history:", histResult.reason);
+            }
+
+            setIsHistoryLoading(false);
         };
 
-        fetchGlobalStats();
+        fetchAll();
 
-        return () => {
-            isMounted = false;
-        };
-    }, [filters, refreshKey, activeView]);
+        return () => { isMounted = false; };
+    }, [filters, refreshKey]);
 
 
     // SSE Real-time Updates with Auto-Reconnect
@@ -385,39 +390,7 @@ const AnalyticsPage = ({ filterProps }) => {
         };
     }, []);
 
-    // Fetch History for Cumulative Summary
-    useEffect(() => {
-        const fetchHistory = async () => {
-            setIsHistoryLoading(true);
-            try {
-                const token = localStorage.getItem('token');
-                const historyParams = { ...filters };
-                // Ensure history always shows up to the current month for the selected year
-                const now = new Date();
-                if (parseInt(filters.year) === now.getFullYear()) {
-                    historyParams.month = now.getMonth() + 1;
-                } else {
-                    historyParams.month = 12; // Show full year for past years
-                }
-
-                const params = new URLSearchParams(historyParams).toString();
-
-                const res = await fetch(`${API_BASE}/api/payments/history?${params}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const data = await res.json();
-                if (data.success) {
-                    setHistoryData(data.data || []);
-                }
-            } catch (err) {
-                console.error("Failed to fetch history:", err);
-            } finally {
-                setIsHistoryLoading(false);
-            }
-        };
-
-        fetchHistory();
-    }, [filters, refreshKey]);
+    // NOTE: History is now fetched in the main parallel fetchAll useEffect above.
 
     // Fetch Initial Table Data (Root Level Only)
     useEffect(() => {
