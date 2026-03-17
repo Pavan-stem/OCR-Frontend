@@ -243,42 +243,40 @@ const AnalyticsPage = ({ filterProps }) => {
                     console.error("Failed to fetch trends:", err);
                 }
 
-                // PRIORITY 3: Fetch payments (only when needed for active view)
-                if (activeView === 'charts') {
-                    try {
-                        const [paymentRes, paymentTrendRes] = await Promise.all([
-                            fetch(`${API_BASE}/api/payments/summary?${params}`, {
-                                headers: { 'Authorization': `Bearer ${token}` }
-                            }),
-                            fetch(`${API_BASE}/api/payments/trends?${params}`, {
-                                headers: { 'Authorization': `Bearer ${token}` }
-                            })
-                        ]);
+                // PRIORITY 3: Fetch payments
+                try {
+                    const [paymentRes, paymentTrendRes] = await Promise.all([
+                        fetch(`${API_BASE}/api/payments/summary?${params}`, {
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        }),
+                        fetch(`${API_BASE}/api/payments/trends?${params}`, {
+                            headers: { 'Authorization': `Bearer ${token}` }
+                        })
+                    ]);
 
-                        const paymentResData = await paymentRes.json();
-                        const paymentTrendData = await paymentTrendRes.json();
+                    const paymentResData = await paymentRes.json();
+                    const paymentTrendData = await paymentTrendRes.json();
 
-                        if (isMounted) {
-                            if (paymentResData.success) {
-                                setPaymentData(paymentResData.data);
-                                console.log("✓ Payment summary loaded:", paymentResData.data);
-                            } else {
-                                console.warn("⚠ Payment summary not successful:", paymentResData);
-                            }
-
-                            if (paymentTrendData.success) {
-                                setPaymentTrends(paymentTrendData.data || []);
-                                console.log("✓ Payment trends loaded:", paymentTrendData.data);
-                            } else {
-                                console.warn("⚠ Payment trends not successful:", paymentTrendData);
-                                setPaymentTrends([]); // Set empty array on error
-                            }
+                    if (isMounted) {
+                        if (paymentResData.success) {
+                            setPaymentData(paymentResData.data);
+                            console.log("✓ Payment summary loaded:", paymentResData.data);
+                        } else {
+                            console.warn("⚠ Payment summary not successful:", paymentResData);
                         }
-                    } catch (err) {
-                        console.error("Failed to fetch payment data:", err);
-                        if (isMounted) {
-                            setPaymentTrends([]); // Clear on error
+
+                        if (paymentTrendData.success) {
+                            setPaymentTrends(paymentTrendData.data || []);
+                            console.log("✓ Payment trends loaded:", paymentTrendData.data);
+                        } else {
+                            console.warn("⚠ Payment trends not successful:", paymentTrendData);
+                            setPaymentTrends([]); // Set empty array on error
                         }
+                    }
+                } catch (err) {
+                    console.error("Failed to fetch payment data:", err);
+                    if (isMounted) {
+                        setPaymentTrends([]); // Clear on error
                     }
                 }
             } catch (err) {
@@ -423,6 +421,7 @@ const AnalyticsPage = ({ filterProps }) => {
 
     // Fetch Initial Table Data (Root Level Only)
     useEffect(() => {
+      if (activeView !== 'table') return; // Only fetch when table view is active
         const fetchTable = async () => {
             setLoading(true);
             try {
@@ -448,21 +447,7 @@ const AnalyticsPage = ({ filterProps }) => {
         };
 
         fetchTable();
-    }, [filters, refreshKey]);
-
-    /*
-    useEffect(() => {
-        let interval;
-        if (isRefreshing) {
-            interval = setInterval(() => {
-                setRefreshKey(prev => prev + 1);
-            }, 5000); // 5 seconds
-        }
-        return () => clearInterval(interval);
-    }, [isRefreshing]);
-    */
-
-
+    }, [filters, refreshKey, activeView]);
 
     const handleDetailedDownload = async (item, loadedChildren = []) => {
         const MAX_RETRIES = 3;
