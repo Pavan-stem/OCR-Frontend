@@ -1424,7 +1424,8 @@ const HierarchicalRow = ({ item, handleDetailedDownload, level = 0, filters, ref
     const [children, setChildren] = useState(item.children || []);
     const [loadingChildren, setLoadingChildren] = useState(false);
     // VOs do NOT expand in the table (SHGs are only in the downloaded Excel)
-    const hasChildren = item.role !== 'VO' && (item.hasChildren || (item.children && item.children.length > 0));
+    const hasChildren = (item.role === 'APM' || item.role === 'CC') &&
+        (item.hasChildren || (item.children && item.children.length > 0));
 
     const fetchChildren = async (force = false) => {
         if (!force && children.length > 0) return;
@@ -1464,7 +1465,6 @@ const HierarchicalRow = ({ item, handleDetailedDownload, level = 0, filters, ref
     const getLoadingText = () => {
         if (item.role === 'APM') return "Loading Clusters...";
         if (item.role === 'CC') return "Loading VOs...";
-        if (item.role === 'VO') return "Loading SHGs...";
         return "Loading...";
     };
 
