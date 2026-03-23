@@ -17,6 +17,34 @@ const _getOptimalCanvas = (srcCanvas, maxDim = 1024) => {
     return dst;
 };
 
+
+
+/* ===================== PADDING HELPER ===================== */
+const addPaddingToBounds = (bounds, imgWidth, imgHeight, paddingRatio = 0.05) => {
+    const padX = bounds.width * paddingRatio;
+    const padY = bounds.height * paddingRatio;
+
+    let x = bounds.x - padX;
+    let y = bounds.y - padY;
+    let w = bounds.width + (padX * 2);
+    let h = bounds.height + (padY * 2);
+
+    // Clamp
+    x = Math.max(0, x);
+    y = Math.max(0, y);
+    w = Math.min(imgWidth - x, w);
+    h = Math.min(imgHeight - y, h);
+
+    // 🔥 IMPORTANT: convert to integers
+    return {
+        x: Math.round(x),
+        y: Math.round(y),
+        width: Math.round(w),
+        height: Math.round(h)
+    };
+};
+
+
 /* ===================== BLUR DETECTION ===================== */
 const detectBlurOpenCV = (src) => {
     const gray = new cv.Mat();
@@ -115,18 +143,29 @@ const detectEdgesOpenCV = (src) => {
         pts[diff.indexOf(Math.min(...diff))] // BL
     ];
 
-    const rect = cv.boundingRect(cv.matFromArray(4, 1, cv.CV_32FC2, ordered.flatMap(p => [p.x, p.y])));
+    const rawRect = cv.boundingRect(
+        cv.matFromArray(4, 1, cv.CV_32FC2, ordered.flatMap(p => [p.x, p.y]))
+    );
+
+    // Apply padding
+    const paddedRect = addPaddingToBounds(rawRect, src.cols, src.rows, 0.08);
 
     return {
         detected: true,
         bounds: {
-            x: rect.x,
-            y: rect.y,
-            width: rect.width,
-            height: rect.height,
-            contourPoints: ordered
+            x: paddedRect.x,
+            y: paddedRect.y,
+            width: paddedRect.width,
+            height: paddedRect.height,
+
+            contourPoints: [
+                { x: paddedRect.x, y: paddedRect.y },
+                { x: paddedRect.x + paddedRect.width, y: paddedRect.y },
+                { x: paddedRect.x + paddedRect.width, y: paddedRect.y + paddedRect.height },
+                { x: paddedRect.x, y: paddedRect.y + paddedRect.height }
+            ]
         }
-    };
+    }
 };
 
 /* ===================== LIGHTING (DOCUMENT-AWARE) ===================== */
@@ -1057,4 +1096,61 @@ export const validateSHGTableStructure = (canvas) => {
         if (horizontal) horizontal.delete(); if (vertical) vertical.delete();
         if (junctions) junctions.delete();
     }
+};
+
+// ─────────────────────────────────────────────────────────
+// UI OVERLAY HELPER
+// ─────────────────────────────────────────────────────────
+
+export const drawTableOverlay = (canvas, contour, isValid, scaleX, scaleY) => {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (!contour || contour.length !== 4) return;
+
+    // 1. Draw connecting lines
+    ctx.beginPath();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = isValid ? 'rgba(34, 197, 94, 0.8)' : 'rgba(59, 130, 246, 0.6)';
+
+    contour.forEach((p, i) => {
+        const x = p.x * scaleX;
+        const y = p.y * scaleY;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    });
+    ctx.closePath();
+    ctx.stroke();
+
+    // 2. Fill area
+    ctx.fillStyle = isValid ? 'rgba(34, 197, 94, 0.2)' : 'rgba(59, 130, 246, 0.1)';
+    ctx.fill();
+
+    // 3. Draw Corner Dots
+    contour.forEach(p => {
+        const x = p.x * scaleX;
+        const y = p.y * scaleY;
+
+        // Outer Glow
+        ctx.beginPath();
+        ctx.arc(x, y, 12, 0, Math.PI * 2);
+        ctx.fillStyle = isValid ? 'rgba(34, 197, 94, 0.3)' : 'rgba(59, 130, 246, 0.3)';
+        ctx.fill();
+
+        // Inner Dot
+        ctx.beginPath();
+        ctx.arc(x, y, 6, 0, Math.PI * 2);
+        const color = isValid ? '#22c55e' : '#3b82f6';
+        ctx.fillStyle = color;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = color;
+        ctx.fill();
+        ctx.shadowBlur = 0; // Reset
+
+        // White Center
+        ctx.beginPath();
+        ctx.arc(x, y, 2, 0, Math.PI * 2);
+        ctx.fillStyle = 'white';
+        ctx.fill();
+    });
 };

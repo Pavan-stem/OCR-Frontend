@@ -923,16 +923,38 @@ const SHGUploadSection = ({
 
   /* Smart Camera handler re-enabled */
   const handleSmartCameraCapture = async (file, shgId, shgName) => {
-    // Process the captured file using the existing handleFileSelect logic
-    const fakeEvent = {
-      target: {
-        files: [file]
-      }
+    // 1. Manually prepare the file data as handleFileSelect would do
+    const fileData = {
+      file: file,
+      fileName: file.name,
+      fileSize: file.size,
+      uploadDate: new Date().toISOString(),
+      shgName: shgName,
+      shgId: shgId,
+      validated: true, // From Smart Camera, we trust it's validated
+      rotation: 0,
+      previewUrl: URL.createObjectURL(file)
     };
 
-    // Pass the file to handleFileSelect
-    handleFileSelect(shgId, shgName, fakeEvent);
-    setShowSmartCamera(false);
+    // Store in state so UI shows pending if it somehow persists
+    setUploadedFiles(prev => ({
+      ...prev,
+      [shgId]: fileData
+    }));
+
+    // 2. Perform immediate upload and WAIT for it
+    const success = await handleUploadSingleFile(shgId, fileData);
+
+    // 3. Only close if successful or if the process has "terminated" (even on fail, we might want to close or allow retry within camera)
+    if (success) {
+      setShowSmartCamera(false);
+      // Close other modals if they were open
+      setShowUploadModal(false);
+      setPendingUploadShgId(null);
+      setPendingUploadShgName(null);
+    }
+    // If it failed, the camera view will show the error alert (from handleUploadSingleFile) 
+    // and because SmartCamera is still mounting with isUploading=false, it will return to preview state.
   };
 
 
@@ -1474,23 +1496,23 @@ const SHGUploadSection = ({
     }
   };
 
-  const handleUploadSingleFile = async (shgId) => {
-    const fileData = uploadedFiles[shgId];
-    if (!fileData) return;
+  const handleUploadSingleFile = async (shgId, fileDataOverride = null) => {
+    const fileData = fileDataOverride || uploadedFiles[shgId];
+    if (!fileData) return false;
 
     if (!selectedMonth || !selectedYear) {
       alert(t?.('upload.selectMonthYear') || 'Please select month and year');
-      return;
+      return false;
     }
 
     if (!fileData.validated) {
       alert(t?.('upload.validateFirst') || 'Please validate the image before uploading.');
-      return;
+      return false;
     }
 
     if (uploadStatus[shgId]?.uploaded) {
       alert(t?.('upload.alreadyUploaded') || 'This file is already uploaded.');
-      return;
+      return false;
     }
 
     setIsUploading(true);
@@ -1536,12 +1558,13 @@ const SHGUploadSection = ({
             .replace('{{shg}}', formatShgLabel(fileData))
         );
         if (onUploadComplete) onUploadComplete();
+        return true;
       } else if (res.status === 503) {
         // Maintenance mode detected
         const data = await res.json().catch(() => ({}));
         handleMaintenanceResponse(data);
         setIsUploading(false);
-        return;
+        return false;
       } else if (res.status === 409) {
         // Duplicate detected
         const errorData = await res.json();
@@ -1563,6 +1586,7 @@ const SHGUploadSection = ({
         });
 
         alert(`ℹ️ ${formatShgLabel(fileData)} has already been uploaded.`);
+        return true; // Technically a success since it's "uploaded"
       } else {
         throw new Error(`Upload failed with status ${res.status}`);
       }
@@ -1570,6 +1594,7 @@ const SHGUploadSection = ({
     } catch (e) {
       console.error('Single upload error:', e);
       alert(`❌ ${e.message || t?.('upload.uploadFailed')}`);
+      return false;
     } finally {
       setIsUploading(false);
     }
@@ -1720,7 +1745,8 @@ const SHGUploadSection = ({
                         setCameraTarget({ id: shg.shgId, name: shg.shgName });
                         setShowSmartCamera(true);
                       }}
-                      className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white border-transparent active:scale-95"
+                      disabled={isUploading}
+                      className={`flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white border-transparent active:scale-95 ${isUploading ? 'opacity-50 cursor-not-allowed grayscale' : ''}`}
                     >
                       <ScanLine size={18} />
                       <span>{t('upload.cameraScan') || 'Camera Scan'}</span>
@@ -1886,7 +1912,8 @@ const SHGUploadSection = ({
                         setCameraTarget({ id: shg.shgId, name: shg.shgName });
                         setShowSmartCamera(true);
                       }}
-                      className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white border-transparent active:scale-95"
+                      disabled={isUploading}
+                      className={`flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white border-transparent active:scale-95 ${isUploading ? 'opacity-50 cursor-not-allowed grayscale' : ''}`}
                     >
                       <ScanLine size={18} />
                       <span>{t('upload.cameraScan') || 'Camera Scan'}</span>
@@ -2450,6 +2477,7 @@ const SHGUploadSection = ({
           open={showSmartCamera}
           onCapture={(file) => handleSmartCameraCapture(file, cameraTarget.id, cameraTarget.name)}
           onClose={() => setShowSmartCamera(false)}
+          isUploading={isUploading}
           shgId={cameraTarget.id}
           shgName={cameraTarget.name}
           debugMode={true}

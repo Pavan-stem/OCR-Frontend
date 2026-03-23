@@ -1,12 +1,14 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { Camera, X, AlertTriangle, CheckCircle, Loader, RotateCw, Crop, RefreshCw, Image as ImageIcon, ScanLine, Flashlight } from "lucide-react";
-import { scanDocument, canvasToFile, rotateCanvas, cropCanvas, warpPerspective, enhanceImage, detectDocument, validateSHGTableStructure } from "./utils/documentScanner";
+import { scanDocument, canvasToFile, rotateCanvas, cropCanvas, warpPerspective, detectDocument, validateSHGTableStructure, drawTableOverlay } from "./utils/documentScanner";
+import { enhanceImage } from "./utils/imageEnhancer";
 import { validateGalleryImage } from "./utils/galleryValidator";
+import { startCamera, stopCamera } from "./utils/cameraController";
 
 const cvReady = () => !!(window.cv && window.cv.Mat);
 
-const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
+const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, t }) => {
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
     const overlayRef = useRef(null);
@@ -24,6 +26,7 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
     const [isGalleryLoading, setIsGalleryLoading] = useState(false);
     const [galleryRejection, setGalleryRejection] = useState(null); // { message } when scan fails
     const [isGalleryMode, setIsGalleryMode] = useState(false); // Explicitly track gallery flow
+    const [cameraEnabled, setCameraEnabled] = useState(true); // Flag to prevent auto-restart
 
     // Live Validation State
     const [liveStatus, setLiveStatus] = useState({
@@ -134,26 +137,17 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
             window.addEventListener('focus', handleFocus);
         }
 
-        // CRITICAL: Block initialization if in gallery mode or if image already captured
-        if (!open || capturedImageData || isGalleryMode) {
+        // CRITICAL: Block initialization if camera is disabled, if in gallery mode, if image already captured, if uploading, or if processing/enhancing
+        if (!open || !cameraEnabled || capturedImageData || isGalleryMode || isUploading || isProcessing || isEnhancing) {
             return () => {
                 window.removeEventListener('focus', handleFocus);
             };
         }
 
-        let stream = null;
         const initCamera = async () => {
             try {
-                stream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        facingMode: { ideal: "environment" },
-                        width: { ideal: 4096, min: 1920 },
-                        height: { ideal: 2160, min: 1080 }
-                    }
-                });
-
+                await startCamera(videoRef.current);
                 if (videoRef.current) {
-                    videoRef.current.srcObject = stream;
                     videoRef.current.onloadedmetadata = () => {
                         videoRef.current.play();
                         setIsCameraActive(true);
@@ -183,12 +177,10 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
         return () => {
             window.removeEventListener('focus', handleFocus);
             isLoopingRef.current = false;
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-            } else if (videoRef.current?.srcObject) {
-                // Persistent track stopping on unmount
-                videoRef.current.srcObject.getTracks().forEach(track => track.stop());
-            }
+
+            // Comprehensive Track Stopping via Utility
+            stopCamera(videoRef.current);
+
             if (uiAnimationFrameId.current) cancelAnimationFrame(uiAnimationFrameId.current);
             if (processingTimeoutId.current) clearTimeout(processingTimeoutId.current);
             maxBlurVarRef.current = 0;
@@ -196,7 +188,7 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
             bestPointsRef.current = null;
             rawPointsRef.current = null;
         };
-    }, [open, capturedImageData, isGalleryMode, isGalleryLoading]);
+    }, [open, cameraEnabled, capturedImageData, isGalleryMode, isGalleryLoading, isUploading, isProcessing, isEnhancing]);
 
     const startProcessingLoop = () => {
         if (isLoopingRef.current) return; // Prevent multiple loops
@@ -367,8 +359,8 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
                                 }
                             }
                             const minSharpness = Math.min(...tileBlurs);
-                            // Regional threshold is strict (250 for ultra-clear text)
-                            if (minSharpness < 250) isAnyPartBlurry = true;
+                            // Regional threshold — relaxed to allow slight hand shake
+                            if (minSharpness < 120) isAnyPartBlurry = true;
                         }
                     }
 
@@ -412,10 +404,10 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
                         const h = Math.hypot(rawPoints[3].x - rawPoints[0].x, rawPoints[3].y - rawPoints[0].y);
                         isLandscape = h > w; // Inverted based on user feedback (Portrait camera feed)
 
-                        // Apply Orientation-Aware Padding: (Increased)
-                        // Refined Landscape: 6% Top/Bottom, 10% Side
-                        const padSide = isLandscape ? 0.10 : 0.08;
-                        const padTopBot = isLandscape ? 0.06 : 0.25;
+                        // Apply Orientation-Aware Padding:
+                        // Landscape: 15% sides, 6% top/bottom  |  Portrait: 15% sides, 8% top/bottom
+                        const padSide = 0.15;                       // ← was 0.10/0.08 — wider to cover full table width
+                        const padTopBot = isLandscape ? 0.06 : 0.08; // ← was 0.06/0.25 — normalised
 
 
                         const centerX = rawPoints.reduce((sum, p) => sum + p.x, 0) / 4;
@@ -522,12 +514,22 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
                             steadyCount.current = 0;
                             setCaptureProgress(0);
                         } else {
-                            // Faster Auto-Capture (0.3s window - 5 frames)
+                            // Auto-capture: 10 stable frames (~0.6s at 60ms/frame) — fast lock
+                            const STABLE_FRAMES_NEEDED = 10;
                             steadyCount.current += 1;
-                            const progress = Math.min(100, (steadyCount.current / 5) * 100);
+                            const progress = Math.min(100, (steadyCount.current / STABLE_FRAMES_NEEDED) * 100);
                             setCaptureProgress(progress);
 
-                            if (progress >= 100 && !capturedImageData) {
+                            // Update message to show countdown phase
+                            if (progress < 40) {
+                                msg = "Hold still — locking on…";
+                            } else if (progress < 80) {
+                                msg = "Stay steady — almost ready…";
+                            } else if (progress < 100) {
+                                msg = "Capturing…";
+                            }
+
+                            if (progress >= 100 && !capturedImageData && !captureTriggeredRef.current) {
                                 steadyCount.current = 0;
                                 setCaptureProgress(0);
                                 handleCapture(rawPoints);
@@ -621,15 +623,8 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
             // 1. CROP (Warp) FIRST using the exact synced points
             // This now uses a 5% "Safety Buffer" from documentScanner.js to handle motion
             if (finalContour && cvReady()) {
+                // Primary warp with orientation-aware padding from the live loop
                 resultCanvas = warpPerspective(canvas, finalContour);
-
-                // 1b. SECONDARY PASS: Detect and tighten crop to fix motion cutoff
-                // Fire up table detection again on the frozen frame
-                const refinedContour = detectDocument(resultCanvas);
-                if (refinedContour) {
-                    // Warp again to tighten the crop perfectly to the document edges
-                    resultCanvas = warpPerspective(resultCanvas, refinedContour);
-                }
             }
 
             // 2. HARDWARE ROTATION: Rotate image based on how the phone was held
@@ -652,7 +647,7 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
                         setEnhancementStatus("Analyzing...");
                         const finalCanvas = await enhanceImage(resultCanvas, (msg) => {
                             setEnhancementStatus(msg);
-                        });
+                        }, 'camera');
                         if (finalCanvas) {
                             setCapturedImageData(finalCanvas.toDataURL("image/jpeg", 0.95));
                         }
@@ -666,13 +661,19 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
                 }
             }, 50);
 
-            const stream = videoRef.current.srcObject;
-            if (stream) stream.getTracks().forEach(track => track.stop());
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                videoRef.current.srcObject = null;
+            }
         } catch (e) {
             console.error("Capture Error:", e);
             setIsProcessing(false);
             setIsEnhancing(false);
         }
+
+        // Explicitly stop camera stream after capture (UX: Review and Enhance phase)
+        stopCamera(videoRef.current);
+        setIsCameraActive(false);
     };
 
     const handleConfirm = async () => {
@@ -727,6 +728,7 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
         captureTriggeredRef.current = false;
         setGalleryRejection(null);
         setIsGalleryMode(false); // Returning to manual scanning
+        setCameraEnabled(true); // Allow camera to restart
     };
 
     /**
@@ -776,10 +778,9 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
             });
 
             const aspect = Math.max(width, height) / Math.min(width, height);
-            // Phone screenshots: aspect > 1.85 (most phones are 9:19.5 ≈ 2.17, 9:20 ≈ 2.22)
-            // Genuine document photos: typically 4:3 (1.33) or 3:2 (1.5) from rear camera
-            // A4 paper: 1:√2 ≈ 1.41 — well below 1.85
-            if (aspect > 1.85) {
+            // Phone screenshots: aspect > 2.4 (modern phones are up to 2.22, but screenshots often include UI)
+            // Relaxed from 1.85 to 2.4 to allow "Full Screen" camera modes (21:9 etc)
+            if (aspect > 2.4) {
                 return 'This image appears to be a phone screenshot. Please take a real photo of the document.';
             }
 
@@ -789,7 +790,8 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
                 720, 750, 828, 1080, 1125, 1170, 1218, 1242, 1284
             ]);
             const shortSide = Math.min(width, height);
-            if (KNOWN_SCREEN_WIDTHS.has(shortSide) && aspect > 1.6) {
+            // Relaxed aspect check for known widths from 1.6 to 2.2
+            if (KNOWN_SCREEN_WIDTHS.has(shortSide) && aspect > 2.2) {
                 return 'This image appears to be a phone screenshot. Please take a real photo of the document.';
             }
         } catch {
@@ -822,9 +824,20 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
                 isLoopingRef.current = false;
                 if (processingTimeoutId.current) clearTimeout(processingTimeoutId.current);
                 if (uiAnimationFrameId.current) cancelAnimationFrame(uiAnimationFrameId.current);
+
+                // 🔴 STOP CAMERA IMMEDIATELY
+                setCameraEnabled(false);
+                stopCamera(videoRef.current);
+                setIsCameraActive(false);
+
                 setGalleryRejection({ message: metaRejection });
                 return;
             }
+
+            // 🔴 STOP CAMERA IMMEDIATELY before heavy validation
+            setCameraEnabled(false);
+            stopCamera(videoRef.current);
+            setIsCameraActive(false);
 
             // ── Layer 2: Full Robust Validation (Extracted from project_submission) ──
             const result = await validateGalleryImage(file);
@@ -849,79 +862,56 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
             setIsProcessing(true);
             setProcessingMessage('Cropping document...');
 
+            // ── Auto-crop: use corners from validator (already padded 2%) ──
             let resultCanvas = sourceCanvas;
-            let finalContour = result.corners;
+            const finalContour = result.corners;
+            if (finalContour && finalContour.length === 4 && cvReady()) {
 
-            try {
-                // 1. Apply Orientation-Aware Padding (Mirroring processFrame logic)
-                if (finalContour && cvReady()) {
-                    const videoWidth = sourceCanvas.width;
-                    const videoHeight = sourceCanvas.height;
-
-                    // Calculate orientation
-                    const w = Math.hypot(finalContour[1].x - finalContour[0].x, finalContour[1].y - finalContour[0].y);
-                    const h = Math.hypot(finalContour[3].x - finalContour[0].x, finalContour[3].y - finalContour[0].y);
-                    const isLandscape = h > w;
-
-                    const padSide = isLandscape ? 0.10 : 0.08;
-                    const padTopBot = isLandscape ? 0.06 : 0.25;
-
-                    const centerX = finalContour.reduce((sum, p) => sum + p.x, 0) / 4;
-                    const centerY = finalContour.reduce((sum, p) => sum + p.y, 0) / 4;
-
-                    finalContour = finalContour.map(p => {
-                        let newX = p.x + (p.x - centerX) * padSide;
-                        let newY = p.y + (p.y - centerY) * padTopBot;
-                        return {
-                            x: Math.max(0, Math.min(newX, videoWidth)),
-                            y: Math.max(0, Math.min(newY, videoHeight))
-                        };
-                    });
-
-                    // Perform Warp with Padded Points
+                try {
+                    // Warp directly with validated corners (already padded 5% in validateStructure)
                     resultCanvas = warpPerspective(sourceCanvas, finalContour);
-
-                    // 1b. SECONDARY PASS: Detect and tighten crop
-                    const refinedContour = detectDocument(resultCanvas);
-                    if (refinedContour) {
-                        resultCanvas = warpPerspective(resultCanvas, refinedContour);
-                    }
+                } catch (warpErr) {
+                    console.warn('[Gallery] Warp failed, using original canvas:', warpErr);
+                    resultCanvas = sourceCanvas;
                 }
-
-                // SHOW RAW CROP IMMEDIATELY
-                setCapturedImageData(resultCanvas.toDataURL('image/jpeg', 0.95));
-                setIsProcessing(false);
-                setProcessingMessage('');
-                setIsEnhancing(true);
-
-                // 2. APPLY FILTERS IN BACKGROUND
-                setTimeout(async () => {
-                    try {
-                        if (cvReady()) {
-                            setEnhancementStatus("Analyzing...");
-                            const finalCanvas = await enhanceImage(resultCanvas, (msg) => {
-                                setEnhancementStatus(msg);
-                            });
-                            if (finalCanvas) {
-                                setCapturedImageData(finalCanvas.toDataURL("image/jpeg", 0.95));
-                            }
-                        }
-                        setIsEnhancing(false);
-                        setEnhancementStatus("");
-                    } catch (err) {
-                        console.error("Gallery enhancement failed:", err);
-                        setIsEnhancing(false);
-                        setEnhancementStatus("");
-                    }
-                }, 50);
-
-            } catch (cropErr) {
-                console.error("Gallery crop error:", cropErr);
-                // Fallback to original if crop fails
-                setCapturedImageData(sourceCanvas.toDataURL('image/jpeg', 0.95));
-                setIsProcessing(false);
-                setProcessingMessage('');
+            } else {
+                // No corners: try to detect document boundary from the raw image
+                const detected = detectDocument(sourceCanvas);
+                if (detected && detected.length === 4) {
+                    resultCanvas = warpPerspective(sourceCanvas, detected);
+                } else {
+                    // Nothing detected — use full image as-is
+                    resultCanvas = sourceCanvas;
+                }
             }
+
+
+            // SHOW RAW CROP IMMEDIATELY
+            setCapturedImageData(resultCanvas.toDataURL('image/jpeg', 0.95));
+            setIsProcessing(false);
+            setProcessingMessage('');
+            setIsEnhancing(true);
+
+            // 2. APPLY FILTERS IN BACKGROUND
+            setTimeout(async () => {
+                try {
+                    if (cvReady()) {
+                        setEnhancementStatus("Analyzing...");
+                        const finalCanvas = await enhanceImage(resultCanvas, (msg) => {
+                            setEnhancementStatus(msg);
+                        }, 'gallery');
+                        if (finalCanvas) {
+                            setCapturedImageData(finalCanvas.toDataURL("image/jpeg", 0.95));
+                        }
+                    }
+                    setIsEnhancing(false);
+                    setEnhancementStatus("");
+                } catch (err) {
+                    console.error("Gallery enhancement failed:", err);
+                    setIsEnhancing(false);
+                    setEnhancementStatus("");
+                }
+            }, 50);
 
         } catch (err) {
             setGalleryError(err.message || 'Failed to process image.');
@@ -930,11 +920,10 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
         }
     }, [checkScreenshotMetadata]);
 
-    // Draw Smooth Overlay with Blue Dots
+    // Draw Smooth Overlay with Professional "L" brackets
     useEffect(() => {
         if (!overlayRef.current || !videoRef.current || capturedImageData) return;
         const canvas = overlayRef.current;
-        const ctx = canvas.getContext('2d');
 
         // Use offsetWidth/Height for more reliable layout dimensions
         const width = videoRef.current.offsetWidth;
@@ -943,62 +932,31 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
         if (width === 0 || height === 0) return;
         canvas.width = width;
         canvas.height = height;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         // Don't draw if camera is hidden or in gallery mode
-        if (capturedImageData || isGalleryMode) return;
+        if (capturedImageData || isGalleryMode) {
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            return;
+        }
 
         if (smoothedContour) {
             const video = videoRef.current;
             const scaleX = canvas.width / video.videoWidth;
             const scaleY = canvas.height / video.videoHeight;
 
-            // 1. Draw connecting lines
-            ctx.beginPath();
-            ctx.lineWidth = 3;
-            ctx.strokeStyle = liveStatus.isValid ? 'rgba(34, 197, 94, 0.8)' : 'rgba(59, 130, 246, 0.6)'; // Green if valid, Blue if searching
-
-            smoothedContour.forEach((p, i) => {
-                const x = p.x * scaleX;
-                const y = p.y * scaleY;
-                if (i === 0) ctx.moveTo(x, y);
-                else ctx.lineTo(x, y);
-            });
-            ctx.closePath();
-            ctx.stroke();
-
-            // 2. Fill area
-            ctx.fillStyle = liveStatus.isValid ? 'rgba(34, 197, 94, 0.2)' : 'rgba(59, 130, 246, 0.1)';
-            ctx.fill();
-
-            // 3. Draw Blue Corner Dots
-            smoothedContour.forEach(p => {
-                const x = p.x * scaleX;
-                const y = p.y * scaleY;
-
-                // Outer Glow
-                ctx.beginPath();
-                ctx.arc(x, y, 12, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(59, 130, 246, 0.3)';
-                ctx.fill();
-
-                // Inner Dot
-                ctx.beginPath();
-                ctx.arc(x, y, 6, 0, Math.PI * 2);
-                ctx.fillStyle = '#3b82f6'; // Bright Blue
-                ctx.shadowBlur = 10;
-                ctx.shadowColor = '#3b82f6';
-                ctx.fill();
-                ctx.shadowBlur = 0; // Reset
-
-                // White Center
-                ctx.beginPath();
-                ctx.arc(x, y, 2, 0, Math.PI * 2);
-                ctx.fillStyle = 'white';
-                ctx.fill();
-            });
+            drawTableOverlay(
+                canvas,
+                smoothedContour,
+                liveStatus.isValid,
+                scaleX,
+                scaleY
+            );
+        } else {
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
-    }, [smoothedContour, liveStatus, capturedImageData]);
+    }, [smoothedContour, liveStatus, capturedImageData, isGalleryMode]);
 
     if (!open) return null;
 
@@ -1030,7 +988,11 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
                         </div>
                     )}
                 </div>
-                <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full transition-colors">
+                <button
+                    onClick={onClose}
+                    disabled={isUploading}
+                    className={`p-2 hover:bg-white/10 rounded-full transition-colors ${isUploading ? 'opacity-30 cursor-not-allowed' : ''}`}
+                >
                     <X size={24} />
                 </button>
             </div>
@@ -1074,13 +1036,19 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
                             </div>
                             {/* Auto-Capture Progress Bar */}
                             {captureProgress > 0 && (
-                                <div className="mt-2 w-32 h-1 bg-black/40 rounded-full overflow-hidden border border-white/10">
-                                    <div
-                                        className="h-full bg-green-500 transition-all duration-100 ease-linear shadow-[0_0_10px_rgba(34,197,94,0.5)]"
-                                        style={{ width: `${captureProgress}%` }}
-                                    />
+                                <div className="flex flex-col items-center gap-1.5 mt-1">
+                                    <div className="px-3 py-0.5 rounded-full bg-green-500/20 border border-green-500/40 text-green-400 text-[11px] font-bold tracking-wide backdrop-blur-sm animate-pulse">
+                                        🔒 Auto-capturing…
+                                    </div>
+                                    <div className="w-44 h-2 bg-black/50 rounded-full overflow-hidden border border-white/10">
+                                        <div
+                                            className="h-full bg-green-500 rounded-full transition-all duration-100 ease-linear shadow-[0_0_12px_rgba(34,197,94,0.7)]"
+                                            style={{ width: `${captureProgress}%` }}
+                                        />
+                                    </div>
                                 </div>
                             )}
+
                         </div>
 
                         {/* Gallery Rejection Overlay — full-screen inside the viewfinder */}
@@ -1135,13 +1103,12 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
                                         setSmoothedContour(null); // Clear overlay ghosting
                                         setStableContour(null);
 
-                                        // 3. Set explicit gallery mode to prevent re-init
+                                        // 3. Set explicit gallery mode and DISABLE camera to prevent re-init
+                                        setCameraEnabled(false);
                                         setIsGalleryMode(true);
 
-                                        // 4. Stop active tracks immediately
-                                        if (videoRef.current?.srcObject) {
-                                            videoRef.current.srcObject.getTracks().forEach(track => track.stop());
-                                        }
+                                        // 4. Stop active tracks immediately via utility
+                                        stopCamera(videoRef.current);
                                         setIsCameraActive(false);
                                         fileInputRef.current?.click();
                                     }}
@@ -1175,6 +1142,17 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
                                 <div className="bg-black/40 px-6 py-2 rounded-full border border-white/10 text-white font-bold animate-pulse">
                                     {processingMessage || "Processing HD Image..."}
                                 </div>
+                            </div>
+                        )}
+
+                        {/* Uploading Overlay */}
+                        {isUploading && (
+                            <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-[200] backdrop-blur-md">
+                                <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4 shadow-[0_0_15px_rgba(59,130,246,0.5)]"></div>
+                                <div className="bg-blue-600/40 px-6 py-2 rounded-full border border-blue-400/30 text-white font-bold animate-pulse">
+                                    {t?.('upload.uploading') || "Uploading Document..."}
+                                </div>
+                                <p className="text-white/60 text-xs mt-4">Please wait, do not close the app.</p>
                             </div>
                         )}
                     </div>
@@ -1214,17 +1192,27 @@ const SmartCamera = ({ open, onClose, onCapture, shgId, shgName, t }) => {
                         <div className="bg-gray-900 border-t border-white/10 p-4 sm:p-6 flex gap-4 shrink-0 pb-6 shadow-[0_-4px_10px_rgba(0,0,0,0.5)]">
                             <button
                                 onClick={handleRetake}
-                                className="flex-1 py-3.5 sm:py-4 bg-gray-800 hover:bg-gray-700 rounded-xl font-bold text-white transition-colors text-sm sm:text-base border border-white/5"
+                                disabled={isUploading}
+                                className={`flex-1 py-3.5 sm:py-4 bg-gray-800 hover:bg-gray-700 rounded-xl font-bold text-white transition-colors text-sm sm:text-base border border-white/5 ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
                             >
-                                Retake
+                                {isFromGalleryRef.current ? "Reupload" : "Retake"}
                             </button>
                             <button
                                 onClick={handleConfirm}
-                                className="flex-1 py-3.5 sm:py-4 bg-green-600 hover:bg-green-500 rounded-xl font-bold text-white shadow-lg transition-colors text-sm sm:text-base"
+                                disabled={isUploading}
+                                className={`flex-1 py-3.5 sm:py-4 bg-green-600 hover:bg-green-50 rounded-xl font-bold text-white shadow-lg transition-colors text-sm sm:text-base ${isUploading ? 'bg-gray-600 cursor-not-allowed' : ''}`}
                             >
-                                Save Scan
+                                {isUploading ? (t?.('upload.uploading') || "Uploading...") : "Proceed"}
                             </button>
                         </div>
+
+                        {/* Review Screen Uploading Overlay */}
+                        {isUploading && (
+                            <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center z-[200] backdrop-blur-sm">
+                                <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-3"></div>
+                                <div className="text-white font-bold">{t?.('upload.uploading') || "Uploading..."}</div>
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
