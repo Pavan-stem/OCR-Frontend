@@ -231,11 +231,11 @@ const AnalyticsPage = ({ filterProps }) => {
             setIsHistoryLoading(true);
             const [sumResult, trendResult, payResult, payTrendResult, histResult] =
                 await Promise.allSettled([
-                    fetch(`${API_BASE}/api/analytics/v2/summary?${params}`,   { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()),
-                    fetch(`${API_BASE}/api/analytics/v2/trends?${params}`,    { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()),
-                    fetch(`${API_BASE}/api/payments/summary?${params}`,        { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()),
-                    fetch(`${API_BASE}/api/payments/trends?${params}`,         { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()),
-                    fetch(`${API_BASE}/api/payments/history?${histParams}`,    { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()),
+                    fetch(`${API_BASE}/api/analytics/v2/summary?${params}`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()),
+                    fetch(`${API_BASE}/api/analytics/v2/trends?${params}`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()),
+                    fetch(`${API_BASE}/api/payments/summary?${params}`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()),
+                    fetch(`${API_BASE}/api/payments/trends?${params}`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()),
+                    fetch(`${API_BASE}/api/payments/history?${histParams}`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()),
                 ]);
 
             if (!isMounted) return;
@@ -394,7 +394,7 @@ const AnalyticsPage = ({ filterProps }) => {
 
     // Fetch Initial Table Data (Root Level Only)
     useEffect(() => {
-      if (activeView !== 'table') return; // Only fetch when table view is active
+        if (activeView !== 'table') return; // Only fetch when table view is active
         const fetchTable = async () => {
             setLoading(true);
             try {
