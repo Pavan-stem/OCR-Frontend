@@ -1129,12 +1129,12 @@ const UsersTab = ({ filterProps }) => {
                     uploads: {
                       approved: newStats.performance.uploads?.approved ?? 0,
                       rejected: newStats.performance.uploads?.rejected ?? 0,
-                      pending:  newStats.performance.uploads?.pending  ?? 0
+                      pending: newStats.performance.uploads?.pending ?? 0
                     },
                     conversion: {
-                      success:    newStats.performance.conversion?.success    ?? 0,
-                      failed:     newStats.performance.conversion?.failed     ?? 0,
-                      pending:    newStats.performance.conversion?.pending    ?? 0,
+                      success: newStats.performance.conversion?.success ?? 0,
+                      failed: newStats.performance.conversion?.failed ?? 0,
+                      pending: newStats.performance.conversion?.pending ?? 0,
                       processing: newStats.performance.conversion?.processing ?? 0
                     }
                   } : u.performanceStats
@@ -1330,7 +1330,7 @@ const UsersTab = ({ filterProps }) => {
         alert('Upload approved and queued for conversion!');
         if (selectedUser && selectedUser._id === userId) {
           fetchUserUploads(userId, { isBackground: true });
-          
+
           // 🔄 LIVE UPDATE: Refresh user stats immediately
           await refreshUserStatsInTree(userId);
         }
@@ -1347,7 +1347,7 @@ const UsersTab = ({ filterProps }) => {
   const refreshUserStatsInTree = async (userId) => {
     try {
       const token = localStorage.getItem('token');
-      
+
       // ✅ Step 1: Find ENTIRE hierarchy chain - VO → CC → APM
       // This ensures we refresh the approved VO AND recalculate parent aggregates
       const userIdsToSync = [userId];
@@ -1374,7 +1374,7 @@ const UsersTab = ({ filterProps }) => {
       const data = await res.json();
       if (data.success && data.stats) {
         console.log('📊 Received refreshed stats:', data.stats);
-        
+
         // ✅ Step 3: Update tree with new stats - keeps structure intact!
         // IMPORTANT: Updates ALL levels (VO gets direct stats, CC/APM get recalculated aggregates)
         setUsers(prevUsers => {
@@ -1383,7 +1383,7 @@ const UsersTab = ({ filterProps }) => {
             return list.map(u => {
               // Create updated version starting with current state
               let updated = { ...u };
-              
+
               // ✅ ALWAYS recurse into both CC and VO children (all hierarchy levels!)
               if (u.ccs && u.ccs.length > 0) {
                 updated.ccs = updateRecursive(u.ccs);
@@ -1391,15 +1391,15 @@ const UsersTab = ({ filterProps }) => {
               if (u.vos && u.vos.length > 0) {
                 updated.vos = updateRecursive(u.vos);
               }
-              
+
               // ✅ If this user has updated stats, apply them (VO, CC, or APM)
               if (data.stats[u._id]) {
                 const newStats = data.stats[u._id];
                 console.log(`✅ Updating stats for ${u._id}:`, newStats);
-                
-                updated = { 
-                  ...updated, 
-                  stats: newStats.stats, 
+
+                updated = {
+                  ...updated,
+                  stats: newStats.stats,
                   performance: newStats.performance,
                   // ✅ Update display fields for table - works for all levels!
                   totalFiles: newStats.stats?.total || 0,
@@ -1422,13 +1422,13 @@ const UsersTab = ({ filterProps }) => {
               } else {
                 console.warn(`⚠️ No stats found for ${u._id} - may not be in refresh set`);
               }
-              
+
               return updated;
             });
           };
           return updateRecursive(prevUsers);
         });
-        
+
         console.log('✅ Tree stats refresh complete - all levels updated!');
       }
     } catch (err) {
@@ -1632,8 +1632,7 @@ const UsersTab = ({ filterProps }) => {
     setUploading(true);
     if (!selectedUpload) return;
 
-    // Determine final status based on user selection
-    const finalStatus = status || 'rejected'; // User selects status in UI
+    const finalStatus = 'rejected'; // ← source of truth
 
     try {
       const token = localStorage.getItem('token');
@@ -1701,8 +1700,6 @@ const UsersTab = ({ filterProps }) => {
           alert('Status updated successfully!');
           setShowStatusModal(false);
           setSelectedUpload(null);
-          setStatus('pending');
-          setRejectionReason('');
           fetchUserUploads(selectedUser._id, { isBackground: true });
 
           // 🔄 LIVE UPDATE: Refresh tree immediately
@@ -3259,14 +3256,9 @@ const UsersTab = ({ filterProps }) => {
                                           <button
                                             onClick={() => handleQuickStatusUpdate(upload, 'validated')}
                                             disabled={uploading}
-                                            className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1 disabled:opacity-70 disabled:grayscale"
+                                            className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1"
                                           >
-                                            {uploading ? (
-                                              <Loader2 size={14} className="animate-spin" />
-                                            ) : (
-                                              <CheckCircle size={14} />
-                                            )}
-                                            {uploading ? 'Processing...' : 'Approve'}
+                                            <CheckCircle size={14} /> Approve
                                           </button>
                                           <button
                                             onClick={() => openStatusModal(upload)}
@@ -3537,19 +3529,6 @@ const UsersTab = ({ filterProps }) => {
                       )}
                     </div>
 
-                    {/* Gate Status Warning */}
-                    {status === 'validated' && !gateStatus.isOpen && (
-                      <div className="mt-4 p-3 bg-amber-50 border-2 border-amber-200 rounded-xl flex items-start gap-3">
-                        <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
-                        <div>
-                          <p className="text-sm font-black text-amber-700">ℹ️ Gate is CLOSED</p>
-                          <p className="text-xs text-amber-600 font-bold mt-1">
-                            This upload will be approved, but conversion will NOT be queued until the gate is reopened.
-                          </p>
-                        </div>
-                      </div>
-                    )}
-
                     <div className="flex gap-3 mt-6">
                       <button onClick={() => setShowStatusModal(false)} className="flex-1 px-6 py-3 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-xl font-black transition-all">Cancel</button>
                       <button
@@ -3577,7 +3556,7 @@ const UsersTab = ({ filterProps }) => {
               )
             }
 
-            {/* Full Image Viewer Modal */}
+            {/* Full Image Viewer Mo dal */}
 
             {
               showImageViewer && createPortal(

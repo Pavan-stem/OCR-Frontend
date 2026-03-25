@@ -17,6 +17,34 @@ const _getOptimalCanvas = (srcCanvas, maxDim = 1024) => {
     return dst;
 };
 
+
+
+/* ===================== PADDING HELPER ===================== */
+const addPaddingToBounds = (bounds, imgWidth, imgHeight, paddingRatio = 0.05) => {
+    const padX = bounds.width * paddingRatio;
+    const padY = bounds.height * paddingRatio;
+
+    let x = bounds.x - padX;
+    let y = bounds.y - padY;
+    let w = bounds.width + (padX * 2);
+    let h = bounds.height + (padY * 2);
+
+    // Clamp
+    x = Math.max(0, x);
+    y = Math.max(0, y);
+    w = Math.min(imgWidth - x, w);
+    h = Math.min(imgHeight - y, h);
+
+    // 🔥 IMPORTANT: convert to integers
+    return {
+        x: Math.round(x),
+        y: Math.round(y),
+        width: Math.round(w),
+        height: Math.round(h)
+    };
+};
+
+
 /* ===================== BLUR DETECTION ===================== */
 const detectBlurOpenCV = (src) => {
     const gray = new cv.Mat();
@@ -115,18 +143,29 @@ const detectEdgesOpenCV = (src) => {
         pts[diff.indexOf(Math.min(...diff))] // BL
     ];
 
-    const rect = cv.boundingRect(cv.matFromArray(4, 1, cv.CV_32FC2, ordered.flatMap(p => [p.x, p.y])));
+    const rawRect = cv.boundingRect(
+        cv.matFromArray(4, 1, cv.CV_32FC2, ordered.flatMap(p => [p.x, p.y]))
+    );
+
+    // Apply padding
+    const paddedRect = addPaddingToBounds(rawRect, src.cols, src.rows, 0.08);
 
     return {
         detected: true,
         bounds: {
-            x: rect.x,
-            y: rect.y,
-            width: rect.width,
-            height: rect.height,
-            contourPoints: ordered
+            x: paddedRect.x,
+            y: paddedRect.y,
+            width: paddedRect.width,
+            height: paddedRect.height,
+
+            contourPoints: [
+                { x: paddedRect.x, y: paddedRect.y },
+                { x: paddedRect.x + paddedRect.width, y: paddedRect.y },
+                { x: paddedRect.x + paddedRect.width, y: paddedRect.y + paddedRect.height },
+                { x: paddedRect.x, y: paddedRect.y + paddedRect.height }
+            ]
         }
-    };
+    }
 };
 
 /* ===================== LIGHTING (DOCUMENT-AWARE) ===================== */
@@ -357,6 +396,171 @@ const detectDigitalUIOpenCV = (src) => {
     return { hasDigitalUI, zoneMean, zoneStd };
 };
 
+/**
+ * Improved Detect significant obstructions (fingers, earbuds, pens) on the document.
+ * Using Area, Aspect Ratio, and Solidity filters for high accuracy and low false positives.
+ */
+const detectObstructions = (cv, src) => {
+    // Utility to release matrices
+    const release = (...mats) => mats.forEach(m => { if (m) try { m.delete(); } catch (e) { } });
+
+    let gray, thresh, deskewed, laplacian, shadowMask, hLines, vLines, gridThick, masked, contours, hierarchy;
+
+    try {
+        const height = src.rows;
+        const width = src.cols;
+        const imgArea = height * width;
+
+        // --- 1. RESOLUTION ADAPTATION ---
+        // Scale kernel sizes based on image dimensions
+        const kLarge = Math.max(3, Math.round(Math.min(width, height) / 40));
+        const kMedium = Math.max(3, Math.round(Math.min(width, height) / 100));
+        const kSmall = 3;
+
+        gray = new cv.Mat();
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+
+        // --- 2. SCREENSHOT DETECTION ---
+        // Screenshots often have perfect aspect ratios (e.g., 9:16 or 3:4) and specific histograms
+        const aspect = width / height;
+        const isCommonAspect = [0.5625, 0.46, 0.75, 1.33, 1.77, 2.16].some(a => Math.abs(aspect - a) < 0.001);
+        // Note: This is an indicator, not a definitive reject alone.
+
+        // --- 3. BLUR DETECTION (Laplacian Variance) ---
+        laplacian = new cv.Mat();
+        cv.Laplacian(gray, laplacian, cv.CV_64F);
+        let mean = new cv.Mat(1, 4, cv.CV_64F);
+        let stddev = new cv.Mat(1, 4, cv.CV_64F);
+        cv.meanStdDev(laplacian, mean, stddev);
+        const variance = stddev.data64F[0] * stddev.data64F[0];
+        if (variance < 20) { // Threshold for "Extremely Blurry"
+            // return { hasObstruction: true, reason: "Image is too blurry." };
+        }
+        release(mean, stddev);
+
+        // --- 4. SHADOW DETECTION ---
+        shadowMask = new cv.Mat();
+        cv.threshold(gray, shadowMask, 60, 255, cv.THRESH_BINARY_INV);
+        const shadowArea = cv.countNonZero(shadowMask) / imgArea;
+        // Large dark regions (> 40%) indicator of heavy shadows
+
+        // --- 5. DESKEWING (Dominant Angle Detection) ---
+        thresh = new cv.Mat();
+        cv.adaptiveThreshold(gray, thresh, 255, cv.ADAPTIVE_THRESH_MEAN_C, cv.THRESH_BINARY_INV, 11, 2);
+
+        let lines = new cv.Mat();
+        cv.HoughLinesP(thresh, lines, 1, Math.PI / 180, 100, width / 4, 10);
+        let angles = [];
+        for (let i = 0; i < lines.rows; ++i) {
+            let x1 = lines.data32S[i * 4], y1 = lines.data32S[i * 4 + 1];
+            let x2 = lines.data32S[i * 4 + 2], y2 = lines.data32S[i * 4 + 3];
+            let angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
+            // Normalize to [-45, 45]
+            if (angle > 45) angle -= 90;
+            if (angle < -45) angle += 90;
+            if (Math.abs(angle) < 15) angles.push(angle);
+        }
+        release(lines);
+
+        let medianAngle = 0;
+        if (angles.length > 0) {
+            angles.sort((a, b) => a - b);
+            medianAngle = angles[Math.floor(angles.length / 2)];
+        }
+
+        deskewed = new cv.Mat();
+        if (Math.abs(medianAngle) > 1.5) {
+            let center = new cv.Point(width / 2, height / 2);
+            let M = cv.getRotationMatrix2D(center, medianAngle, 1);
+            cv.warpAffine(thresh, deskewed, M, new cv.Size(width, height), cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
+            M.delete();
+        } else {
+            thresh.copyTo(deskewed);
+        }
+
+        // --- 6. GRID ERASURE (THICK SUBTRACTION) ---
+        const hKernelSize = Math.max(kLarge, Math.round(width / 30));
+        const vKernelSize = Math.max(kLarge, Math.round(height / 30));
+        let hKernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(hKernelSize, 1));
+        let vKernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(1, vKernelSize));
+
+        hLines = new cv.Mat();
+        vLines = new cv.Mat();
+        cv.morphologyEx(deskewed, hLines, cv.MORPH_OPEN, hKernel);
+        cv.morphologyEx(deskewed, vLines, cv.MORPH_OPEN, vKernel);
+
+        gridThick = new cv.Mat();
+        cv.bitwise_or(hLines, vLines, gridThick);
+
+        // "Thickening" the grid lines to ensure 100% erasure
+        let kDialateGrid = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
+        cv.dilate(gridThick, gridThick, kDialateGrid);
+
+        masked = new cv.Mat();
+        cv.subtract(deskewed, gridThick, masked);
+
+        hKernel.delete(); vKernel.delete(); kDialateGrid.delete();
+
+        // --- 7. OBJECT RECONNECTION ---
+        let kReconnect = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(kMedium, kMedium));
+        cv.dilate(masked, masked, kReconnect);
+        kReconnect.delete();
+
+        let kCleanup = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(kMedium, kMedium));
+        cv.morphologyEx(masked, masked, cv.MORPH_OPEN, kCleanup);
+        kCleanup.delete();
+
+        // --- 8. CENTER-WEIGHTED DETECTION ---
+        contours = new cv.MatVector();
+        hierarchy = new cv.Mat();
+        cv.findContours(masked, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+        let hasObstruction = false;
+        const areaThreshold = 0.007;     // 0.7% of image area
+        const solidityThreshold = 0.72;  // High solidity check
+
+        // ROI: Central 80% to ignore edge noise/fingers-at-edge
+        const roiLeft = width * 0.1, roiRight = width * 0.9;
+        const roiTop = height * 0.1, roiBottom = height * 0.9;
+
+        for (let i = 0; i < contours.size(); ++i) {
+            const cnt = contours.get(i);
+            const area = cv.contourArea(cnt);
+
+            if (area > imgArea * areaThreshold) {
+                const rect = cv.boundingRect(cnt);
+                const centerX = rect.x + rect.width / 2;
+                const centerY = rect.y + rect.height / 2;
+
+                // Only check if object is in the "middle"
+                if (centerX > roiLeft && centerX < roiRight && centerY > roiTop && centerY < roiBottom) {
+                    const hull = new cv.Mat();
+                    cv.convexHull(cnt, hull);
+                    const hullArea = cv.contourArea(hull);
+                    const solidity = hullArea > 0 ? area / hullArea : 0;
+                    hull.delete();
+
+                    const aspectRatio = rect.width / rect.height;
+
+                    if (aspectRatio > 0.25 && aspectRatio < 4.0 && solidity > solidityThreshold) {
+                        hasObstruction = true;
+                        console.log(`[Obstruction] Detected object in middle: area=${(area / imgArea).toFixed(4)}, solidity=${solidity.toFixed(2)}`);
+                        break;
+                    }
+                }
+            }
+        }
+
+        return { hasObstruction };
+
+    } catch (e) {
+        console.error("Obstruction Pipeline Failed:", e);
+        return { hasObstruction: false };
+    } finally {
+        release(gray, thresh, deskewed, laplacian, shadowMask, hLines, vLines, gridThick, masked, contours, hierarchy);
+    }
+};
+
 /* ===================== MAIN SCAN ===================== */
 export const scanDocument = async (file) => {
     return new Promise((resolve, reject) => {
@@ -421,6 +625,10 @@ export const scanDocument = async (file) => {
                     const screenshotAnalysis = detectScreenshotOpenCV(src);
                     const uiAnalysis = detectDigitalUIOpenCV(src);
 
+                    // 7. NEW: Obstruction Detection
+                    const obstruction = detectObstructions(cv, src);
+                    const hasObstruction = obstruction.hasObstruction;
+
                     let suspicionScore = 0;
                     if (uiAnalysis.hasDigitalUI) suspicionScore += 5;
                     if (screenshotAnalysis.peakRatio > 0.50) suspicionScore += 2;
@@ -436,7 +644,7 @@ export const scanDocument = async (file) => {
 
                     const analysis = {
                         isDocument, isScreenshot, isBlurry, hasHeavyShadow, isCutOff, hasTable,
-                        isTableComplete: !isCutOff, suspicionScore
+                        isTableComplete: !isCutOff, suspicionScore, hasObstruction
                     };
 
                     let status = "valid";
@@ -454,6 +662,9 @@ export const scanDocument = async (file) => {
                     } else if (isBlurry) {
                         status = "error";
                         message = "Invalid image. The document is blurry. Please hold the camera steady and retry.";
+                    } else if (hasObstruction) {
+                        status = "error";
+                        message = "Object detected on document. Please remove any objects (fingers, pens, etc.) and retry.";
                     } else if (hasHeavyShadow) {
                         status = "fixed";
                         message = "Image accepted (minor shadows detected)";
@@ -626,11 +837,41 @@ export const enhanceImage = async (canvas, onProgress = () => { }) => {
         const isExtremelyBlurry = blurScore < 25;
         console.log(`[Enhance] blurScore=${blurScore.toFixed(1)}, isSharp=${isSharp}`);
 
+        // --- Step 0c: High-Quality/Pre-Processed Detection ---
+        // Characterized by high brightness and high contrast (already white background)
+        const mean = new cv.Mat();
+        const std = new cv.Mat();
+        cv.meanStdDev(gray, mean, std);
+        const avgBrightness = mean.data64F[0];
+        const avgContrast = std.data64F[0];
+        mean.delete(); std.delete();
+
+        const isPreProcessed = avgBrightness > 200 && avgContrast > 40;
+        console.log(`[Enhance] avgBrightness=${avgBrightness.toFixed(1)}, avgContrast=${avgContrast.toFixed(1)}, isPreProcessed=${isPreProcessed}`);
+
+        if (isPreProcessed && isSharp) {
+            console.log("[Enhance] High-quality pre-processed image detected. Using minimal enhancement.");
+            onProgress("Optimizing quality...");
+            // Minimal sharpening only
+            blurText = new cv.Mat();
+            cv.GaussianBlur(gray, blurText, new cv.Size(3, 3), 0);
+            finalResult = new cv.Mat();
+            cv.addWeighted(gray, 1.1, blurText, -0.1, 0, finalResult);
+
+            const outputCanvas = document.createElement("canvas");
+            cv.imshow(outputCanvas, finalResult);
+            src.delete(); gray.delete(); blurText.delete(); finalResult.delete();
+            return outputCanvas;
+        }
+
         // --- Step 1: Shadow Removal ---
         onProgress("Removing shadows...");
         await tick();
 
-        cv.medianBlur(gray, gray, 3);
+        // Skip median blur if already sharp to preserve fine lines
+        if (!isSharp) {
+            cv.medianBlur(gray, gray, 3);
+        }
 
         illuminationMap = new cv.Mat();
         tinyGray = new cv.Mat();
@@ -651,7 +892,9 @@ export const enhanceImage = async (canvas, onProgress = () => { }) => {
         await tick();
 
         balanced = new cv.Mat();
-        const clahe = new cv.CLAHE(1.8, new cv.Size(8, 8));
+        // Lower clip limit for already balanced images
+        const clipLimit = isSharp ? 1.2 : 1.8;
+        const clahe = new cv.CLAHE(clipLimit, new cv.Size(8, 8));
         clahe.apply(normalized, balanced);
         clahe.delete();
 
@@ -660,8 +903,9 @@ export const enhanceImage = async (canvas, onProgress = () => { }) => {
         await tick();
 
         whitened = new cv.Mat();
-        const whiteScale = isSharp ? 1.20 : 1.15;
-        const whiteOffset = isSharp ? -20 : -15;
+        // Adaptive whitening based on current brightness
+        const whiteScale = isSharp ? (avgBrightness > 180 ? 1.05 : 1.15) : 1.10;
+        const whiteOffset = isSharp ? (avgBrightness > 180 ? -5 : -15) : -10;
         balanced.convertTo(whitened, cv.CV_8U, whiteScale, whiteOffset);
         console.log(`[Enhance] Whitening done (scale=${whiteScale}).`);
 
@@ -672,13 +916,13 @@ export const enhanceImage = async (canvas, onProgress = () => { }) => {
         blurStructure = new cv.Mat();
         cv.GaussianBlur(whitened, blurStructure, new cv.Size(15, 15), 0);
         midResult = new cv.Mat();
-        const structureWeight = isSharp ? 0.35 : (isExtremelyBlurry ? 0.15 : 0.25);
+        const structureWeight = isSharp ? 0.20 : (isExtremelyBlurry ? 0.15 : 0.25);
         cv.addWeighted(whitened, 1 + structureWeight, blurStructure, -structureWeight, 0, midResult);
 
         blurText = new cv.Mat();
         cv.GaussianBlur(midResult, blurText, new cv.Size(5, 5), 0);
         finalResult = new cv.Mat();
-        const textWeight = isSharp ? 0.25 : (isExtremelyBlurry ? 0.10 : 0.18);
+        const textWeight = isSharp ? 0.15 : (isExtremelyBlurry ? 0.10 : 0.18);
         cv.addWeighted(midResult, 1 + textWeight, blurText, -textWeight, 0, finalResult);
 
         // --- Step 5: Output ---
@@ -852,4 +1096,61 @@ export const validateSHGTableStructure = (canvas) => {
         if (horizontal) horizontal.delete(); if (vertical) vertical.delete();
         if (junctions) junctions.delete();
     }
+};
+
+// ─────────────────────────────────────────────────────────
+// UI OVERLAY HELPER
+// ─────────────────────────────────────────────────────────
+
+export const drawTableOverlay = (canvas, contour, isValid, scaleX, scaleY) => {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (!contour || contour.length !== 4) return;
+
+    // 1. Draw connecting lines
+    ctx.beginPath();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = isValid ? 'rgba(34, 197, 94, 0.8)' : 'rgba(59, 130, 246, 0.6)';
+
+    contour.forEach((p, i) => {
+        const x = p.x * scaleX;
+        const y = p.y * scaleY;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+    });
+    ctx.closePath();
+    ctx.stroke();
+
+    // 2. Fill area
+    ctx.fillStyle = isValid ? 'rgba(34, 197, 94, 0.2)' : 'rgba(59, 130, 246, 0.1)';
+    ctx.fill();
+
+    // 3. Draw Corner Dots
+    contour.forEach(p => {
+        const x = p.x * scaleX;
+        const y = p.y * scaleY;
+
+        // Outer Glow
+        ctx.beginPath();
+        ctx.arc(x, y, 12, 0, Math.PI * 2);
+        ctx.fillStyle = isValid ? 'rgba(34, 197, 94, 0.3)' : 'rgba(59, 130, 246, 0.3)';
+        ctx.fill();
+
+        // Inner Dot
+        ctx.beginPath();
+        ctx.arc(x, y, 6, 0, Math.PI * 2);
+        const color = isValid ? '#22c55e' : '#3b82f6';
+        ctx.fillStyle = color;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = color;
+        ctx.fill();
+        ctx.shadowBlur = 0; // Reset
+
+        // White Center
+        ctx.beginPath();
+        ctx.arc(x, y, 2, 0, Math.PI * 2);
+        ctx.fillStyle = 'white';
+        ctx.fill();
+    });
 };

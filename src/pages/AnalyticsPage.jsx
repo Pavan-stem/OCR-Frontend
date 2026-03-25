@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     Download, FileBarChart, ChartPie as PieChartIcon, Activity, Clock, CheckCircle,
     FileText, Filter, LayoutGrid, List, ChevronRight, AlertCircle,
@@ -165,7 +165,6 @@ const AnalyticsPage = ({ filterProps }) => {
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [refreshKey, setRefreshKey] = useState(0);
     const [isSSEConnected, setIsSSEConnected] = useState(false);
-    const [sseErrorCount, setSSEErrorCount] = useState(0);
 
     // Toast Notification State
     const [toast, setToast] = useState(null); // { type: 'info'|'success'|'error'|'loading', message, countdown }
@@ -194,11 +193,7 @@ const AnalyticsPage = ({ filterProps }) => {
     const isAPM = role.includes('admin - apm');
     const isCC = role.includes('admin - cc');
 
-    // Fetch all analytics data in parallel — summary, trends, payments, history
-    // Replaces 2 separate sequential useEffects; all 5 calls fire simultaneously so
-    // total wait = slowest single call instead of sum of all calls.
-    // `activeView` is intentionally NOT in the dep array — switching tabs should not
-    // re-fetch data (the table's own useEffect handles its own data separately).
+    // Fetch Summary & Trends & Payment Analytics
     useEffect(() => {
         let isMounted = true;
 
@@ -296,422 +291,404 @@ const AnalyticsPage = ({ filterProps }) => {
         return () => { isMounted = false; };
     }, [filters, refreshKey]);
 
-
-    // SSE Real-time Updates with Auto-Reconnect
+    // SSE Real-time Updates
     useEffect(() => {
-        const connectSSE = () => {
-            const token = localStorage.getItem('token');
-            if (!token) return;
+        const token = localStorage.getItem('token');
+        if (!token) return;
 
-            try {
-                const url = `${API_BASE}/api/analytics/v2/stream?token=${token}`;
-                const eventSource = new EventSource(url);
+        const url = `${API_BASE}/api/analytics/v2/stream?token=${token}`;
+        const eventSource = new EventSource(url);
 
-                eventSource.onmessage = (event) => {
-                    try {
-                        if (event.data === 'refresh' || event.data.includes('refresh')) {
-                            console.log("✓ Real-time refresh signal received", event.data);
-                            debouncedRefresh();
-                        } else if (event.data === 'connected') {
-                            setIsSSEConnected(true);
-                            setSSEErrorCount(0);
-                            console.log("✓ SSE Connected");
-                        } else if (event.data === 'heartbeat') {
-                            // Silently update connection status
-                            setIsSSEConnected(true);
-                        } else if (event.data.startsWith('{')) {
-                            // Handle JSON payloads
-                            const payload = JSON.parse(event.data);
-                            if (payload.type === 'refresh') {
-                                debouncedRefresh();
-                            }
-                        }
-                    } catch (err) {
-                        console.warn("Error processing SSE message:", err);
-                    }
-                };
-
-                eventSource.onerror = (err) => {
-                    console.error("✗ SSE Error:", err);
-                    setIsSSEConnected(false);
-                    eventSource.close();
-
-                    // Exponential backoff reconnection
-                    const delay = Math.min(1000 * Math.pow(2, sseErrorCount), 30000);
-                    console.log(`Reconnecting in ${delay}ms (attempt ${sseErrorCount + 1})`);
-
-                    sseTimeoutRef.current = setTimeout(() => {
-                        setSSEErrorCount(prev => prev + 1);
-                        connectSSE();
-                    }, delay);
-                };
-
-                // Store current event source for cleanup
-                return eventSource;
-            } catch (err) {
-                console.error("Failed to create EventSource:", err);
-                const delay = Math.min(1000 * Math.pow(2, sseErrorCount), 30000);
-                sseTimeoutRef.current = setTimeout(() => {
-                    setSSEErrorCount(prev => prev + 1);
-                    connectSSE();
-                }, delay);
+        eventSource.onmessage = (event) => {
+            if (event.data === 'refresh') {
+                console.log("Real-time refresh signal received");
+                setRefreshKey(prev => prev + 1);
+            } else if (event.data === 'connected') {
+                setIsSSEConnected(true);
             }
         };
 
-        const eventSource = connectSSE();
+        eventSource.onerror = (err) => {
+            console.error("✗ SSE Error:", err);
+            setIsSSEConnected(false);
+            eventSource.close();
 
-        return () => {
-            if (sseTimeoutRef.current) {
-                clearTimeout(sseTimeoutRef.current);
-                sseTimeoutRef.current = null;
-            }
-            if (eventSource) {
-                eventSource.close();
-            }
+            // Exponential backoff reconnection
+            const delay = Math.min(1000 * Math.pow(2, sseErrorCount), 30000);
+            console.log(`Reconnecting in ${delay}ms (attempt ${sseErrorCount + 1})`);
+
+            sseTimeoutRef.current = setTimeout(() => {
+                setSSEErrorCount(prev => prev + 1);
+                connectSSE();
+            }, delay);
         };
+
+        // Store current event source for cleanup
+        return eventSource;
+    } catch (err) {
+        console.error("Failed to create EventSource:", err);
+        const delay = Math.min(1000 * Math.pow(2, sseErrorCount), 30000);
+        sseTimeoutRef.current = setTimeout(() => {
+            setSSEErrorCount(prev => prev + 1);
+            connectSSE();
+        }, delay);
+    }
+};
+
+const eventSource = connectSSE();
+
+return () => {
+    if (sseTimeoutRef.current) {
+        clearTimeout(sseTimeoutRef.current);
+        sseTimeoutRef.current = null;
+    }
+    if (eventSource) {
+        eventSource.close();
+    }
+};
     }, [sseErrorCount]);
 
-    // Debounced refresh to batch multiple SSE signals
-    const debouncedRefresh = useCallback(() => {
-        if (refreshTimeoutRef.current) {
-            clearTimeout(refreshTimeoutRef.current);
-        }
-        refreshTimeoutRef.current = setTimeout(() => {
-            setRefreshKey(prev => prev + 1);
-            showToast('info', '🔄 Data updated', 2000);
-        }, 500); // Wait 500ms to batch multiple refresh signals
-    }, []);
+// Debounced refresh to batch multiple SSE signals
+const debouncedRefresh = useCallback(() => {
+    if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+    }
+    refreshTimeoutRef.current = setTimeout(() => {
+        setRefreshKey(prev => prev + 1);
+        showToast('info', '🔄 Data updated', 2000);
+    }, 500); // Wait 500ms to batch multiple refresh signals
+}, []);
 
-    // Cleanup all timeouts on unmount
-    useEffect(() => {
-        return () => {
-            if (sseTimeoutRef.current) clearTimeout(sseTimeoutRef.current);
-            if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
-        };
-    }, []);
+// Cleanup all timeouts on unmount
+useEffect(() => {
+    return () => {
+        if (sseTimeoutRef.current) clearTimeout(sseTimeoutRef.current);
+        if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+    };
+}, []);
 
-    // NOTE: History is now fetched in the main parallel fetchAll useEffect above.
+// NOTE: History is now fetched in the main parallel fetchAll useEffect above.
 
-    // Fetch Initial Table Data (Root Level Only)
-    useEffect(() => {
-        if (activeView !== 'table') return; // Only fetch when table view is active
-        const fetchTable = async () => {
-            setLoading(true);
-            try {
-                const token = localStorage.getItem('token');
-                const params = new URLSearchParams({
-                    ...filters,
-                    level: 'root'
-                }).toString();
-
-                const res = await fetch(`${API_BASE}/api/analytics/v2/hierarchy?${params}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const data = await res.json();
-
-                if (data.success) {
-                    setTableData(data.data || []);
-                }
-            } catch (err) {
-                setError("Could not load initial hierarchy.");
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchTable();
-    }, [filters, refreshKey, activeView]);
-
-    const handleDetailedDownload = async (item, loadedChildren = []) => {
-        const MAX_RETRIES = 3;
-        const RETRY_DELAY_MS = 8000;
-
-        const fetchBreakdown = async (url, retryCount = 0) => {
-            const token = localStorage.getItem('token');
-            const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
-            const data = await response.json();
-
-            if (data.success && data.coldStart) {
-                if (retryCount < MAX_RETRIES) {
-                    const remaining = MAX_RETRIES - retryCount;
-                    showToast('loading', `⏳ Financial data is being calculated... Auto-retrying in 8s (${remaining} attempt${remaining > 1 ? 's' : ''} left)`);
-                    await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
-                    return fetchBreakdown(url, retryCount + 1);
-                } else {
-                    clearToast();
-                    showToast('error', '❌ Financial data is still building. Please try downloading again in 30 seconds.', 7000);
-                    return null;
-                }
-            }
-            return data;
-        };
-
+// Fetch Initial Table Data (Root Level Only)
+useEffect(() => {
+    if (activeView !== 'table') return; // Only fetch when table view is active
+    const fetchTable = async () => {
+        setLoading(true);
         try {
             const token = localStorage.getItem('token');
-            const isVO = item.role === 'VO';
-            const isCC = item.role === 'CC';
-            const isAPM = item.role === 'APM';
+            const params = new URLSearchParams({
+                ...filters,
+                level: 'root'
+            }).toString();
 
-            showToast('loading', `⏳ Calculating dependent flows for ${item.role} report: ${item.name}... (This may take a moment)`);
+            const res = await fetch(`${API_BASE}/api/analytics/v2/hierarchy?${params}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
 
-            const baseParams = {
-                month: filters.month,
-                year: filters.year,
-            };
-
-            if (isAPM) {
-                // Fetch CCs from hierarchy if not already loaded to get the list of CC IDs
-                let ccs = loadedChildren.filter(c => c.role === 'CC' || c.clusterID);
-                if (ccs.length === 0) {
-                    const hierarchyParams = new URLSearchParams({
-                        ...filters,
-                        level: 'apm',
-                        parentId: item.userID || item.id
-                    }).toString();
-                    const hRes = await fetch(`${API_BASE}/api/analytics/v2/hierarchy?${hierarchyParams}`, {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    const hData = await hRes.json();
-                    ccs = (hData.success ? hData.data : []) || [];
-                }
-
-                const ccIDs = ccs.map(c => c.clusterID || c.id).filter(Boolean);
-                const params = new URLSearchParams({
-                    ...baseParams,
-                    level: 'apm',
-                    parentId: item.userID || item.id,
-                    ccIDs: ccIDs.join(',')
-                }).toString();
-
-                const data = await fetchBreakdown(`${API_BASE}/api/payments/deep-breakdown?${params}`);
-                if (!data) return;
-                if (data.success) {
-                    clearToast();
-                    exportPerformanceExcel(data.data, data.level, ccs, item);
-                    showToast('success', `✅ APM report for "${item.name}" downloaded successfully!`, 4000);
-                } else {
-                    clearToast();
-                    showToast('error', data.message || 'Failed to fetch CC data', 5000);
-                }
-
-            } else if (isCC) {
-                // CC → VOs (Deep Breakdown will roll up from SHGs)
-                const params = new URLSearchParams({
-                    ...baseParams,
-                    level: 'cc',
-                    parentId: item.clusterID || item.id
-                }).toString();
-
-                const data = await fetchBreakdown(`${API_BASE}/api/payments/deep-breakdown?${params}`);
-                if (!data) return;
-                if (data.success) {
-                    clearToast();
-                    exportPerformanceExcel(data.data, data.level, [], item);
-                    showToast('success', `✅ CC report for "${item.name}" downloaded successfully!`, 4000);
-                } else {
-                    clearToast();
-                    showToast('error', data.message || 'Failed to fetch VO data', 5000);
-                }
-
-            } else if (isVO) {
-                // VO → SHGs
-                const voParams = new URLSearchParams({
-                    ...baseParams,
-                    level: 'vo',
-                    parentId: item.voID || item.id
-                }).toString();
-
-                const voData = await fetchBreakdown(`${API_BASE}/api/payments/deep-breakdown?${voParams}`);
-                if (!voData) return;
-                if (voData.success) {
-                    clearToast();
-                    exportPerformanceExcel(voData.data, voData.level, [], item);
-                    showToast('success', `✅ VO report for "${item.name}" downloaded successfully!`, 4000);
-                } else {
-                    clearToast();
-                    showToast('error', voData.message || 'Failed to fetch SHG data', 5000);
-                }
-            } else {
-                clearToast();
-                showToast('error', 'Download not supported for this level.', 4000);
+            if (data.success) {
+                setTableData(data.data || []);
             }
         } catch (err) {
-            console.error('Download Error:', err);
-            clearToast();
-            showToast('error', 'Failed to download report. Please check connection and try again.', 5000);
+            setError("Could not load initial hierarchy.");
+        } finally {
+            setLoading(false);
         }
     };
 
-    return (
-        <div className="min-h-screen text-white p-4 lg:p-8 animate-in fade-in duration-700 pb-16">
-            {/* Toast Notification */}
-            {toast && (
-                <div className={`fixed bottom-6 right-6 z-[9999] flex items-start gap-3 px-5 py-4 rounded-2xl shadow-2xl border max-w-sm animate-in slide-in-from-bottom-4 fade-in duration-300 ${toast.type === 'loading' ? 'bg-indigo-900 border-indigo-700 text-white' :
-                    toast.type === 'success' ? 'bg-emerald-900 border-emerald-700 text-white' :
-                        toast.type === 'error' ? 'bg-rose-900 border-rose-700 text-white' :
-                            'bg-slate-900 border-slate-700 text-white'
-                    }`}>
-                    {toast.type === 'loading' && <Loader2 className="w-4 h-4 text-indigo-300 animate-spin mt-0.5 shrink-0" />}
-                    {toast.type === 'success' && <CheckCircle className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />}
-                    {toast.type === 'error' && <AlertCircle className="w-4 h-4 text-rose-400 mt-0.5 shrink-0" />}
-                    <p className="text-xs font-bold leading-relaxed">{toast.message}</p>
-                    <button onClick={clearToast} className="ml-auto text-white/40 hover:text-white/80 transition-colors shrink-0 mt-0.5">✕</button>
-                </div>
-            )}
-            {/* Header & Controls */}
-            <div className="flex flex-col lg:flex-row bg-white/[0.03] backdrop-blur-3xl p-8 rounded-[32px] border border-white/10 shadow-2xl justify-between items-start lg:items-center gap-6 mb-8">
-                <div className="w-[25rem]">
-                    <h2 className="text-5xl font-black text-white px-2 tracking-tighter flex items-center gap-3 drop-shadow-2xl">
-                        Analytics
-                        {isRefreshing && (
-                            <div className="flex items-center gap-2 px-3 py-1 bg-indigo-500/20 border border-indigo-500/30 rounded-full animate-pulse ml-4">
-                                <Loader2 className="w-3 h-3 text-indigo-400 animate-spin" />
-                                {/* <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">Refreshing</span> */}
-                            </div>
-                        )}
-                    </h2>
-                </div>
+    fetchTable();
+}, [filters, refreshKey, activeView]);
 
-                <div className="flex flex-nowrap items-center gap-2 w-full lg:w-auto pr-4">
-                    <div className="flex bg-white/5 backdrop-blur-xl p-1.5 rounded-2xl border border-white/10 shadow-2xl">
-                        {[
-                            { id: 'charts', icon: PieChartIcon, label: 'Performance Charts' },
-                            { id: 'table', icon: List, label: 'Unit Performance Details' }
-                        ].map((v) => (
-                            <button
-                                key={v.id}
-                                onClick={() => setActiveView(v.id)}
-                                className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black transition-all duration-300 ${activeView === v.id
-                                    ? 'bg-indigo-600 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)] translate-y-[-1px]'
-                                    : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
-                            >
-                                <v.icon className="w-4 h-4" />
-                                {v.label}
-                            </button>
-                        ))}
-                    </div>
+const handleDetailedDownload = async (item, loadedChildren = []) => {
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY_MS = 8000;
 
+    const fetchBreakdown = async (url, retryCount = 0) => {
+        const token = localStorage.getItem('token');
+        const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+        const data = await response.json();
 
-                </div>
+        if (data.success && data.coldStart) {
+            if (retryCount < MAX_RETRIES) {
+                const remaining = MAX_RETRIES - retryCount;
+                showToast('loading', `⏳ Financial data is being calculated... Auto-retrying in 8s (${remaining} attempt${remaining > 1 ? 's' : ''} left)`);
+                await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+                return fetchBreakdown(url, retryCount + 1);
+            } else {
+                clearToast();
+                showToast('error', '❌ Financial data is still building. Please try downloading again in 30 seconds.', 7000);
+                return null;
+            }
+        }
+        return data;
+    };
+
+    try {
+        const token = localStorage.getItem('token');
+        const isVO = item.role === 'VO';
+        const isCC = item.role === 'CC';
+        const isAPM = item.role === 'APM';
+
+        showToast('loading', `⏳ Calculating dependent flows for ${item.role} report: ${item.name}... (This may take a moment)`);
+
+        const baseParams = {
+            month: filters.month,
+            year: filters.year,
+        };
+
+        if (isAPM) {
+            // Fetch CCs from hierarchy if not already loaded to get the list of CC IDs
+            let ccs = loadedChildren.filter(c => c.role === 'CC' || c.clusterID);
+            if (ccs.length === 0) {
+                const hierarchyParams = new URLSearchParams({
+                    ...filters,
+                    level: 'apm',
+                    parentId: item.userID || item.id
+                }).toString();
+                const hRes = await fetch(`${API_BASE}/api/analytics/v2/hierarchy?${hierarchyParams}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const hData = await hRes.json();
+                ccs = (hData.success ? hData.data : []) || [];
+            }
+
+            const ccIDs = ccs.map(c => c.clusterID || c.id).filter(Boolean);
+            const params = new URLSearchParams({
+                ...baseParams,
+                level: 'apm',
+                parentId: item.userID || item.id,
+                ccIDs: ccIDs.join(',')
+            }).toString();
+
+            const data = await fetchBreakdown(`${API_BASE}/api/payments/deep-breakdown?${params}`);
+            if (!data) return;
+            if (data.success) {
+                clearToast();
+                exportPerformanceExcel(data.data, data.level, ccs, item);
+                showToast('success', `✅ APM report for "${item.name}" downloaded successfully!`, 4000);
+            } else {
+                clearToast();
+                showToast('error', data.message || 'Failed to fetch CC data', 5000);
+            }
+
+        } else if (isCC) {
+            // CC → VOs (Deep Breakdown will roll up from SHGs)
+            const params = new URLSearchParams({
+                ...baseParams,
+                level: 'cc',
+                parentId: item.clusterID || item.id
+            }).toString();
+
+            const data = await fetchBreakdown(`${API_BASE}/api/payments/deep-breakdown?${params}`);
+            if (!data) return;
+            if (data.success) {
+                clearToast();
+                exportPerformanceExcel(data.data, data.level, [], item);
+                showToast('success', `✅ CC report for "${item.name}" downloaded successfully!`, 4000);
+            } else {
+                clearToast();
+                showToast('error', data.message || 'Failed to fetch VO data', 5000);
+            }
+
+        } else if (isVO) {
+            // VO → SHGs
+            const voParams = new URLSearchParams({
+                ...baseParams,
+                level: 'vo',
+                parentId: item.voID || item.id
+            }).toString();
+
+            const voData = await fetchBreakdown(`${API_BASE}/api/payments/deep-breakdown?${voParams}`);
+            if (!voData) return;
+            if (voData.success) {
+                clearToast();
+                exportPerformanceExcel(voData.data, voData.level, [], item);
+                showToast('success', `✅ VO report for "${item.name}" downloaded successfully!`, 4000);
+            } else {
+                clearToast();
+                showToast('error', voData.message || 'Failed to fetch SHG data', 5000);
+            }
+        } else {
+            clearToast();
+            showToast('error', 'Download not supported for this level.', 4000);
+        }
+    } catch (err) {
+        console.error('Download Error:', err);
+        clearToast();
+        showToast('error', 'Failed to download report. Please check connection and try again.', 5000);
+    }
+};
+
+return (
+    <div className="min-h-screen text-white p-4 lg:p-8 animate-in fade-in duration-700 pb-16">
+        {/* Toast Notification */}
+        {toast && (
+            <div className={`fixed bottom-6 right-6 z-[9999] flex items-start gap-3 px-5 py-4 rounded-2xl shadow-2xl border max-w-sm animate-in slide-in-from-bottom-4 fade-in duration-300 ${toast.type === 'loading' ? 'bg-indigo-900 border-indigo-700 text-white' :
+                toast.type === 'success' ? 'bg-emerald-900 border-emerald-700 text-white' :
+                    toast.type === 'error' ? 'bg-rose-900 border-rose-700 text-white' :
+                        'bg-slate-900 border-slate-700 text-white'
+                }`}>
+                {toast.type === 'loading' && <Loader2 className="w-4 h-4 text-indigo-300 animate-spin mt-0.5 shrink-0" />}
+                {toast.type === 'success' && <CheckCircle className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />}
+                {toast.type === 'error' && <AlertCircle className="w-4 h-4 text-rose-400 mt-0.5 shrink-0" />}
+                <p className="text-xs font-bold leading-relaxed">{toast.message}</p>
+                <button onClick={clearToast} className="ml-auto text-white/40 hover:text-white/80 transition-colors shrink-0 mt-0.5">✕</button>
             </div>
-
-            {/* Role-Adaptive Filter Bar */}
-            <div className="mb-10">
-                <AnalyticsFilters filterProps={filterProps} user={user} />
-            </div>
-
-            {/* Interactive Map Section */}
-            <div className="animate-in fade-in slide-in-from-top-4 duration-1000 overflow-hidden mb-5">
-                <InteractiveAPMap
-                    forceCalibration={false}
-                    summary={(() => {
-                        const rawMapStats = summary?.mapStats || {};
-                        const conv = summary?.conversion || {};
-                        return {
-                            ...rawMapStats,
-                            all: {
-                                uploaded: summary?.shgStats?.uploaded,
-                                pending: summary?.shgStats?.pending,
-                                total: summary?.shgStats?.total,
-                                approved: summary?.ccActions?.approved,
-                                rejected: summary?.ccActions?.rejected,
-                                ccPending: summary?.ccActions?.pending,
-                                converted: conv.converted,
-                                sentToDB: conv.sentToDB,
-                                failed: conv.failed,
-                                convPending: conv.pending,
-                                convProcessing: conv.processing,
-                                financeStats: paymentData?.financeStats
-                            }
-                        };
-                    })()}
-                    filters={filters}
-                    locked={isAPM || isCC}
-                    onDistrictSelect={(d) => {
-                        setSelectedDistrict(d || 'all');
-                        setSelectedMandal('all');
-                        setSelectedVillage('all');
-                    }}
-                    onMandalSelect={(m) => {
-                        setSelectedMandal(m || 'all');
-                        setSelectedVillage('all');
-                    }}
-                />
-            </div>
-
-            {/* Sections based on Active View */}
-            {/* Removed Metric Summary Cards per user request */}
-
-            {activeView === 'charts' && (
-                <div className="flex flex-col gap-8">
-                    {role.includes('developer') && (
-                        <div className="bg-indigo-600/10 border border-indigo-500/20 px-6 py-4 rounded-2xl flex items-center justify-between shadow-lg max-w-sm ml-auto animate-in fade-in slide-in-from-top-4">
-                            <div className="flex items-center gap-3">
-                                <div className="p-2 bg-indigo-500/20 rounded-xl">
-                                    <Database className="w-5 h-5 text-indigo-400" />
-                                </div>
-                                <div>
-                                    <p className="text-[10px] font-black text-indigo-400/80 uppercase tracking-widest leading-none mb-1">Developer Insights</p>
-                                    <h4 className="text-white text-sm font-bold">Files Sent to DB</h4>
-                                </div>
-                            </div>
-                            <div className="text-2xl font-black text-white">
-                                {summary?.conversion?.sentToDB || 0}
-                            </div>
-
+        )}
+        {/* Header & Controls */}
+        <div className="flex flex-col lg:flex-row bg-white/[0.03] backdrop-blur-3xl p-8 rounded-[32px] border border-white/10 shadow-2xl justify-between items-start lg:items-center gap-6 mb-8">
+            <div className="w-[25rem]">
+                <h2 className="text-5xl font-black text-white px-2 tracking-tighter flex items-center gap-3 drop-shadow-2xl">
+                    Analytics
+                    {isRefreshing && (
+                        <div className="flex items-center gap-2 px-3 py-1 bg-indigo-500/20 border border-indigo-500/30 rounded-full animate-pulse ml-4">
+                            <Loader2 className="w-3 h-3 text-indigo-400 animate-spin" />
+                            {/* <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">Refreshing</span> */}
                         </div>
                     )}
-                    <FinanceAnalytics
-                        data={paymentData}
-                        activeMetric={activeMetric}
-                        onMetricChange={setActiveMetric}
-                        isExpanded={isCollectionsExpanded}
-                        setIsExpanded={setIsCollectionsExpanded}
-                    />
+                </h2>
+            </div>
 
-                    {/* Unified Multi-Metric Visualization - Perfect Alignment */}
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-                        <div className="lg:col-span-2">
-                            <PaymentTrendChart data={paymentTrends} />
+            <div className="flex flex-nowrap items-center gap-2 w-full lg:w-auto pr-4">
+                <div className="flex bg-white/5 backdrop-blur-xl p-1.5 rounded-2xl border border-white/10 shadow-2xl">
+                    {[
+                        { id: 'charts', icon: PieChartIcon, label: 'Performance Charts' },
+                        { id: 'table', icon: List, label: 'Unit Performance Details' }
+                    ].map((v) => (
+                        <button
+                            key={v.id}
+                            onClick={() => setActiveView(v.id)}
+                            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black transition-all duration-300 ${activeView === v.id
+                                ? 'bg-indigo-600 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)] translate-y-[-1px]'
+                                : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                        >
+                            <v.icon className="w-4 h-4" />
+                            {v.label}
+                        </button>
+                    ))}
+                </div>
+
+
+            </div>
+        </div>
+
+        {/* Role-Adaptive Filter Bar */}
+        <div className="mb-10">
+            <AnalyticsFilters filterProps={filterProps} user={user} />
+        </div>
+
+        {/* Interactive Map Section */}
+        <div className="animate-in fade-in slide-in-from-top-4 duration-1000 overflow-hidden mb-5">
+            <InteractiveAPMap
+                forceCalibration={false}
+                summary={(() => {
+                    const rawMapStats = summary?.mapStats || {};
+                    const conv = summary?.conversion || {};
+                    return {
+                        ...rawMapStats,
+                        all: {
+                            uploaded: summary?.shgStats?.uploaded,
+                            pending: summary?.shgStats?.pending,
+                            total: summary?.shgStats?.total,
+                            approved: summary?.ccActions?.approved,
+                            rejected: summary?.ccActions?.rejected,
+                            ccPending: summary?.ccActions?.pending,
+                            converted: conv.converted,
+                            sentToDB: conv.sentToDB,
+                            failed: conv.failed,
+                            convPending: conv.pending,
+                            convProcessing: conv.processing,
+                            financeStats: paymentData?.financeStats
+                        }
+                    };
+                })()}
+                filters={filters}
+                locked={isAPM || isCC}
+                onDistrictSelect={(d) => {
+                    setSelectedDistrict(d || 'all');
+                    setSelectedMandal('all');
+                    setSelectedVillage('all');
+                }}
+                onMandalSelect={(m) => {
+                    setSelectedMandal(m || 'all');
+                    setSelectedVillage('all');
+                }}
+            />
+        </div>
+
+        {/* Sections based on Active View */}
+        {/* Removed Metric Summary Cards per user request */}
+
+        {activeView === 'charts' && (
+            <div className="flex flex-col gap-8">
+                {role.includes('developer') && (
+                    <div className="bg-indigo-600/10 border border-indigo-500/20 px-6 py-4 rounded-2xl flex items-center justify-between shadow-lg max-w-sm ml-auto animate-in fade-in slide-in-from-top-4">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-indigo-500/20 rounded-xl">
+                                <Database className="w-5 h-5 text-indigo-400" />
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-black text-indigo-400/80 uppercase tracking-widest leading-none mb-1">Developer Insights</p>
+                                <h4 className="text-white text-sm font-bold">Files Sent to DB</h4>
+                            </div>
                         </div>
-                        <div className="lg:col-span-1">
-                            <UnifiedDistributionCard
-                                data={paymentData?.distributions}
-                                activeMetric={activeMetric}
-                                level={paymentData?.distKey}
-                            />
+                        <div className="text-2xl font-black text-white">
+                            {summary?.conversion?.sentToDB || 0}
                         </div>
+
                     </div>
+                )}
+                <FinanceAnalytics
+                    data={paymentData}
+                    activeMetric={activeMetric}
+                    onMetricChange={setActiveMetric}
+                    isExpanded={isCollectionsExpanded}
+                    setIsExpanded={setIsCollectionsExpanded}
+                />
 
-                    {/* Cumulative Financial Summary */}
-                    <div className="mb-8">
-                        <CumulativeFinanceSummary
-                            history={historyData}
-                            loading={isHistoryLoading}
+                {/* Unified Multi-Metric Visualization - Perfect Alignment */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+                    <div className="lg:col-span-2">
+                        <PaymentTrendChart data={paymentTrends} />
+                    </div>
+                    <div className="lg:col-span-1">
+                        <UnifiedDistributionCard
+                            data={paymentData?.distributions}
+                            activeMetric={activeMetric}
+                            level={paymentData?.distKey}
                         />
                     </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                        <TrendChart data={trends} />
-                        <DistributionCharts summary={summary} />
-                    </div>
                 </div>
-            )}
 
-            {activeView === 'table' && (
-                <DetailedTable
-                    data={tableData}
-                    loading={loading}
-                    handleDetailedDownload={handleDetailedDownload}
-                    filters={filters}
-                    refreshKey={refreshKey}
-                    isSSEConnected={isSSEConnected}
-                />
-            )}
+                {/* Cumulative Financial Summary */}
+                <div className="mb-8">
+                    <CumulativeFinanceSummary
+                        history={historyData}
+                        loading={isHistoryLoading}
+                    />
+                </div>
 
-            {/* Always show a small summary if in chart view etc? No, let's keep it toggleable. */}
-        </div>
-    );
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <TrendChart data={trends} />
+                    <DistributionCharts summary={summary} />
+                </div>
+            </div>
+        )}
+
+        {activeView === 'table' && (
+            <DetailedTable
+                data={tableData}
+                loading={loading}
+                handleDetailedDownload={handleDetailedDownload}
+                filters={filters}
+                refreshKey={refreshKey}
+                isSSEConnected={isSSEConnected}
+            />
+        )}
+
+        {/* Always show a small summary if in chart view etc? No, let's keep it toggleable. */}
+    </div>
+);
 };
 
 const AnalyticsFilters = ({ filterProps, user }) => {
@@ -1085,20 +1062,7 @@ const TrendChart = ({ data }) => {
 };
 
 const PaymentTrendChart = ({ data }) => {
-    // Handle empty or missing data gracefully
-    if (!data || (Array.isArray(data) && data.length === 0)) {
-        return (
-            <div className="bg-white/80 backdrop-blur-md p-8 rounded-[32px] border border-white/20 shadow-lg h-full flex flex-col items-center justify-center min-h-[400px]">
-                <div className="flex flex-col items-center gap-3">
-                    <div className="p-3 bg-gray-100 rounded-xl">
-                        <TrendingUp className="w-5 h-5 text-gray-400" />
-                    </div>
-                    <p className="text-center text-sm font-black text-gray-400 uppercase">No Financial Data Available</p>
-                    <p className="text-center text-[10px] text-gray-300">Please check your filters or wait for data to load</p>
-                </div>
-            </div>
-        );
-    }
+    if (!data || data.length === 0) return null;
 
     return (
         <div className="bg-white/80 backdrop-blur-md p-8 rounded-[32px] border border-white/20 shadow-lg h-full flex flex-col" id="payment-trends">
