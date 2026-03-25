@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
     Download, FileBarChart, ChartPie as PieChartIcon, Activity, Clock, CheckCircle,
     FileText, Filter, LayoutGrid, List, ChevronRight, AlertCircle,
@@ -37,11 +37,9 @@ const CumulativeFinanceSummary = ({ history, loading }) => {
         return (history || []).map(item => {
             const stats = item.stats || {};
 
-            // inflow = Total Collection (loan repayments) + Member Deposit (savings) + Late Penalties + Other Savings
             const inflow = (stats.totalLoanRecovered || 0) + (stats.totalSavings || 0) +
                 (stats.totalPenalties || 0) + (stats.otherSavings || 0);
 
-            // outflow = Loan Sanctioned + Savings Withdrawals (returned to members)
             const outflow = (stats.totalLoansTaken || 0) + (stats.totalReturned || 0);
 
             const opening = runningBalance;
@@ -159,7 +157,7 @@ const AnalyticsPage = ({ filterProps }) => {
     const [isHistoryLoading, setIsHistoryLoading] = useState(false);
 
     // UI State
-    const [activeView, setActiveView] = useState('charts'); // charts, table
+    const [activeView, setActiveView] = useState('charts');
     const [activeMetric, setActiveMetric] = useState('totalCollections');
     const [isCollectionsExpanded, setIsCollectionsExpanded] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
@@ -167,9 +165,10 @@ const AnalyticsPage = ({ filterProps }) => {
     const [isSSEConnected, setIsSSEConnected] = useState(false);
 
     // Toast Notification State
-    const [toast, setToast] = useState(null); // { type: 'info'|'success'|'error'|'loading', message, countdown }
+    const [toast, setToast] = useState(null);
 
-    // SSE Refs
+    // SSE State & Refs
+    const [sseErrorCount, setSSEErrorCount] = useState(0);
     const sseTimeoutRef = useRef(null);
     const refreshTimeoutRef = useRef(null);
 
@@ -203,8 +202,6 @@ const AnalyticsPage = ({ filterProps }) => {
                 filters.district !== 'all' || filters.mandal !== 'all' || filters.village !== 'all';
             const params = new URLSearchParams({ ...filters }).toString();
 
-            // Build history params — always fetch up to current month for current year,
-            // full year (12 months) for past years.
             const now = new Date();
             const historyParams = { ...filters };
             if (parseInt(filters.year) === now.getFullYear()) {
@@ -214,7 +211,6 @@ const AnalyticsPage = ({ filterProps }) => {
             }
             const histParams = new URLSearchParams(historyParams).toString();
 
-            // Clear stale data immediately when geographic filter changes
             if (isGeographicFiltered) {
                 setSummary(null);
                 setPaymentData(null);
@@ -222,7 +218,6 @@ const AnalyticsPage = ({ filterProps }) => {
                 setTrends([]);
             }
 
-            // Kick off all 5 fetches at the same time
             setIsHistoryLoading(true);
             const [sumResult, trendResult, payResult, payTrendResult, histResult] =
                 await Promise.allSettled([
@@ -235,7 +230,6 @@ const AnalyticsPage = ({ filterProps }) => {
 
             if (!isMounted) return;
 
-            // Analytics summary
             if (sumResult.status === 'fulfilled' && sumResult.value?.success) {
                 setSummary(sumResult.value.summary);
                 setIsRefreshing(sumResult.value.stale || false);
@@ -243,18 +237,15 @@ const AnalyticsPage = ({ filterProps }) => {
                 console.error("Failed to fetch summary:", sumResult.reason);
             }
 
-            // Analytics upload trends
             if (trendResult.status === 'fulfilled' && trendResult.value?.success) {
                 setTrends(trendResult.value.data);
             } else if (trendResult.status === 'rejected') {
                 console.error("Failed to fetch trends:", trendResult.reason);
             }
 
-            // Payment summary
             if (payResult.status === 'fulfilled') {
                 if (payResult.value?.success) {
                     setPaymentData(payResult.value.data);
-                    console.log("✓ Payment summary loaded:", payResult.value.data);
                 } else {
                     console.warn("⚠ Payment summary not successful:", payResult.value);
                 }
@@ -262,11 +253,9 @@ const AnalyticsPage = ({ filterProps }) => {
                 console.error("Failed to fetch payment summary:", payResult.reason);
             }
 
-            // Payment trends
             if (payTrendResult.status === 'fulfilled') {
                 if (payTrendResult.value?.success) {
                     setPaymentTrends(payTrendResult.value.data || []);
-                    console.log("✓ Payment trends loaded:", payTrendResult.value.data);
                 } else {
                     console.warn("⚠ Payment trends not successful:", payTrendResult.value);
                     setPaymentTrends([]);
@@ -276,7 +265,6 @@ const AnalyticsPage = ({ filterProps }) => {
                 setPaymentTrends([]);
             }
 
-            // Payment history (cumulative summary table)
             if (histResult.status === 'fulfilled' && histResult.value?.success) {
                 setHistoryData(histResult.value.data || []);
             } else if (histResult.status === 'rejected') {
@@ -291,404 +279,387 @@ const AnalyticsPage = ({ filterProps }) => {
         return () => { isMounted = false; };
     }, [filters, refreshKey]);
 
+    // Debounced refresh to batch multiple SSE signals
+    const debouncedRefresh = useCallback(() => {
+        if (refreshTimeoutRef.current) {
+            clearTimeout(refreshTimeoutRef.current);
+        }
+        refreshTimeoutRef.current = setTimeout(() => {
+            setRefreshKey(prev => prev + 1);
+            showToast('info', '🔄 Data updated', 2000);
+        }, 500);
+    }, []);
+
     // SSE Real-time Updates
     useEffect(() => {
         const token = localStorage.getItem('token');
         if (!token) return;
 
-        const url = `${API_BASE}/api/analytics/v2/stream?token=${token}`;
-        const eventSource = new EventSource(url);
+        let eventSource = null;
 
-        eventSource.onmessage = (event) => {
-            if (event.data === 'refresh') {
-                console.log("Real-time refresh signal received");
-                setRefreshKey(prev => prev + 1);
-            } else if (event.data === 'connected') {
-                setIsSSEConnected(true);
+        const connectSSE = () => {
+            try {
+                const url = `${API_BASE}/api/analytics/v2/stream?token=${token}`;
+                eventSource = new EventSource(url);
+
+                eventSource.onmessage = (event) => {
+                    if (event.data === 'refresh') {
+                        console.log("Real-time refresh signal received");
+                        debouncedRefresh();
+                    } else if (event.data === 'connected') {
+                        setIsSSEConnected(true);
+                    }
+                };
+
+                eventSource.onerror = (err) => {
+                    console.error("✗ SSE Error:", err);
+                    setIsSSEConnected(false);
+                    eventSource.close();
+
+                    const delay = Math.min(1000 * Math.pow(2, sseErrorCount), 30000);
+                    console.log(`Reconnecting in ${delay}ms`);
+
+                    sseTimeoutRef.current = setTimeout(() => {
+                        setSSEErrorCount(prev => prev + 1);
+                    }, delay);
+                };
+            } catch (err) {
+                console.error("Failed to create EventSource:", err);
+                const delay = Math.min(1000 * Math.pow(2, sseErrorCount), 30000);
+                sseTimeoutRef.current = setTimeout(() => {
+                    setSSEErrorCount(prev => prev + 1);
+                }, delay);
             }
         };
 
-        eventSource.onerror = (err) => {
-            console.error("✗ SSE Error:", err);
-            setIsSSEConnected(false);
-            eventSource.close();
+        connectSSE();
 
-            // Exponential backoff reconnection
-            const delay = Math.min(1000 * Math.pow(2, sseErrorCount), 30000);
-            console.log(`Reconnecting in ${delay}ms (attempt ${sseErrorCount + 1})`);
-
-            sseTimeoutRef.current = setTimeout(() => {
-                setSSEErrorCount(prev => prev + 1);
-                connectSSE();
-            }, delay);
-        };
-
-        // Store current event source for cleanup
-        return eventSource;
-    } catch (err) {
-        console.error("Failed to create EventSource:", err);
-        const delay = Math.min(1000 * Math.pow(2, sseErrorCount), 30000);
-        sseTimeoutRef.current = setTimeout(() => {
-            setSSEErrorCount(prev => prev + 1);
-            connectSSE();
-        }, delay);
-    }
-};
-
-const eventSource = connectSSE();
-
-return () => {
-    if (sseTimeoutRef.current) {
-        clearTimeout(sseTimeoutRef.current);
-        sseTimeoutRef.current = null;
-    }
-    if (eventSource) {
-        eventSource.close();
-    }
-};
-    }, [sseErrorCount]);
-
-// Debounced refresh to batch multiple SSE signals
-const debouncedRefresh = useCallback(() => {
-    if (refreshTimeoutRef.current) {
-        clearTimeout(refreshTimeoutRef.current);
-    }
-    refreshTimeoutRef.current = setTimeout(() => {
-        setRefreshKey(prev => prev + 1);
-        showToast('info', '🔄 Data updated', 2000);
-    }, 500); // Wait 500ms to batch multiple refresh signals
-}, []);
-
-// Cleanup all timeouts on unmount
-useEffect(() => {
-    return () => {
-        if (sseTimeoutRef.current) clearTimeout(sseTimeoutRef.current);
-        if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
-    };
-}, []);
-
-// NOTE: History is now fetched in the main parallel fetchAll useEffect above.
-
-// Fetch Initial Table Data (Root Level Only)
-useEffect(() => {
-    if (activeView !== 'table') return; // Only fetch when table view is active
-    const fetchTable = async () => {
-        setLoading(true);
-        try {
-            const token = localStorage.getItem('token');
-            const params = new URLSearchParams({
-                ...filters,
-                level: 'root'
-            }).toString();
-
-            const res = await fetch(`${API_BASE}/api/analytics/v2/hierarchy?${params}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const data = await res.json();
-
-            if (data.success) {
-                setTableData(data.data || []);
+        return () => {
+            if (sseTimeoutRef.current) {
+                clearTimeout(sseTimeoutRef.current);
+                sseTimeoutRef.current = null;
             }
-        } catch (err) {
-            setError("Could not load initial hierarchy.");
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    fetchTable();
-}, [filters, refreshKey, activeView]);
-
-const handleDetailedDownload = async (item, loadedChildren = []) => {
-    const MAX_RETRIES = 3;
-    const RETRY_DELAY_MS = 8000;
-
-    const fetchBreakdown = async (url, retryCount = 0) => {
-        const token = localStorage.getItem('token');
-        const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
-        const data = await response.json();
-
-        if (data.success && data.coldStart) {
-            if (retryCount < MAX_RETRIES) {
-                const remaining = MAX_RETRIES - retryCount;
-                showToast('loading', `⏳ Financial data is being calculated... Auto-retrying in 8s (${remaining} attempt${remaining > 1 ? 's' : ''} left)`);
-                await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
-                return fetchBreakdown(url, retryCount + 1);
-            } else {
-                clearToast();
-                showToast('error', '❌ Financial data is still building. Please try downloading again in 30 seconds.', 7000);
-                return null;
+            if (eventSource) {
+                eventSource.close();
             }
-        }
-        return data;
-    };
-
-    try {
-        const token = localStorage.getItem('token');
-        const isVO = item.role === 'VO';
-        const isCC = item.role === 'CC';
-        const isAPM = item.role === 'APM';
-
-        showToast('loading', `⏳ Calculating dependent flows for ${item.role} report: ${item.name}... (This may take a moment)`);
-
-        const baseParams = {
-            month: filters.month,
-            year: filters.year,
         };
+    }, [sseErrorCount, debouncedRefresh]);
 
-        if (isAPM) {
-            // Fetch CCs from hierarchy if not already loaded to get the list of CC IDs
-            let ccs = loadedChildren.filter(c => c.role === 'CC' || c.clusterID);
-            if (ccs.length === 0) {
-                const hierarchyParams = new URLSearchParams({
+    // Cleanup all timeouts on unmount
+    useEffect(() => {
+        return () => {
+            if (sseTimeoutRef.current) clearTimeout(sseTimeoutRef.current);
+            if (refreshTimeoutRef.current) clearTimeout(refreshTimeoutRef.current);
+        };
+    }, []);
+
+    // Fetch Initial Table Data (Root Level Only)
+    useEffect(() => {
+        if (activeView !== 'table') return;
+        const fetchTable = async () => {
+            setLoading(true);
+            try {
+                const token = localStorage.getItem('token');
+                const params = new URLSearchParams({
                     ...filters,
-                    level: 'apm',
-                    parentId: item.userID || item.id
+                    level: 'root'
                 }).toString();
-                const hRes = await fetch(`${API_BASE}/api/analytics/v2/hierarchy?${hierarchyParams}`, {
+
+                const res = await fetch(`${API_BASE}/api/analytics/v2/hierarchy?${params}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
-                const hData = await hRes.json();
-                ccs = (hData.success ? hData.data : []) || [];
+                const data = await res.json();
+
+                if (data.success) {
+                    setTableData(data.data || []);
+                }
+            } catch (err) {
+                setError("Could not load initial hierarchy.");
+            } finally {
+                setLoading(false);
             }
+        };
 
-            const ccIDs = ccs.map(c => c.clusterID || c.id).filter(Boolean);
-            const params = new URLSearchParams({
-                ...baseParams,
-                level: 'apm',
-                parentId: item.userID || item.id,
-                ccIDs: ccIDs.join(',')
-            }).toString();
+        fetchTable();
+    }, [filters, refreshKey, activeView]);
 
-            const data = await fetchBreakdown(`${API_BASE}/api/payments/deep-breakdown?${params}`);
-            if (!data) return;
-            if (data.success) {
-                clearToast();
-                exportPerformanceExcel(data.data, data.level, ccs, item);
-                showToast('success', `✅ APM report for "${item.name}" downloaded successfully!`, 4000);
+    const handleDetailedDownload = async (item, loadedChildren = []) => {
+        const MAX_RETRIES = 3;
+        const RETRY_DELAY_MS = 8000;
+
+        const fetchBreakdown = async (url, retryCount = 0) => {
+            const token = localStorage.getItem('token');
+            const response = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+            const data = await response.json();
+
+            if (data.success && data.coldStart) {
+                if (retryCount < MAX_RETRIES) {
+                    const remaining = MAX_RETRIES - retryCount;
+                    showToast('loading', `⏳ Financial data is being calculated... Auto-retrying in 8s (${remaining} attempt${remaining > 1 ? 's' : ''} left)`);
+                    await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+                    return fetchBreakdown(url, retryCount + 1);
+                } else {
+                    clearToast();
+                    showToast('error', '❌ Financial data is still building. Please try downloading again in 30 seconds.', 7000);
+                    return null;
+                }
+            }
+            return data;
+        };
+
+        try {
+            const token = localStorage.getItem('token');
+            const isVO = item.role === 'VO';
+            const isCC = item.role === 'CC';
+            const isAPM = item.role === 'APM';
+
+            showToast('loading', `⏳ Calculating dependent flows for ${item.role} report: ${item.name}... (This may take a moment)`);
+
+            const baseParams = {
+                month: filters.month,
+                year: filters.year,
+            };
+
+            if (isAPM) {
+                let ccs = loadedChildren.filter(c => c.role === 'CC' || c.clusterID);
+                if (ccs.length === 0) {
+                    const hierarchyParams = new URLSearchParams({
+                        ...filters,
+                        level: 'apm',
+                        parentId: item.userID || item.id
+                    }).toString();
+                    const hRes = await fetch(`${API_BASE}/api/analytics/v2/hierarchy?${hierarchyParams}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    const hData = await hRes.json();
+                    ccs = (hData.success ? hData.data : []) || [];
+                }
+
+                const ccIDs = ccs.map(c => c.clusterID || c.id).filter(Boolean);
+                const params = new URLSearchParams({
+                    ...baseParams,
+                    level: 'apm',
+                    parentId: item.userID || item.id,
+                    ccIDs: ccIDs.join(',')
+                }).toString();
+
+                const data = await fetchBreakdown(`${API_BASE}/api/payments/deep-breakdown?${params}`);
+                if (!data) return;
+                if (data.success) {
+                    clearToast();
+                    exportPerformanceExcel(data.data, data.level, ccs, item);
+                    showToast('success', `✅ APM report for "${item.name}" downloaded successfully!`, 4000);
+                } else {
+                    clearToast();
+                    showToast('error', data.message || 'Failed to fetch CC data', 5000);
+                }
+
+            } else if (isCC) {
+                const params = new URLSearchParams({
+                    ...baseParams,
+                    level: 'cc',
+                    parentId: item.clusterID || item.id
+                }).toString();
+
+                const data = await fetchBreakdown(`${API_BASE}/api/payments/deep-breakdown?${params}`);
+                if (!data) return;
+                if (data.success) {
+                    clearToast();
+                    exportPerformanceExcel(data.data, data.level, [], item);
+                    showToast('success', `✅ CC report for "${item.name}" downloaded successfully!`, 4000);
+                } else {
+                    clearToast();
+                    showToast('error', data.message || 'Failed to fetch VO data', 5000);
+                }
+
+            } else if (isVO) {
+                const voParams = new URLSearchParams({
+                    ...baseParams,
+                    level: 'vo',
+                    parentId: item.voID || item.id
+                }).toString();
+
+                const voData = await fetchBreakdown(`${API_BASE}/api/payments/deep-breakdown?${voParams}`);
+                if (!voData) return;
+                if (voData.success) {
+                    clearToast();
+                    exportPerformanceExcel(voData.data, voData.level, [], item);
+                    showToast('success', `✅ VO report for "${item.name}" downloaded successfully!`, 4000);
+                } else {
+                    clearToast();
+                    showToast('error', voData.message || 'Failed to fetch SHG data', 5000);
+                }
             } else {
                 clearToast();
-                showToast('error', data.message || 'Failed to fetch CC data', 5000);
+                showToast('error', 'Download not supported for this level.', 4000);
             }
-
-        } else if (isCC) {
-            // CC → VOs (Deep Breakdown will roll up from SHGs)
-            const params = new URLSearchParams({
-                ...baseParams,
-                level: 'cc',
-                parentId: item.clusterID || item.id
-            }).toString();
-
-            const data = await fetchBreakdown(`${API_BASE}/api/payments/deep-breakdown?${params}`);
-            if (!data) return;
-            if (data.success) {
-                clearToast();
-                exportPerformanceExcel(data.data, data.level, [], item);
-                showToast('success', `✅ CC report for "${item.name}" downloaded successfully!`, 4000);
-            } else {
-                clearToast();
-                showToast('error', data.message || 'Failed to fetch VO data', 5000);
-            }
-
-        } else if (isVO) {
-            // VO → SHGs
-            const voParams = new URLSearchParams({
-                ...baseParams,
-                level: 'vo',
-                parentId: item.voID || item.id
-            }).toString();
-
-            const voData = await fetchBreakdown(`${API_BASE}/api/payments/deep-breakdown?${voParams}`);
-            if (!voData) return;
-            if (voData.success) {
-                clearToast();
-                exportPerformanceExcel(voData.data, voData.level, [], item);
-                showToast('success', `✅ VO report for "${item.name}" downloaded successfully!`, 4000);
-            } else {
-                clearToast();
-                showToast('error', voData.message || 'Failed to fetch SHG data', 5000);
-            }
-        } else {
+        } catch (err) {
+            console.error('Download Error:', err);
             clearToast();
-            showToast('error', 'Download not supported for this level.', 4000);
+            showToast('error', 'Failed to download report. Please check connection and try again.', 5000);
         }
-    } catch (err) {
-        console.error('Download Error:', err);
-        clearToast();
-        showToast('error', 'Failed to download report. Please check connection and try again.', 5000);
-    }
-};
+    };
 
-return (
-    <div className="min-h-screen text-white p-4 lg:p-8 animate-in fade-in duration-700 pb-16">
-        {/* Toast Notification */}
-        {toast && (
-            <div className={`fixed bottom-6 right-6 z-[9999] flex items-start gap-3 px-5 py-4 rounded-2xl shadow-2xl border max-w-sm animate-in slide-in-from-bottom-4 fade-in duration-300 ${toast.type === 'loading' ? 'bg-indigo-900 border-indigo-700 text-white' :
-                toast.type === 'success' ? 'bg-emerald-900 border-emerald-700 text-white' :
-                    toast.type === 'error' ? 'bg-rose-900 border-rose-700 text-white' :
-                        'bg-slate-900 border-slate-700 text-white'
-                }`}>
-                {toast.type === 'loading' && <Loader2 className="w-4 h-4 text-indigo-300 animate-spin mt-0.5 shrink-0" />}
-                {toast.type === 'success' && <CheckCircle className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />}
-                {toast.type === 'error' && <AlertCircle className="w-4 h-4 text-rose-400 mt-0.5 shrink-0" />}
-                <p className="text-xs font-bold leading-relaxed">{toast.message}</p>
-                <button onClick={clearToast} className="ml-auto text-white/40 hover:text-white/80 transition-colors shrink-0 mt-0.5">✕</button>
+    return (
+        <div className="min-h-screen text-white p-4 lg:p-8 animate-in fade-in duration-700 pb-16">
+            {/* Toast Notification */}
+            {toast && (
+                <div className={`fixed bottom-6 right-6 z-[9999] flex items-start gap-3 px-5 py-4 rounded-2xl shadow-2xl border max-w-sm animate-in slide-in-from-bottom-4 fade-in duration-300 ${toast.type === 'loading' ? 'bg-indigo-900 border-indigo-700 text-white' :
+                    toast.type === 'success' ? 'bg-emerald-900 border-emerald-700 text-white' :
+                        toast.type === 'error' ? 'bg-rose-900 border-rose-700 text-white' :
+                            'bg-slate-900 border-slate-700 text-white'
+                    }`}>
+                    {toast.type === 'loading' && <Loader2 className="w-4 h-4 text-indigo-300 animate-spin mt-0.5 shrink-0" />}
+                    {toast.type === 'success' && <CheckCircle className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />}
+                    {toast.type === 'error' && <AlertCircle className="w-4 h-4 text-rose-400 mt-0.5 shrink-0" />}
+                    <p className="text-xs font-bold leading-relaxed">{toast.message}</p>
+                    <button onClick={clearToast} className="ml-auto text-white/40 hover:text-white/80 transition-colors shrink-0 mt-0.5">✕</button>
+                </div>
+            )}
+
+            {/* Header & Controls */}
+            <div className="flex flex-col lg:flex-row bg-white/[0.03] backdrop-blur-3xl p-8 rounded-[32px] border border-white/10 shadow-2xl justify-between items-start lg:items-center gap-6 mb-8">
+                <div className="w-[25rem]">
+                    <h2 className="text-5xl font-black text-white px-2 tracking-tighter flex items-center gap-3 drop-shadow-2xl">
+                        Analytics
+                        {isRefreshing && (
+                            <div className="flex items-center gap-2 px-3 py-1 bg-indigo-500/20 border border-indigo-500/30 rounded-full animate-pulse ml-4">
+                                <Loader2 className="w-3 h-3 text-indigo-400 animate-spin" />
+                            </div>
+                        )}
+                    </h2>
+                </div>
+
+                <div className="flex flex-nowrap items-center gap-2 w-full lg:w-auto pr-4">
+                    <div className="flex bg-white/5 backdrop-blur-xl p-1.5 rounded-2xl border border-white/10 shadow-2xl">
+                        {[
+                            { id: 'charts', icon: PieChartIcon, label: 'Performance Charts' },
+                            { id: 'table', icon: List, label: 'Unit Performance Details' }
+                        ].map((v) => (
+                            <button
+                                key={v.id}
+                                onClick={() => setActiveView(v.id)}
+                                className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black transition-all duration-300 ${activeView === v.id
+                                    ? 'bg-indigo-600 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)] translate-y-[-1px]'
+                                    : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                            >
+                                <v.icon className="w-4 h-4" />
+                                {v.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
             </div>
-        )}
-        {/* Header & Controls */}
-        <div className="flex flex-col lg:flex-row bg-white/[0.03] backdrop-blur-3xl p-8 rounded-[32px] border border-white/10 shadow-2xl justify-between items-start lg:items-center gap-6 mb-8">
-            <div className="w-[25rem]">
-                <h2 className="text-5xl font-black text-white px-2 tracking-tighter flex items-center gap-3 drop-shadow-2xl">
-                    Analytics
-                    {isRefreshing && (
-                        <div className="flex items-center gap-2 px-3 py-1 bg-indigo-500/20 border border-indigo-500/30 rounded-full animate-pulse ml-4">
-                            <Loader2 className="w-3 h-3 text-indigo-400 animate-spin" />
-                            {/* <span className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">Refreshing</span> */}
+
+            {/* Role-Adaptive Filter Bar */}
+            <div className="mb-10">
+                <AnalyticsFilters filterProps={filterProps} user={user} />
+            </div>
+
+            {/* Interactive Map Section */}
+            <div className="animate-in fade-in slide-in-from-top-4 duration-1000 overflow-hidden mb-5">
+                <InteractiveAPMap
+                    forceCalibration={false}
+                    summary={(() => {
+                        const rawMapStats = summary?.mapStats || {};
+                        const conv = summary?.conversion || {};
+                        return {
+                            ...rawMapStats,
+                            all: {
+                                uploaded: summary?.shgStats?.uploaded,
+                                pending: summary?.shgStats?.pending,
+                                total: summary?.shgStats?.total,
+                                approved: summary?.ccActions?.approved,
+                                rejected: summary?.ccActions?.rejected,
+                                ccPending: summary?.ccActions?.pending,
+                                converted: conv.converted,
+                                sentToDB: conv.sentToDB,
+                                failed: conv.failed,
+                                convPending: conv.pending,
+                                convProcessing: conv.processing,
+                                financeStats: paymentData?.financeStats
+                            }
+                        };
+                    })()}
+                    filters={filters}
+                    locked={isAPM || isCC}
+                    onDistrictSelect={(d) => {
+                        setSelectedDistrict(d || 'all');
+                        setSelectedMandal('all');
+                        setSelectedVillage('all');
+                    }}
+                    onMandalSelect={(m) => {
+                        setSelectedMandal(m || 'all');
+                        setSelectedVillage('all');
+                    }}
+                />
+            </div>
+
+            {activeView === 'charts' && (
+                <div className="flex flex-col gap-8">
+                    {role.includes('developer') && (
+                        <div className="bg-indigo-600/10 border border-indigo-500/20 px-6 py-4 rounded-2xl flex items-center justify-between shadow-lg max-w-sm ml-auto animate-in fade-in slide-in-from-top-4">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2 bg-indigo-500/20 rounded-xl">
+                                    <Database className="w-5 h-5 text-indigo-400" />
+                                </div>
+                                <div>
+                                    <p className="text-[10px] font-black text-indigo-400/80 uppercase tracking-widest leading-none mb-1">Developer Insights</p>
+                                    <h4 className="text-white text-sm font-bold">Files Sent to DB</h4>
+                                </div>
+                            </div>
+                            <div className="text-2xl font-black text-white">
+                                {summary?.conversion?.sentToDB || 0}
+                            </div>
                         </div>
                     )}
-                </h2>
-            </div>
+                    <FinanceAnalytics
+                        data={paymentData}
+                        activeMetric={activeMetric}
+                        onMetricChange={setActiveMetric}
+                        isExpanded={isCollectionsExpanded}
+                        setIsExpanded={setIsCollectionsExpanded}
+                    />
 
-            <div className="flex flex-nowrap items-center gap-2 w-full lg:w-auto pr-4">
-                <div className="flex bg-white/5 backdrop-blur-xl p-1.5 rounded-2xl border border-white/10 shadow-2xl">
-                    {[
-                        { id: 'charts', icon: PieChartIcon, label: 'Performance Charts' },
-                        { id: 'table', icon: List, label: 'Unit Performance Details' }
-                    ].map((v) => (
-                        <button
-                            key={v.id}
-                            onClick={() => setActiveView(v.id)}
-                            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black transition-all duration-300 ${activeView === v.id
-                                ? 'bg-indigo-600 text-white shadow-[0_0_20px_rgba(79,70,229,0.4)] translate-y-[-1px]'
-                                : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
-                        >
-                            <v.icon className="w-4 h-4" />
-                            {v.label}
-                        </button>
-                    ))}
-                </div>
-
-
-            </div>
-        </div>
-
-        {/* Role-Adaptive Filter Bar */}
-        <div className="mb-10">
-            <AnalyticsFilters filterProps={filterProps} user={user} />
-        </div>
-
-        {/* Interactive Map Section */}
-        <div className="animate-in fade-in slide-in-from-top-4 duration-1000 overflow-hidden mb-5">
-            <InteractiveAPMap
-                forceCalibration={false}
-                summary={(() => {
-                    const rawMapStats = summary?.mapStats || {};
-                    const conv = summary?.conversion || {};
-                    return {
-                        ...rawMapStats,
-                        all: {
-                            uploaded: summary?.shgStats?.uploaded,
-                            pending: summary?.shgStats?.pending,
-                            total: summary?.shgStats?.total,
-                            approved: summary?.ccActions?.approved,
-                            rejected: summary?.ccActions?.rejected,
-                            ccPending: summary?.ccActions?.pending,
-                            converted: conv.converted,
-                            sentToDB: conv.sentToDB,
-                            failed: conv.failed,
-                            convPending: conv.pending,
-                            convProcessing: conv.processing,
-                            financeStats: paymentData?.financeStats
-                        }
-                    };
-                })()}
-                filters={filters}
-                locked={isAPM || isCC}
-                onDistrictSelect={(d) => {
-                    setSelectedDistrict(d || 'all');
-                    setSelectedMandal('all');
-                    setSelectedVillage('all');
-                }}
-                onMandalSelect={(m) => {
-                    setSelectedMandal(m || 'all');
-                    setSelectedVillage('all');
-                }}
-            />
-        </div>
-
-        {/* Sections based on Active View */}
-        {/* Removed Metric Summary Cards per user request */}
-
-        {activeView === 'charts' && (
-            <div className="flex flex-col gap-8">
-                {role.includes('developer') && (
-                    <div className="bg-indigo-600/10 border border-indigo-500/20 px-6 py-4 rounded-2xl flex items-center justify-between shadow-lg max-w-sm ml-auto animate-in fade-in slide-in-from-top-4">
-                        <div className="flex items-center gap-3">
-                            <div className="p-2 bg-indigo-500/20 rounded-xl">
-                                <Database className="w-5 h-5 text-indigo-400" />
-                            </div>
-                            <div>
-                                <p className="text-[10px] font-black text-indigo-400/80 uppercase tracking-widest leading-none mb-1">Developer Insights</p>
-                                <h4 className="text-white text-sm font-bold">Files Sent to DB</h4>
-                            </div>
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+                        <div className="lg:col-span-2">
+                            <PaymentTrendChart data={paymentTrends} />
                         </div>
-                        <div className="text-2xl font-black text-white">
-                            {summary?.conversion?.sentToDB || 0}
+                        <div className="lg:col-span-1">
+                            <UnifiedDistributionCard
+                                data={paymentData?.distributions}
+                                activeMetric={activeMetric}
+                                level={paymentData?.distKey}
+                            />
                         </div>
-
                     </div>
-                )}
-                <FinanceAnalytics
-                    data={paymentData}
-                    activeMetric={activeMetric}
-                    onMetricChange={setActiveMetric}
-                    isExpanded={isCollectionsExpanded}
-                    setIsExpanded={setIsCollectionsExpanded}
-                />
 
-                {/* Unified Multi-Metric Visualization - Perfect Alignment */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
-                    <div className="lg:col-span-2">
-                        <PaymentTrendChart data={paymentTrends} />
-                    </div>
-                    <div className="lg:col-span-1">
-                        <UnifiedDistributionCard
-                            data={paymentData?.distributions}
-                            activeMetric={activeMetric}
-                            level={paymentData?.distKey}
+                    <div className="mb-8">
+                        <CumulativeFinanceSummary
+                            history={historyData}
+                            loading={isHistoryLoading}
                         />
                     </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <TrendChart data={trends} />
+                        <DistributionCharts summary={summary} />
+                    </div>
                 </div>
+            )}
 
-                {/* Cumulative Financial Summary */}
-                <div className="mb-8">
-                    <CumulativeFinanceSummary
-                        history={historyData}
-                        loading={isHistoryLoading}
-                    />
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    <TrendChart data={trends} />
-                    <DistributionCharts summary={summary} />
-                </div>
-            </div>
-        )}
-
-        {activeView === 'table' && (
-            <DetailedTable
-                data={tableData}
-                loading={loading}
-                handleDetailedDownload={handleDetailedDownload}
-                filters={filters}
-                refreshKey={refreshKey}
-                isSSEConnected={isSSEConnected}
-            />
-        )}
-
-        {/* Always show a small summary if in chart view etc? No, let's keep it toggleable. */}
-    </div>
-);
+            {activeView === 'table' && (
+                <DetailedTable
+                    data={tableData}
+                    loading={loading}
+                    handleDetailedDownload={handleDetailedDownload}
+                    filters={filters}
+                    refreshKey={refreshKey}
+                    isSSEConnected={isSSEConnected}
+                />
+            )}
+        </div>
+    );
 };
 
 const AnalyticsFilters = ({ filterProps, user }) => {
@@ -709,7 +680,6 @@ const AnalyticsFilters = ({ filterProps, user }) => {
     const isAPM = role.includes('apm');
     const isCC = role.includes('cc');
 
-    // Initialize scoped filters for APM and CC roles
     useEffect(() => {
         const isScoped = isAPM || isCC;
         if (isScoped && user) {
@@ -722,7 +692,6 @@ const AnalyticsFilters = ({ filterProps, user }) => {
         }
     }, [isAPM, isCC, user, selectedDistrict, selectedMandal, setSelectedDistrict, setSelectedMandal]);
 
-    // Load location logic
     useEffect(() => {
         const loadDistricts = async () => {
             try {
@@ -767,7 +736,6 @@ const AnalyticsFilters = ({ filterProps, user }) => {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 bg-white/[0.03] backdrop-blur-3xl p-8 rounded-[32px] border border-white/10 shadow-2xl relative overflow-hidden group">
             <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700 pointer-events-none" />
 
-            {/* Time Filters */}
             <div className="space-y-1 relative z-10">
                 <label className={labelStyle}>Month</label>
                 <div className="relative">
@@ -803,7 +771,6 @@ const AnalyticsFilters = ({ filterProps, user }) => {
                 </div>
             </div>
 
-            {/* Location Filters - Role Adaptive */}
             {(!isAPM && !isCC) ? (
                 <>
                     <div className="space-y-1 relative z-10">
@@ -1176,24 +1143,19 @@ const MiniPaymentPie = ({ data, color, level, metricLabel }) => {
     };
     const levelLabel = LEVEL_LABELS[level] || level || 'Group';
 
-    // Filter out unknown/empty/NA/numeric IDs more robustly
     const cleanData = (data || []).filter(d => {
         if (!d.name || d.value <= 0) return false;
         const name = String(d.name).toUpperCase().trim();
         if (['UNKNOWN', 'N/A', '', 'NULL', 'UNDEFINED'].includes(name)) return false;
 
-        // GEOGRAPHIC NUMERIC GUARD: Skip numeric strings if we are viewing geography levels
-        // This prevents raw IDs from leaking as Mandal/District/Village names
         if (['district', 'mandal', 'village'].includes(level)) {
             if (/^\d+$/.test(d.name)) return false;
         }
 
-        // Also skip numeric strings that look like long IDs (large numbers) for other levels
         if (/^\d{10,}$/.test(d.name)) return false;
         return true;
     });
 
-    // Broad, high-contrast palette for many segments (20-30+)
     const COLORS = [
         '#4f46e5', '#10b981', '#f59e0b', '#f43f5e', '#8b5cf6',
         '#06b6d4', '#ec4899', '#f97316', '#6366f1', '#14b8a6',
@@ -1387,7 +1349,6 @@ const HierarchicalRow = ({ item, handleDetailedDownload, level = 0, filters, ref
     const [isExpanded, setIsExpanded] = useState(false);
     const [children, setChildren] = useState(item.children || []);
     const [loadingChildren, setLoadingChildren] = useState(false);
-    // VOs do NOT expand in the table (SHGs are only in the downloaded Excel)
     const hasChildren = (item.role === 'APM' || item.role === 'CC') &&
         (item.hasChildren || (item.children && item.children.length > 0));
 
@@ -1398,12 +1359,7 @@ const HierarchicalRow = ({ item, handleDetailedDownload, level = 0, filters, ref
         setLoadingChildren(true);
         try {
             const token = localStorage.getItem('token');
-            // Level mapping: 
-            // If current item is APM, we want its children (CCs) -> level='apm'
-            // If current item is CC, we want its children (VOs) -> level='cc'
-            // If current item is VO, we want its children (SHGs) -> level='vo'
             const nextLevel = item.role.toLowerCase();
-            // Refined parentId logic: APMs use userID, CCs use clusterID, VOs use voID
             const parentId = item.role === 'APM' ? (item.userID || item.id) : (item.role === 'CC' ? (item.clusterID || item.id) : (item.voID || item.id));
 
             const params = new URLSearchParams({
@@ -1434,7 +1390,7 @@ const HierarchicalRow = ({ item, handleDetailedDownload, level = 0, filters, ref
 
     useEffect(() => {
         if (isExpanded) {
-            fetchChildren(true); // Force refresh if already expanded
+            fetchChildren(true);
         }
     }, [isExpanded, refreshKey]);
 
