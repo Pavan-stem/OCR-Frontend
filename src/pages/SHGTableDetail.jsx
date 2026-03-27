@@ -614,17 +614,17 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                                                     key={cIdx}
                                                     colSpan={cell.col_span || 1}
                                                     rowSpan={cell.row_span || 1}
-                                                    className={`bg-indigo-50/50 border-b border-r border-indigo-100/50 px-6 py-4 text-[11px] font-black transition-colors uppercase tracking-wider ${isLastLevel ? 'bg-indigo-100/30' : ''} ${isSHGIDHeader ? 'text-left' : 'text-center'} text-indigo-900`}
+                                                    className={`bg-indigo-50/50 border-b border-r border-indigo-100/50 px-6 py-4 text-[11px] font-black transition-colors uppercase tracking-wider ${isLastLevel ? 'bg-indigo-100/30' : ''} ${isSHGIDHeader ? 'text-left' : 'text-center'} ${isSHGIDHeader && isSHGIDMismatch ? 'text-red-600 bg-red-50/50' : 'text-indigo-900'}`}
                                                 >
                                                     {isSHGIDHeader && isEditing ? (
                                                         <input
                                                             type="text"
-                                                            value={data.shgID || cell.label}
+                                                            value={tableData.shg_mbk_id || cell.label}
                                                             onChange={(e) => handleSHGIDChange(e.target.value)}
                                                             className={`w-full bg-white border border-black/30 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-bold ${isSHGIDMismatch ? 'text-red-600' : 'text-indigo-900'}`}
                                                         />
                                                     ) : (
-                                                        isSHGIDHeader ? data.shgID : cell.label
+                                                        cell.label
                                                     )}
                                                 </th>
                                             );
@@ -705,7 +705,7 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                                                     : null;
 
                                                 const hasExtractedTotal = !!extractedText;
-                                                const displayText = hasExtractedTotal ? columnTotal : (columnTotal > 0 ? columnTotal.toFixed(2) : '-');
+                                                const displayText = hasExtractedTotal ? extractedText : (columnTotal > 0 ? columnTotal.toFixed(2) : '-');
 
                                                 // Check if there's a mismatch (tolerance of 0.01 for floating point)
                                                 const hasMismatch = hasExtractedTotal && extractedValue !== null &&
@@ -714,9 +714,11 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                                                 return (
                                                     <td
                                                         key={cellIdx}
-                                                        className={`px-6 py-4 text-sm font-black border-r border-gray-100/50 text-center ${!hasExtractedTotal
-                                                            ? 'text-gray-500' // normal color for fallback
-                                                            : 'text-indigo-900'
+                                                        className={`px-6 py-4 text-sm font-black border-r border-gray-100/50 text-center ${hasMismatch
+                                                            ? 'text-orange-600 bg-orange-50/50'
+                                                            : !hasExtractedTotal
+                                                                ? 'text-gray-500' // normal color for fallback
+                                                                : 'text-indigo-900'
                                                             }`}
                                                         title={hasMismatch ? `OCR: ${extractedText} | Calculated: ${columnTotal.toFixed(2)}` : !hasExtractedTotal ? 'Calculated Total (OCR missing)' : ''}
                                                     >
