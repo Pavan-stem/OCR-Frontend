@@ -5,10 +5,11 @@ import { scanDocument, canvasToFile, rotateCanvas, cropCanvas, warpPerspective, 
 import { enhanceImage } from "./utils/imageEnhancer";
 import { validateGalleryImage } from "./utils/galleryValidator";
 import { startCamera, stopCamera } from "./utils/cameraController";
+import { setSelectedPage, classifyImage, validatePage } from "./utils/documentClassifier";
 
 const cvReady = () => !!(window.cv && window.cv.Mat);
 
-const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, t }) => {
+const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, page = 1, t }) => {
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
     const overlayRef = useRef(null);
@@ -57,6 +58,8 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, t 
     const bestPointsRef = useRef(null);
     const rawPointsRef = useRef(null); // High-speed sync ref for dots
     const [deviceRotation, setDeviceRotation] = useState(0);
+    const [selectedPageInternal, setSelectedPageInternal] = useState(1);
+    const currentSessionId = useRef(Date.now());
 
     useEffect(() => {
         const handleRotation = () => {
@@ -101,8 +104,10 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, t 
             setGalleryRejection(null);
             setGalleryError(null);
             setIsGalleryMode(false); // Ensure fresh start on open
+            setSelectedPageInternal(page);
+            setSelectedPage(page);
         }
-    }, [open]);
+    }, [open, page]);
 
     // When gallery rejection is dismissed, restart the camera processing loop.
     // We use useEffect (not an onClick handler) so startProcessingLoop captures fresh state.
@@ -674,37 +679,42 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, t 
         // Explicitly stop camera stream after capture (UX: Review and Enhance phase)
         stopCamera(videoRef.current);
         setIsCameraActive(false);
+        currentSessionId.current = Date.now(); // Track this session
     };
 
     const handleConfirm = async () => {
         if (!capturedImageData) return;
-        const image = new Image();
-        image.src = capturedImageData;
-        await new Promise(r => image.onload = r);
 
-        let canvas = document.createElement("canvas");
-        canvas.width = image.width;
-        canvas.height = image.height;
-        canvas.getContext("2d").drawImage(image, 0, 0);
+        setIsProcessing(true);
+        setProcessingMessage("Finalizing image...");
 
-        // Apply manual rotation if any
-        if (manualRotation !== 0) {
-            canvas = rotateCanvas(canvas, manualRotation);
-        }
+        try {
+            const image = new Image();
+            image.src = capturedImageData;
+            await new Promise(r => image.onload = r);
 
-        // Final SHG Structure Validation
-        // Optimization: Bypass if already validated by GalleryValidator (which is more robust)
-        if (!isFromGalleryRef.current) {
-            const structure = validateSHGTableStructure(canvas);
-            if (!structure.valid) {
-                setGalleryRejection({ message: structure.reason });
-                return;
+            let canvas = document.createElement("canvas");
+            canvas.width = image.width;
+            canvas.height = image.height;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(image, 0, 0);
+
+            // Apply manual rotation if any
+            if (manualRotation !== 0) {
+                canvas = rotateCanvas(canvas, manualRotation);
             }
-        }
 
-        const file = await canvasToFile(canvas, "scanned_doc.jpg");
-        onCapture(file);
-        onClose();
+            console.log('[Camera] Proceeding to capture finalized image.');
+
+            const file = await canvasToFile(canvas, "scanned_doc.jpg");
+            onCapture(file);
+            onClose();
+        } catch (err) {
+            console.error("Confirmation error:", err);
+            setGalleryRejection({ message: "Failed to finalize image. Please try again." });
+        } finally {
+            setIsProcessing(false);
+        }
     };
 
     const handleRetake = () => {
@@ -958,11 +968,37 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, t 
         }
     }, [smoothedContour, liveStatus, capturedImageData, isGalleryMode]);
 
+    const resetCaptureState = () => {
+        isLoopingRef.current = false;
+        if (processingTimeoutId.current) clearTimeout(processingTimeoutId.current);
+        if (uiAnimationFrameId.current) cancelAnimationFrame(uiAnimationFrameId.current);
+
+        setCapturedImageData(null);
+        setManualRotation(0);
+        setStableContour(null);
+        setSmoothedContour(null);
+        setIsGalleryMode(false);
+        setIsProcessing(false);
+        setIsEnhancing(false);
+        setEnhancementStatus('');
+        setGalleryRejection(null);
+        setGalleryError(null);
+        pointsTracker.current = null;
+        rawPointsRef.current = null;
+        maxBlurVarRef.current = 0;
+        bestFrameRef.current = null;
+        bestPointsRef.current = null;
+        steadyCount.current = 0;
+        setCaptureProgress(0);
+        captureTriggeredRef.current = false;
+        setCameraEnabled(true);
+    };
+
     if (!open) return null;
 
     return createPortal(
         <div className="fixed inset-0 bg-black z-[10000] flex flex-col font-sans overflow-hidden">
-            {/* Header - Fixed Height & Solid Background to prevent overlap */}
+            {/* Header - Fixed Height & Solid Background */}
             <div className="h-16 flex justify-between items-center px-6 bg-black border-b border-white/10 text-white z-[20000] shrink-0">
                 <div className="flex items-center gap-4">
                     <div className="flex flex-col">
@@ -997,17 +1033,48 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, t 
                 </button>
             </div>
 
-            {/* Viewfinder / Review Container - Strictly constrained */}
+            {/* Main Content Area */}
             <div className="flex-1 relative min-h-0 bg-black flex flex-col overflow-hidden">
+                
+                    {/* Status Overlays */}
+                    <div className="absolute top-4 left-0 right-0 flex flex-col items-center z-[110] gap-3 pointer-events-none">
+                        {!capturedImageData && (
+                        <>
+                            <div className={`px-3 py-1 ${liveStatus.isValid ? 'bg-blue-600/80' : 'bg-gray-600/50'} rounded-full text-white text-[10px] font-bold uppercase tracking-wider backdrop-blur-sm border border-white/20 transition-colors`}>
+                                {liveStatus.isValid ? liveStatus.orientation : "Detecting"} Mode
+                            </div>
+
+                            <div className={`px-4 py-1.5 rounded-full backdrop-blur-md bg-black/60 border border-white/20 font-bold text-sm ${liveStatus.color} shadow-lg transition-colors duration-300`}>
+                                {liveStatus.message}
+                            </div>
+                            
+                            {captureProgress > 0 && (
+                                <div className="flex flex-col items-center gap-1.5 mt-1">
+                                    <div className="px-3 py-0.5 rounded-full bg-green-500/20 border border-green-500/40 text-green-400 text-[11px] font-bold tracking-wide backdrop-blur-sm animate-pulse">
+                                        🔒 Auto-capturing…
+                                    </div>
+                                    <div className="w-44 h-2 bg-black/50 rounded-full overflow-hidden border border-white/10">
+                                        <div
+                                            className="h-full bg-green-500 rounded-full transition-all duration-100 ease-linear shadow-[0_0_12px_rgba(34,197,94,0.7)]"
+                                            style={{ width: `${captureProgress}%` }}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
+
                 {!capturedImageData ? (
+                    /* CAMERA VIEW */
                     <div className="absolute inset-0 flex flex-col">
                         <video
                             ref={videoRef}
                             playsInline
+                            autoPlay
                             muted
                             className="absolute inset-0 w-full h-full object-cover"
                         />
-                        {/* Shutter Flash Effect */}
                         {shutterFlash && (
                             <div className="absolute inset-0 bg-white z-[60] animate-pulse" />
                         )}
@@ -1024,140 +1091,43 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, t 
                             className="hidden"
                         />
 
-                        {/* Status Messages */}
-                        <div className="absolute top-4 left-0 right-0 flex flex-col items-center z-20 gap-2">
-                            {/* Orientation Badge */}
-                            <div className={`px-3 py-1 ${liveStatus.isValid ? 'bg-blue-600/80' : 'bg-gray-600/50'} rounded-full text-white text-[10px] font-bold uppercase tracking-wider backdrop-blur-sm border border-white/20 transition-colors`}>
-                                {liveStatus.isValid ? liveStatus.orientation : "Detecting"} Mode
-                            </div>
-
-                            <div className={`px-4 py-1.5 rounded-full backdrop-blur-md bg-black/60 border border-white/20 font-bold text-sm ${liveStatus.color} shadow-lg transition-colors duration-300`}>
-                                {liveStatus.message}
-                            </div>
-                            {/* Auto-Capture Progress Bar */}
-                            {captureProgress > 0 && (
-                                <div className="flex flex-col items-center gap-1.5 mt-1">
-                                    <div className="px-3 py-0.5 rounded-full bg-green-500/20 border border-green-500/40 text-green-400 text-[11px] font-bold tracking-wide backdrop-blur-sm animate-pulse">
-                                        🔒 Auto-capturing…
-                                    </div>
-                                    <div className="w-44 h-2 bg-black/50 rounded-full overflow-hidden border border-white/10">
-                                        <div
-                                            className="h-full bg-green-500 rounded-full transition-all duration-100 ease-linear shadow-[0_0_12px_rgba(34,197,94,0.7)]"
-                                            style={{ width: `${captureProgress}%` }}
-                                        />
-                                    </div>
-                                </div>
-                            )}
-
-                        </div>
-
-                        {/* Gallery Rejection Overlay — full-screen inside the viewfinder */}
-                        {galleryRejection && (
-                            <div className="absolute inset-0 bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center z-50 p-8 text-center">
-                                <div className="w-16 h-16 rounded-full bg-red-500/20 border border-red-500/40 flex items-center justify-center mb-4">
-                                    <X size={32} className="text-red-400" />
-                                </div>
-                                <h3 className="text-white font-bold text-lg mb-2">Image Rejected</h3>
-                                <p className="text-red-300 text-sm mb-6 leading-relaxed">{galleryRejection.message}</p>
-                                <button
-                                    onClick={() => {
-                                        setGalleryRejection(null);
-                                        if (capturedImageData) handleRetake();
-                                    }}
-                                    className="px-6 py-2.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-full text-white font-bold text-sm transition-colors"
-                                >
-                                    {capturedImageData ? "Try Another Photo" : "Select Different Photo"}
-                                </button>
-                            </div>
-                        )}
-
-                        {/* Gallery File-type Error Banner */}
+                        {/* Gallery Error Banner */}
                         {galleryError && !galleryRejection && (
-                            <div className="absolute bottom-28 left-4 right-4 bg-red-900/80 backdrop-blur-sm border border-red-500/40 text-red-200 text-xs font-medium px-4 py-2 rounded-xl text-center z-30">
+                            <div className="absolute bottom-32 left-4 right-4 bg-red-900/80 backdrop-blur-sm border border-red-500/40 text-red-200 text-xs font-medium px-4 py-2 rounded-xl text-center z-30">
                                 {galleryError}
                             </div>
                         )}
 
                         {/* Capture Button Container */}
                         <div className="absolute bottom-10 left-0 right-0 flex justify-center items-center z-20 gap-8">
-                            {/* Gallery/Back Button */}
-                            {isGalleryMode && !isGalleryLoading ? (
-                                <button
-                                    onClick={() => setIsGalleryMode(false)}
-                                    className="w-12 h-12 rounded-full bg-blue-600/80 backdrop-blur-md border border-white/20 flex items-center justify-center text-white hover:bg-blue-500 transition-all active:scale-95 shadow-lg"
-                                    title="Back to Camera"
-                                >
-                                    <ScanLine size={24} />
-                                </button>
-                            ) : (
-                                <button
-                                    onClick={() => {
-                                        // 1. Stop active loops first
-                                        isLoopingRef.current = false;
-                                        if (processingTimeoutId.current) clearTimeout(processingTimeoutId.current);
-                                        if (uiAnimationFrameId.current) cancelAnimationFrame(uiAnimationFrameId.current);
-
-                                        // 2. Reset capture state
-                                        steadyCount.current = 0;
-                                        setCaptureProgress(0);
-                                        setSmoothedContour(null); // Clear overlay ghosting
-                                        setStableContour(null);
-
-                                        // 3. Set explicit gallery mode and DISABLE camera to prevent re-init
-                                        setCameraEnabled(false);
-                                        setIsGalleryMode(true);
-
-                                        // 4. Stop active tracks immediately via utility
-                                        stopCamera(videoRef.current);
-                                        setIsCameraActive(false);
-                                        fileInputRef.current?.click();
-                                    }}
-                                    disabled={isGalleryLoading}
-                                    className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white hover:bg-white/20 transition-all active:scale-95 shadow-lg disabled:opacity-50"
-                                    title={t?.('upload.gallery') || "Upload from Gallery"}
-                                >
-                                    {isGalleryLoading
-                                        ? <Loader size={24} className="animate-spin" />
-                                        : <ImageIcon size={24} />}
-                                </button>
-                            )}
-
-                            {/* Camera Shutter */}
                             <button
-                                onClick={() => handleCapture()} // Wrap in lambda to avoid event object pollution
-                                disabled={!isCameraActive || isProcessing || isGalleryMode}
-                                className={`w-20 h-20 rounded-full border-4 flex items-center justify-center transition-all duration-300 ${isGalleryMode ? 'border-gray-500/50 opacity-50' : liveStatus.isValid ? 'border-green-500 scale-110' : 'border-white'}`}
+                                onClick={() => {
+                                    isLoopingRef.current = false;
+                                    setCameraEnabled(false);
+                                    setIsGalleryMode(true);
+                                    stopCamera(videoRef.current);
+                                    setIsCameraActive(false);
+                                    fileInputRef.current?.click();
+                                }}
+                                disabled={isGalleryLoading}
+                                className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white hover:bg-white/20 transition-all active:scale-95 shadow-lg disabled:opacity-50"
                             >
-                                <div className={`w-16 h-16 rounded-full ${isGalleryMode ? 'bg-gray-500/50' : liveStatus.isValid ? 'bg-green-500 animate-pulse' : 'bg-white'}`}></div>
+                                {isGalleryLoading ? <Loader size={24} className="animate-spin" /> : <ImageIcon size={24} />}
                             </button>
 
-                            {/* Spacer to balance the layout */}
+                            <button
+                                onClick={() => handleCapture()}
+                                disabled={!isCameraActive || isProcessing}
+                                className={`w-20 h-20 rounded-full border-4 flex items-center justify-center transition-all duration-300 ${liveStatus.isValid ? 'border-green-500 scale-110' : 'border-white'}`}
+                            >
+                                <div className={`w-16 h-16 rounded-full ${liveStatus.isValid ? 'bg-green-500 animate-pulse' : 'bg-white'}`}></div>
+                            </button>
+
                             <div className="w-12" />
                         </div>
-
-                        {/* Processing Overlay */}
-                        {isProcessing && (
-                            <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center z-[100] backdrop-blur-sm">
-                                <div className="w-16 h-16 border-4 border-green-500 border-t-transparent rounded-full animate-spin mb-4 shadow-[0_0_15px_rgba(34,197,94,0.5)]"></div>
-                                <div className="bg-black/40 px-6 py-2 rounded-full border border-white/10 text-white font-bold animate-pulse">
-                                    {processingMessage || "Processing HD Image..."}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Uploading Overlay */}
-                        {isUploading && (
-                            <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-[200] backdrop-blur-md">
-                                <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4 shadow-[0_0_15px_rgba(59,130,246,0.5)]"></div>
-                                <div className="bg-blue-600/40 px-6 py-2 rounded-full border border-blue-400/30 text-white font-bold animate-pulse">
-                                    {t?.('upload.uploading') || "Uploading Document..."}
-                                </div>
-                                <p className="text-white/60 text-xs mt-4">Please wait, do not close the app.</p>
-                            </div>
-                        )}
                     </div>
                 ) : (
-                    /* Review Screen - Enhanced Flex/Grid to prevent button cut-off */
+                    /* REVIEW SCREEN */
                     <div className="flex-1 flex flex-col min-h-0 bg-black w-full overflow-hidden">
                         <div
                             ref={reviewContainerRef}
@@ -1172,58 +1142,79 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, t 
                                     alt="Scanned"
                                 />
                             </div>
-                            {/* Enhancement Label */}
+                            
                             {isEnhancing && (
-                                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-md px-5 py-2.5 rounded-2xl border border-indigo-100 flex items-center gap-3 z-30 shadow-2xl animate-in fade-in slide-in-from-bottom-2 duration-300">
-                                    <div className="relative">
-                                        <RotateCw className="animate-spin text-indigo-600" size={16} />
-                                        <div className="absolute inset-0 bg-indigo-200/50 rounded-full blur-md animate-pulse" />
-                                    </div>
-                                    <div className="flex flex-col">
-                                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-1">Processing</span>
-                                        <span className="text-gray-900 font-bold text-xs tracking-wide leading-none">
-                                            {enhancementStatus || "Enhancing..."}
-                                        </span>
-                                    </div>
+                                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-md px-5 py-2.5 rounded-2xl border border-indigo-100 flex items-center gap-3 z-30 shadow-2xl">
+                                    <RotateCw className="animate-spin text-indigo-600" size={16} />
+                                    <span className="text-gray-900 font-bold text-xs">{enhancementStatus || "Enhancing..."}</span>
                                 </div>
                             )}
                         </div>
-                        {/* Footer - Fixed at bottom without floating gaps */}
-                        <div className="bg-gray-900 border-t border-white/10 p-4 sm:p-6 flex gap-4 shrink-0 pb-6 shadow-[0_-4px_10px_rgba(0,0,0,0.5)]">
+
+                        {/* Footer Buttons */}
+                        <div className="bg-gray-900 border-t border-white/10 p-4 sm:p-6 flex gap-4 shrink-0 pb-6 shadow-[0_-4px_10px_rgba(0,0,0,0.5)] z-[120]">
                             <button
                                 onClick={handleRetake}
                                 disabled={isUploading}
-                                className={`flex-1 py-3.5 sm:py-4 bg-gray-800 hover:bg-gray-700 rounded-xl font-bold text-white transition-colors text-sm sm:text-base border border-white/5 ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                className="flex-1 py-3.5 bg-gray-800 hover:bg-gray-700 rounded-xl font-bold text-white transition-colors border border-white/5 active:scale-95"
                             >
                                 {isFromGalleryRef.current ? "Reupload" : "Retake"}
                             </button>
                             <button
                                 onClick={handleConfirm}
-                                disabled={isUploading}
-                                className={`flex-1 py-3.5 sm:py-4 bg-green-600 hover:bg-green-50 rounded-xl font-bold text-white shadow-lg transition-colors text-sm sm:text-base ${isUploading ? 'bg-gray-600 cursor-not-allowed' : ''}`}
+                                disabled={isUploading || isProcessing}
+                                className={`flex-1 py-3.5 bg-green-600 hover:bg-green-500 rounded-xl font-bold text-white shadow-lg transition-all active:scale-95 ${isUploading || isProcessing ? 'opacity-50 grayscale cursor-not-allowed' : ''}`}
                             >
-                                {isUploading ? (t?.('upload.uploading') || "Uploading...") : "Proceed"}
+                                {isUploading ? "Uploading..." : "Proceed"}
                             </button>
                         </div>
+                    </div>
+                )}
 
-                        {/* Review Screen Uploading Overlay */}
-                        {isUploading && (
-                            <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center z-[200] backdrop-blur-sm">
-                                <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-3"></div>
-                                <div className="text-white font-bold">{t?.('upload.uploading') || "Uploading..."}</div>
-                            </div>
-                        )}
+                {/* OVERLAYS (Processing, Gallery Rejection, etc.) */}
+                {isProcessing && (
+                    <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-[200] backdrop-blur-sm">
+                        <div className="w-16 h-16 border-4 border-green-500 border-t-transparent rounded-full animate-spin mb-4 shadow-[0_0_15px_rgba(34,197,94,0.5)]"></div>
+                        <div className="bg-black/40 px-6 py-2 rounded-full border border-white/10 text-white font-bold animate-pulse">
+                            {processingMessage || "Processing..."}
+                        </div>
+                    </div>
+                )}
+
+                {galleryRejection && (
+                    <div className="absolute inset-0 bg-black/95 backdrop-blur-md flex flex-col items-center justify-center z-[300] p-8 text-center animate-in fade-in duration-300">
+                        <div className="w-20 h-20 rounded-full bg-red-500/20 border-2 border-red-500 flex items-center justify-center mb-6 shadow-2xl">
+                            <X size={40} className="text-red-500" />
+                        </div>
+                        <h3 className="text-white font-bold text-xl mb-3">Validation Failed</h3>
+                        <p className="text-red-300 text-sm mb-8 max-w-xs leading-relaxed font-medium">{galleryRejection.message}</p>
+                        <button
+                            onClick={() => {
+                                setGalleryRejection(null);
+                                if (capturedImageData) handleRetake();
+                            }}
+                            className="px-8 py-3 bg-red-600 hover:bg-red-500 rounded-full text-white font-bold text-sm transition-all shadow-xl active:scale-95"
+                        >
+                            Try Again
+                        </button>
+                    </div>
+                )}
+
+                {isUploading && (
+                    <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-[400] backdrop-blur-md">
+                        <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                        <div className="text-white font-bold text-lg animate-pulse">Uploading Document...</div>
                     </div>
                 )}
             </div>
 
-            {/* Error Overlay */}
+            {/* Camera Error Overlay */}
             {cameraError && (
-                <div className="absolute inset-0 bg-black flex items-center justify-center p-8 text-center text-white">
+                <div className="absolute inset-0 bg-black flex items-center justify-center p-8 text-center text-white z-[500]">
                     <div>
                         <AlertTriangle className="mx-auto mb-4 text-red-500" size={48} />
-                        <p>{cameraError}</p>
-                        <button onClick={onClose} className="mt-6 px-6 py-2 bg-gray-800 rounded-lg">Close</button>
+                        <p className="font-bold text-lg">{cameraError}</p>
+                        <button onClick={onClose} className="mt-8 px-8 py-3 bg-white/10 border border-white/20 rounded-xl hover:bg-white/20 transition-all">Close Scanner</button>
                     </div>
                 </div>
             )}

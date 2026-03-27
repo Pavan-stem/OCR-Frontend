@@ -5,8 +5,6 @@ import { Upload, CheckCircle, X, FileText, Search, AlertCircle, Eye, Filter, Rot
 import { API_BASE } from './utils/apiConfig';
 import { analyzeImage } from './utils/imageQualityCheck';
 import SmartCamera from './smartcamera';
-import SHGUploadCard from './components/SHGUploadCard';
-import { processDocumentAndValidate, stitchImages } from './utils/documentProcessor';
 
 const SHGUploadSection = ({
   selectedMonth,
@@ -776,29 +774,140 @@ const SHGUploadSection = ({
     }
   };
 
-  const handleSmartCameraCapture = async (file, shgId, shgName, pageIndex) => {
-    const pageKey = pageIndex === 1 ? 'page1' : 'page2';
+  const discoverAvailableData = async (maxYear = null, maxMonth = null) => {
+    let basePath = '';
+    try {
+      if (typeof import.meta !== 'undefined' && import.meta.env?.BASE_URL) {
+        basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
+      }
+    } catch (e) {
+      const currentPath = window.location.pathname;
+      if (currentPath.startsWith('/SMD')) {
+        basePath = '/SMD';
+      } else {
+        const pathParts = currentPath.split('/').filter(p => p);
+        if (pathParts.length > 0) {
+          basePath = '/' + pathParts[0];
+        }
+      }
+    }
 
-    // We update analyzing state using a page-specific key so the card can show loading per slot
-    setAnalyzingMap(prev => ({ ...prev, [shgId]: { ...(prev[shgId] || {}), [pageKey]: true } }));
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
+    const currentMonth = currentDate.getMonth() + 1; // 1-12
+
+    // Use provided bounds or default to current date
+    const searchMaxYear = maxYear || currentYear;
+    const searchMaxMonth = maxMonth || currentMonth;
+
+    console.log('=== Starting Backward Discovery ===');
+    console.log(`Base path: ${basePath}`);
+    console.log(`Searching backwards from: ${searchMaxMonth}/${searchMaxYear}`);
+
+    // Search backwards from the max date for up to 10 years
+    let year = searchMaxYear;
+    let month = searchMaxMonth;
+    const limitYear = searchMaxYear - 10;
+
+    while (year >= limitYear) {
+      const monthStr = String(month).padStart(2, '0');
+      // console.log(`Checking ${monthStr}/${year}...`);
+
+      const extensions = ['xlsx', 'xlsm'];
+
+      for (const ext of extensions) {
+        const dataPath = `${basePath}/SHG_data/${year}/${monthStr}/shg-data.${ext}`;
+
+        try {
+          const response = await fetch(`${dataPath}?t=${Date.now()}`);
+
+          if (response.ok) {
+            const contentType = response.headers.get("content-type");
+            if (contentType && contentType.toLowerCase().includes("text/html")) {
+              console.log(`  ✗ Found file but is HTML (likely 404): ${dataPath}`);
+              continue;
+            }
+
+            const arrayBuffer = await response.arrayBuffer();
+
+            // Check Magic Bytes for ZIP/Excel (PK..)
+            // 50 4B 03 04
+            if (arrayBuffer.byteLength < 4) continue;
+
+            const uint8Array = new Uint8Array(arrayBuffer.slice(0, 4));
+            const isZip = uint8Array[0] === 0x50 && uint8Array[1] === 0x4B && uint8Array[2] === 0x03 && uint8Array[3] === 0x04;
+
+            if (!isZip) {
+              console.log(`  ✗ Found file but invalid format (Not ZIP/Excel): ${dataPath}`);
+              continue;
+            }
+
+            console.log(`✓ Found closest match: ${year}/${monthStr}/shg-data.${ext}`);
+            return {
+              year: String(year),
+              month: monthStr,
+              extension: ext,
+              path: dataPath
+            };
+          }
+        } catch (err) {
+          // Continue searching
+        }
+      }
+
+      // Move to previous month
+      month--;
+      if (month < 1) {
+        month = 12;
+        year--;
+      }
+    }
+
+    console.log('No fallback data found in 10-year history.');
+    return null;
+  };
+
+  const loadUploadStatus = (shgList) => {
+    const storageKey = `shg_uploads_${user.voID}_${selectedMonth}_${selectedYear}`;
+    const stored = localStorage.getItem(storageKey);
+
+    if (stored) {
+      try {
+        setUploadStatus(JSON.parse(stored));
+      } catch (e) {
+        console.error('Error loading upload status:', e);
+        setUploadStatus({});
+      }
+    }
+  };
+
+  const saveUploadStatus = (newStatus) => {
+    const storageKey = `shg_uploads_${user.voID}_${selectedMonth}_${selectedYear}`;
+    localStorage.setItem(storageKey, JSON.stringify(newStatus));
+    setUploadStatus(newStatus);
+  };
+
+  const handleSmartCapture = async (shgId, shgName, event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setAnalyzingMap(prev => ({ ...prev, [shgId]: true }));
 
     try {
-      // 1. Convert file to canvas for the central validation pipeline
-      const img = new Image();
-      img.src = URL.createObjectURL(file);
-      await new Promise(r => img.onload = r);
+      const analysis = await analyzeImage(file);
+      setAnalyzingMap(prev => ({ ...prev, [shgId]: false }));
 
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      canvas.getContext('2d').drawImage(img, 0, 0);
+      if (!analysis.isValid) {
+        // Show issues
+        const issuesText = analysis.issues.join('\n- ');
+        const proceed = window.confirm(
+          `⚠️ AI Analysis detected potential issues:\n- ${issuesText}\n\nDo you want to use this image anyway?`
+        );
 
-      // 2. Centralized validation
-      const validationResult = await processDocumentAndValidate(canvas, pageIndex);
-
-      if (!validationResult.ok) {
-        alert(validationResult.message);
-        return;
+        if (!proceed) {
+          event.target.value = ''; // Clear input
+          return;
+        }
       }
 
       // If valid or user forced proceed, reuse existing handler
@@ -812,76 +921,50 @@ const SHGUploadSection = ({
     }
   };
 
-  const handleSmartCameraCapture = async (file, shgId, shgName, pageIndex) => {
-    const pageKey = pageIndex === 1 ? 'page1' : 'page2';
+  /* Smart Camera handler re-enabled */
+  const handleSmartCameraCapture = async (file, shgId, shgName) => {
+    // 1. Manually prepare the file data as handleFileSelect would do
+    const fileData = {
+      file: file,
+      fileName: file.name,
+      fileSize: file.size,
+      uploadDate: new Date().toISOString(),
+      shgName: shgName,
+      shgId: shgId,
+      validated: true, // From Smart Camera, we trust it's validated
+      rotation: 0,
+      previewUrl: URL.createObjectURL(file)
+    };
 
-    // We update analyzing state using a page-specific key so the card can show loading per slot
-    setAnalyzingMap(prev => ({ ...prev, [shgId]: { ...(prev[shgId] || {}), [pageKey]: true } }));
+    // Store in state so UI shows pending if it somehow persists
+    setUploadedFiles(prev => ({
+      ...prev,
+      [shgId]: fileData
+    }));
 
-    try {
-      // 1. Convert file to canvas for the central validation pipeline
-      const img = new Image();
-      img.src = URL.createObjectURL(file);
-      await new Promise(r => img.onload = r);
+    // 2. Perform immediate upload and WAIT for it
+    const success = await handleUploadSingleFile(shgId, fileData);
 
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      canvas.getContext('2d').drawImage(img, 0, 0);
-
-      // 2. Centralized validation
-      const validationResult = await processDocumentAndValidate(canvas, pageIndex);
-
-      if (!validationResult.ok) {
-        alert(validationResult.message);
-        return;
-      }
-
-      // 3. Store valid file data per page segment
-      const fileData = {
-        file: file,
-        fileName: file.name,
-        fileSize: file.size,
-        uploadDate: new Date().toISOString(),
-        shgName: shgName,
-        shgId: shgId,
-        validated: true, // Auto-validated if passed pipeline
-        rotation: 0,
-        width: img.width,
-        height: img.height,
-        previewUrl: img.src,
-        classification: validationResult.classification
-      };
-
-      setUploadedFiles(prev => ({
-        ...prev,
-        [shgId]: {
-          ...(prev[shgId] || {}),
-          [pageKey]: fileData
-        }
-      }));
-
-    } catch (err) {
-      console.error("Pipeline error", err);
-      alert("An error occurred during document processing: " + err.message);
-    } finally {
-      setAnalyzingMap(prev => ({ ...prev, [shgId]: { ...(prev[shgId] || {}), [pageKey]: false } }));
+    // 3. Only close if successful or if the process has "terminated" (even on fail, we might want to close or allow retry within camera)
+    if (success) {
       setShowSmartCamera(false);
+      // Close other modals if they were open
       setShowUploadModal(false);
       setPendingUploadShgId(null);
       setPendingUploadShgName(null);
     }
+    // If it failed, the camera view will show the error alert (from handleUploadSingleFile) 
+    // and because SmartCamera is still mounting with isUploading=false, it will return to preview state.
   };
 
-  const handleFileSelect = async (shgId, shgName, pageIndex, event, analysisResults = null) => {
+
+  const handleFileSelect = async (shgId, shgName, event, analysisResults = null) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    const pageKey = pageIndex === 1 ? 'page1' : 'page2';
-
-    // Check if slot already used
-    if (uploadedFiles[shgId]?.[pageKey]) {
-      alert(t?.('upload.alreadyUploaded') || 'File already uploaded for this slot');
+    // Check if already uploaded
+    if (uploadedFiles[shgId]) {
+      alert(t?.('upload.alreadyUploaded') || 'File already uploaded for this SHG');
       event.target.value = '';
       return;
     }
@@ -892,7 +975,7 @@ const SHGUploadSection = ({
       return;
     }
 
-    // Validate file type
+    // Validate file
     const allowedExtensions = ['png', 'jpg', 'jpeg', 'pdf', 'tiff', 'tif', 'bmp', 'webp'];
     const ext = file.name.split('.').pop()?.toLowerCase();
 
@@ -908,8 +991,9 @@ const SHGUploadSection = ({
       return;
     }
 
+    // Check image dimensions for landscape orientation
     if (['png', 'jpg', 'jpeg', 'bmp', 'webp'].includes(ext)) {
-      setAnalyzingMap(prev => ({ ...prev, [shgId]: { ...(prev[shgId] || {}), [pageKey]: true } }));
+      setAnalyzingMap(prev => ({ ...prev, [shgId]: true }));
 
       try {
         let analysis = analysisResults;
@@ -943,47 +1027,26 @@ const SHGUploadSection = ({
               analysis: analysis,
             };
 
-            const canvas = document.createElement('canvas');
-            canvas.width = img.width;
-            canvas.height = img.height;
-            canvas.getContext('2d').drawImage(img, 0, 0);
+            setUploadedFiles(prev => ({
+              ...prev,
+              [shgId]: newFile
+            }));
 
-            // Call central validation for gallery uploads too
-            processDocumentAndValidate(canvas, pageIndex).then(validationResult => {
-              const validatedFile = {
-                ...newFile,
-                validated: validationResult.ok,
-                classification: validationResult.classification,
-                validationMessage: validationResult.message
-              };
+            setAnalyzingMap(prev => ({ ...prev, [shgId]: false }));
 
-              setUploadedFiles(prev => ({
-                ...prev,
-                [shgId]: {
-                  ...(prev[shgId] || {}),
-                  [pageKey]: validatedFile
-                }
-              }));
+            // Reset file input
+            if (fileInputRefs.current[shgId]) {
+              fileInputRefs.current[shgId].value = '';
+            }
 
-              setAnalyzingMap(prev => ({
-                ...prev,
-                [shgId]: { ...(prev[shgId] || {}), [pageKey]: false }
-              }));
-            }).catch(err => {
-              console.error("Gallery validation error:", err);
-              // Fallback to unvalidated state if AI fails
-              setUploadedFiles(prev => ({
-                ...prev,
-                [shgId]: {
-                  ...(prev[shgId] || {}),
-                  [pageKey]: newFile
-                }
-              }));
-              setAnalyzingMap(prev => ({
-                ...prev,
-                [shgId]: { ...(prev[shgId] || {}), [pageKey]: false }
-              }));
-            });
+            // Open preview modal to show cropping and AI options ONLY on mobile devices
+            // if (isMobileDevice) {
+            //   setPreviewFile({
+            //     ...newFile,
+            //     id: shgId
+            //   });
+            //   setPreviewRotation(newFile.rotation || 0);
+            // }
 
             // Close modal after file is processed
             setShowUploadModal(false);
@@ -1017,10 +1080,7 @@ const SHGUploadSection = ({
 
       setUploadedFiles(prev => ({
         ...prev,
-        [shgId]: {
-          ...(prev[shgId] || {}),
-          [pageKey]: newFile
-        }
+        [shgId]: newFile
       }));
 
       if (fileInputRefs.current[shgId]) {
@@ -1034,46 +1094,64 @@ const SHGUploadSection = ({
     }
   };
 
-  const handleValidateFile = (shgId, pageIndex) => {
-    const pageKey = pageIndex === 1 ? 'page1' : 'page2';
-    const fileData = uploadedFiles[shgId]?.[pageKey];
+  const handleValidateFile = (shgId) => {
+    const fileData = uploadedFiles[shgId];
     if (!fileData) return;
+
+    // Check landscape orientation for images
+    // if (fileData.width && fileData.height) {
+    //   const currentRotation = fileData.rotation % 360;
+    //   const effectiveWidth = (currentRotation === 90 || currentRotation === 270) ? fileData.height : fileData.width;
+    //   const effectiveHeight = (currentRotation === 90 || currentRotation === 270) ? fileData.width : fileData.height;
+
+    //   if (effectiveWidth < effectiveHeight) {
+    //     alert(t?.('upload.portraitError') || 'File must be in landscape orientation (width > height). Please rotate the image and try again.');
+    //     return;
+    //   }
+    // }
 
     setUploadedFiles(prev => ({
       ...prev,
-      [shgId]: {
-        ...prev[shgId],
-        [pageKey]: { ...fileData, validated: true }
-      }
+      [shgId]: { ...prev[shgId], validated: true }
     }));
   };
 
   const handleValidateAll = () => {
+    const canValidate = Object.keys(uploadedFiles).some(shgId => !uploadedFiles[shgId].validated);
+    if (!canValidate) return;
+
+    let invalidCount = 0;
     const newUploadedFiles = { ...uploadedFiles };
-    let hasChanges = false;
 
     Object.keys(uploadedFiles).forEach(shgId => {
-      ['page1', 'page2'].forEach(pageKey => {
-        const fileData = uploadedFiles[shgId][pageKey];
-        if (fileData && !fileData.validated) {
-          newUploadedFiles[shgId][pageKey] = { ...fileData, validated: true };
-          hasChanges = true;
-        }
-      });
+      const fileData = uploadedFiles[shgId];
+      if (fileData.validated) return;
+
+      // Check landscape orientation for images
+      // if (fileData.width && fileData.height) {
+      //   const currentRotation = fileData.rotation % 360;
+      //   const effectiveWidth = (currentRotation === 90 || currentRotation === 270) ? fileData.height : fileData.width;
+      //   const effectiveHeight = (currentRotation === 90 || currentRotation === 270) ? fileData.width : fileData.height;
+
+      //   if (effectiveWidth < effectiveHeight) {
+      //     invalidCount++;
+      //     return;
+      //   }
+      // }
+
+      newUploadedFiles[shgId] = { ...fileData, validated: true };
     });
 
-    if (hasChanges) setUploadedFiles(newUploadedFiles);
+    setUploadedFiles(newUploadedFiles);
   };
 
-  const handleViewFile = (shgId, pageIndex) => {
-    const pageKey = pageIndex === 1 ? 'page1' : 'page2';
-    const fileData = uploadedFiles[shgId]?.[pageKey];
+  const handleViewFile = (shgId) => {
+    const fileData = uploadedFiles[shgId];
     if (!fileData) return;
 
     setPreviewFile({
       ...fileData,
-      id: shgId,
-      pageKey // For rotation update mapping
+      id: shgId
     });
     setPreviewRotation(fileData.rotation || 0);
   };
@@ -1090,10 +1168,7 @@ const SHGUploadSection = ({
       ...prev,
       [previewFile.id]: {
         ...prev[previewFile.id],
-        [previewFile.pageKey]: {
-          ...prev[previewFile.id][previewFile.pageKey],
-          rotation: newRotation
-        }
+        rotation: newRotation
       }
     }));
 
@@ -1109,30 +1184,22 @@ const SHGUploadSection = ({
     setPreviewRotation(0);
   };
 
-  const handleRemoveFile = (shgId, pageIndex) => {
-    const pageKey = pageIndex === 1 ? 'page1' : 'page2';
+  const handleRemoveFile = (shgId) => {
     const confirmed = window.confirm(t?.('upload.confirmRemove') || 'Are you sure you want to remove this file?');
     if (!confirmed) return;
 
     const newFiles = { ...uploadedFiles };
 
     // Revoke preview URL if exists
-    if (newFiles[shgId]?.[pageKey]?.previewUrl) {
-      URL.revokeObjectURL(newFiles[shgId][pageKey].previewUrl);
+    if (newFiles[shgId]?.previewUrl) {
+      URL.revokeObjectURL(newFiles[shgId].previewUrl);
     }
 
-    if (newFiles[shgId]) {
-      delete newFiles[shgId][pageKey];
-      // If both are empty, delete the shgId key entirely to keep state clean
-      if (!newFiles[shgId].page1 && !newFiles[shgId].page2) {
-        delete newFiles[shgId];
-      }
-    }
-
+    delete newFiles[shgId];
     setUploadedFiles(newFiles);
 
-    // Close preview if this exact file is being previewed
-    if (previewFile?.id === shgId && previewFile?.pageKey === pageKey) {
+    // Close preview if this file is being previewed
+    if (previewFile?.id === shgId) {
       closePreview();
     }
   };
@@ -1205,48 +1272,37 @@ const SHGUploadSection = ({
   };
 
   // Helper: Upload file with retry logic
-  const uploadFileWithRetry = async (shgData, token, maxRetries = 2) => {
+  const uploadFileWithRetry = async (fileData, token, maxRetries = 2) => {
     const formData = new FormData();
-    const { page1, page2 } = shgData;
+    const fileToUpload = await processFileRotation(fileData);
 
-    try {
-      // Handle Rotation/Processing for both pages
-      const file1 = await processFileRotation(page1);
-      const file2 = await processFileRotation(page2);
+    formData.append('file', fileToUpload);
+    formData.append('month', selectedMonth);
+    formData.append('year', selectedYear);
+    formData.append('shgId', fileData.shgId);
+    formData.append('shgName', fileData.shgName);
 
-      // Stitch the two images together
-      const stitchedFile = await stitchImages(file1, file2);
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await fetch(`${API_BASE}/api/upload`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData
+        });
 
-      formData.append('file', stitchedFile);
-      formData.append('month', selectedMonth);
-      formData.append('year', selectedYear);
-      formData.append('shgId', page1.shgId);
-      formData.append('shgName', page1.shgName);
-
-      for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        try {
-          const response = await fetch(`${API_BASE}/api/upload`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${token}` },
-            body: formData
-          });
-
-          return { response, shgData, success: true };
-        } catch (err) {
-          if (attempt === maxRetries) {
-            return {
-              response: null,
-              shgData,
-              success: false,
-              error: err
-            };
-          }
-          await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+        return { response, fileData, success: true };
+      } catch (err) {
+        if (attempt === maxRetries) {
+          return {
+            response: null,
+            fileData,
+            success: false,
+            error: err
+          };
         }
+        // Exponential backoff: 500ms, 1000ms, etc.
+        await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
       }
-    } catch (err) {
-      console.error("Failed preparing upload for SHG", page1.shgId, err);
-      return { response: null, shgData, success: false, error: err };
     }
   };
 
@@ -1259,9 +1315,10 @@ const SHGUploadSection = ({
     console.log(`📤 Starting parallel upload: ${filesToUpload.length} files with concurrency=${concurrency}`);
 
     while (queue.length > 0 || inProgress.length > 0) {
+      // Fill up the queue to max concurrency
       while (inProgress.length < concurrency && queue.length > 0) {
-        const shgData = queue.shift();
-        const promise = uploadFileWithRetry(shgData, token)
+        const fileData = queue.shift();
+        const promise = uploadFileWithRetry(fileData, token)
           .then(result => {
             results.push(result);
             const idx = inProgress.indexOf(promise);
@@ -1271,6 +1328,7 @@ const SHGUploadSection = ({
         inProgress.push(promise);
       }
 
+      // Wait for at least one to complete before processing more
       if (inProgress.length > 0) {
         await Promise.race(inProgress);
       }
@@ -1279,20 +1337,16 @@ const SHGUploadSection = ({
     return results;
   };
 
-  const formatShgLabel = (shgData) =>
-    `${shgData.page1.shgName} (${shgData.page1.shgId})`;
+  const formatShgLabel = (file) =>
+    `${file.shgName} (${file.shgId})`;
 
   const handleUploadAllFiles = async () => {
-    const validatedFiles = Object.keys(uploadedFiles)
-      .filter(shgId => {
-        const p1 = uploadedFiles[shgId].page1;
-        const p2 = uploadedFiles[shgId].page2;
-        return p1?.validated && p2?.validated && !uploadStatus[shgId]?.uploaded;
-      })
-      .map(shgId => uploadedFiles[shgId]);
+    const validatedFiles = Object.values(uploadedFiles).filter(
+      f => f.validated && !uploadStatus[f.shgId]?.uploaded
+    );
 
     if (validatedFiles.length === 0) {
-      alert(t?.('upload.noValidatedFiles') || 'No strictly validated and complete packages to upload.');
+      alert(t?.('upload.noValidatedFiles') || 'No validated files to upload');
       return;
     }
 
@@ -1306,18 +1360,23 @@ const SHGUploadSection = ({
     let successCount = 0;
     let failCount = 0;
     let uploadedShgs = [];
+    let skippedDuplicates = [];
 
     try {
       const token = localStorage.getItem('token');
 
+      // Pre-upload sync: Fetch latest upload status from server to prevent duplicates
+      // This handles multiple tabs, race conditions, and stale state
       console.log('Pre-upload sync: Fetching latest upload status from server...');
       try {
         await fetchUploadProgress();
+        console.log('Pre-upload sync complete');
       } catch (syncErr) {
         console.warn('Pre-upload sync failed, continuing with local state:', syncErr);
       }
 
-      const filesToUpload = validatedFiles.filter(f => !uploadStatus[f.page1.shgId]?.uploaded);
+      // Re-filter validated files after sync to exclude any that are now marked as uploaded
+      const filesToUpload = validatedFiles.filter(f => !uploadStatus[f.shgId]?.uploaded);
 
       if (filesToUpload.length === 0) {
         alert('All files have already been uploaded. Your session state has been updated.');
@@ -1330,79 +1389,93 @@ const SHGUploadSection = ({
         console.log(`Pre-upload sync: Skipping ${alreadyUploaded} already-uploaded SHG(s)`);
       }
 
+      // Process uploads in parallel instead of sequentially
       const uploadResults = await uploadFilesInParallel(filesToUpload, token, 3);
 
+      // Process results
       for (const result of uploadResults) {
-        const { response, shgData, success, error } = result;
-        const shgId = shgData.page1.shgId;
+        const { response, fileData, success, error } = result;
 
         if (!success || !response) {
           failCount++;
-          console.error(`Upload exception for ${shgId}:`, error);
+          console.error(`Upload exception for ${fileData.shgId}:`, error);
           continue;
         }
 
         try {
           if (response.ok) {
             successCount++;
-            uploadedShgs.push(formatShgLabel(shgData));
+            uploadedShgs.push(formatShgLabel(fileData));
 
-            await updateUploadProgress(shgId);
+            await updateUploadProgress(fileData.shgId);
 
             setUploadStatus(prev => ({
               ...prev,
-              [shgId]: {
+              [fileData.shgId]: {
                 uploaded: true,
                 uploadDate: new Date().toISOString(),
-                fileName: "Combined Document"
+                fileName: fileData.fileName
               }
             }));
 
             setUploadedFiles(prev => {
               const copy = { ...prev };
-              delete copy[shgId];
+              delete copy[fileData.shgId];
               return copy;
             });
           } else if (response.status === 503) {
+            // Maintenance mode detected
             console.error("Maintenance mode detected during upload loop");
             const data = await response.json().catch(() => ({}));
             handleMaintenanceResponse(data);
             setIsUploading(false);
-            return;
+            return; // EXIT the entire function/loop
           } else if (response.status === 409) {
-            console.warn(`Duplicate upload blocked for SHG ${shgId}`);
+            // Duplicate upload detected by server
+            console.warn(`Duplicate upload blocked for SHG ${fileData.shgId}`);
+
             try {
               const errorData = await response.json();
+
+              // Mark as uploaded in local state
               setUploadStatus(prev => ({
                 ...prev,
-                [shgId]: {
+                [fileData.shgId]: {
                   uploaded: true,
                   uploadDate: errorData.existingUploadDate || new Date().toISOString(),
                   fileName: 'Already Uploaded'
                 }
               }));
 
+              // Remove from pending files
               setUploadedFiles(prev => {
                 const copy = { ...prev };
-                delete copy[shgId];
+                delete copy[fileData.shgId];
                 return copy;
               });
+
+              // Show user-friendly message
+              console.log(`Skipped duplicate: ${formatShgLabel(fileData)}`);
+
+              // Don't increment failCount - this is expected behavior
             } catch (parseErr) {
               console.error('Failed to parse duplicate error response:', parseErr);
               failCount++;
             }
           } else {
+            // Other error
             failCount++;
-            console.error(`Upload failed for ${shgId}: ${response.status}`);
+            console.error(`Upload failed for ${fileData.shgId}: ${response.status}`);
           }
         } catch (err) {
           failCount++;
-          console.error(`Error processing result for ${shgId}:`, err);
+          console.error(`Error processing result for ${fileData.shgId}:`, err);
         }
       }
 
       if (successCount > 0) {
         let message;
+
         if (uploadedShgs.length === 1) {
           message = t('upload.uploadSuccessSingle')
             .replace('{{shg}}', uploadedShgs[0]);
@@ -1410,6 +1483,7 @@ const SHGUploadSection = ({
           message = t('upload.uploadSuccessMultiple')
             .replace('{{count}}', uploadedShgs.length);
         }
+
         alert(message);
       }
 
@@ -1422,20 +1496,17 @@ const SHGUploadSection = ({
     }
   };
 
-  const handleUploadSingleFile = async (shgId) => {
-    const shgData = uploadedFiles[shgId];
-    if (!shgData || !shgData.page1 || !shgData.page2) {
-      alert("Both Page 1 and Page 2 must be uploaded before submitting.");
-      return false;
-    }
+  const handleUploadSingleFile = async (shgId, fileDataOverride = null) => {
+    const fileData = fileDataOverride || uploadedFiles[shgId];
+    if (!fileData) return false;
 
     if (!selectedMonth || !selectedYear) {
       alert(t?.('upload.selectMonthYear') || 'Please select month and year');
       return false;
     }
 
-    if (!shgData.page1.validated || !shgData.page2.validated) {
-      alert(t?.('upload.validateFirst') || 'Both pages must be validated before uploading.');
+    if (!fileData.validated) {
+      alert(t?.('upload.validateFirst') || 'Please validate the image before uploading.');
       return false;
     }
 
@@ -1448,11 +1519,23 @@ const SHGUploadSection = ({
 
     try {
       const token = localStorage.getItem('token');
-      // Upload via the new stitched function pipeline which passes a formdata response back
-      const result = await uploadFileWithRetry(shgData, token);
+      const formData = new FormData();
+      // Handle Rotation (including Auto-Rotate)
+      const fileToUpload = await processFileRotation(fileData);
 
-      const res = result.response;
-      if (res && res.ok) {
+      formData.append('file', fileToUpload);
+      formData.append('month', selectedMonth);
+      formData.append('year', selectedYear);
+      formData.append('shgId', fileData.shgId);
+      formData.append('shgName', fileData.shgName);
+
+      const res = await fetch(`${API_BASE}/api/upload`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData
+      });
+
+      if (res.ok) {
         await updateUploadProgress(shgId);
 
         setUploadStatus(prev => ({
@@ -1460,7 +1543,7 @@ const SHGUploadSection = ({
           [shgId]: {
             uploaded: true,
             uploadDate: new Date().toISOString(),
-            fileName: "Combined Document"
+            fileName: fileData.fileName
           }
         }));
 
@@ -1472,17 +1555,21 @@ const SHGUploadSection = ({
 
         alert(
           t('upload.uploadSuccessSingle')
-            .replace('{{shg}}', formatShgLabel(shgData))
+            .replace('{{shg}}', formatShgLabel(fileData))
         );
         if (onUploadComplete) onUploadComplete();
         return true;
-      } else if (res && res.status === 503) {
+      } else if (res.status === 503) {
+        // Maintenance mode detected
         const data = await res.json().catch(() => ({}));
         handleMaintenanceResponse(data);
         setIsUploading(false);
         return false;
-      } else if (res && res.status === 409) {
+      } else if (res.status === 409) {
+        // Duplicate detected
         const errorData = await res.json();
+
+        // Mark as uploaded in local state
         setUploadStatus(prev => ({
           ...prev,
           [shgId]: {
@@ -1498,14 +1585,15 @@ const SHGUploadSection = ({
           return copy;
         });
 
-        alert(t?.('upload.alreadyUploaded') || 'File already uploaded for this SHG.');
-        return false;
+        alert(`ℹ️ ${formatShgLabel(fileData)} has already been uploaded.`);
+        return true; // Technically a success since it's "uploaded"
       } else {
-        throw new Error(`Upload failed with status: ${res ? res.status : 'Unknown'}`);
+        throw new Error(`Upload failed with status ${res.status}`);
       }
-    } catch (err) {
-      console.error("Upload Error:", err);
-      alert(t?.('upload.uploadError') || 'Upload failed. Please try again.');
+
+    } catch (e) {
+      console.error('Single upload error:', e);
+      alert(`❌ ${e.message || t?.('upload.uploadFailed')}`);
       return false;
     } finally {
       setIsUploading(false);
@@ -1547,40 +1635,377 @@ const SHGUploadSection = ({
   });
 
   const renderSHGCard = (shg) => {
+    const fileData = uploadedFiles[shg.shgId];
+    const isTempUploaded = !!fileData;
     const isPermanentlyUploaded = serverProgress?.uploadedShgIds?.includes(shg.shgId) || uploadStatus[shg.shgId]?.uploaded === true;
+
     // Check if this SHG has been rejected (but only show if NOT permanently uploaded - after re-upload, hide rejection)
     const rejectionInfo = !isPermanentlyUploaded && failedUploads.find(failed => failed.shgID === shg.shgId);
 
-    // filesData will be structured like { page1: fileData, page2: fileData }
-    const filesData = uploadedFiles[shg.shgId] || {};
-    const shgAnalyzingState = analyzingMap[shg.shgId] || {};
-
     return (
-      <SHGUploadCard
+      <div
         key={shg.shgId}
-        shg={shg}
-        filesData={filesData}
-        isPermanentlyUploaded={isPermanentlyUploaded}
-        rejectionInfo={rejectionInfo}
-        analyzingState={shgAnalyzingState}
-        isViewingPermanent={isViewingPermanent}
-        isMobileDevice={isMobileDevice}
-        isUploading={isUploading}
-        t={t}
-        formatBytes={formatBytes}
-        onOpenCamera={(shgId, shgName, page) => {
-          setCameraTarget({ id: shgId, name: shgName, page });
-          setShowSmartCamera(true);
-        }}
-        onFileSelect={handleFileSelect}
-        onValidateFile={handleValidateFile}
-        onViewFile={handleViewFile}
-        onRemoveFile={handleRemoveFile}
-        onUploadSingleShg={handleUploadSingleFile}
-        onViewPermanentlyUploadedFile={handleViewPermanentlyUploadedFile}
-        selectedMonth={selectedMonth}
-        selectedYear={selectedYear}
-      />
+        className={`relative bg-white rounded-xl sm:rounded-2xl shadow-lg border-2 transition-all ${rejectionInfo
+          ? 'border-red-400 bg-red-50'
+          : isPermanentlyUploaded
+            ? 'border-green-400 bg-green-50'
+            : isTempUploaded
+              ? fileData.validated
+                ? 'border-green-400 bg-green-50'
+                : 'border-yellow-400 bg-yellow-50'
+              : 'border-gray-300 hover:border-blue-400 hover:shadow-xl'
+          }`}
+      >
+        {/* ✅ PERMANENT UPLOAD STATUS BADGE */}
+        {isPermanentlyUploaded && (
+          <div className="absolute -top-1 -right-1 sm:-top-1 sm:-right-1 w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-green-500 flex items-center justify-center shadow-md border border-white z-10">
+            <CheckCircle size={14} className="text-white sm:hidden" />
+            <CheckCircle size={16} className="text-white hidden sm:block" />
+          </div>
+        )}
+
+        {/* ❌ REJECTION STATUS BADGE - Hide if successfully re-uploaded */}
+        {rejectionInfo && !isPermanentlyUploaded && (
+          <div className="absolute -top-1 -right-1 sm:-top-1 sm:-right-1 w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-red-500 flex items-center justify-center shadow-md border border-white z-10">
+            <X size={14} className="text-white sm:hidden font-bold" />
+            <X size={16} className="text-white hidden sm:block font-bold" />
+          </div>
+        )}
+
+        <div className={isPermanentlyUploaded ? "p-1.5 sm:p-2" : "p-3 sm:p-4"}>
+          {/* SHG Header */}
+          <div className={isPermanentlyUploaded ? "mb-0.5" : "mb-2 sm:mb-3"}>
+            <h3
+              className="font-bold text-sm sm:text-base text-gray-800 mb-0.5 line-clamp-2 break-words"
+            >
+              {shg.shgName}
+            </h3>
+            <p className="text-[10px] sm:text-xs text-gray-600 font-mono break-all">
+              {shg.shgId}
+            </p>
+          </div>
+
+          {/* Rejection Info Alert - Show only if no file selected for re-upload */}
+          {rejectionInfo && !fileData && (
+            <div className="mb-2 sm:mb-3 bg-white rounded-lg p-2 sm:p-3 border-l-4 border-red-500">
+              <div className="flex items-start gap-2">
+                <AlertTriangle size={16} className="text-red-600 flex-shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-red-700 mb-1">
+                    {t?.('upload.rejectedReason' || 'Rejected Reason:')}
+                  </p>
+                  <p className="text-xs text-gray-800">
+                    {rejectionInfo.rejectionReason || (
+                      <>
+                        {t?.('upload.failedGuidelines') || 'Please follow upload guidelines: Ensure image is clear, well-lit, and shows complete document.'}
+                      </>
+                    )}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ================= UPLOAD SECTION ================= */}
+          {rejectionInfo ? (
+            /* 🔴 REJECTED STATE - Show full upload workflow (validate, view, etc.) */
+            !fileData ? (
+              // Show re-upload options if no file selected yet
+              <div className="space-y-2">
+                <input
+                  ref={(el) => (fileInputRefs.current[shg.shgId] = el)}
+                  type="file"
+                  accept=".png,.jpg,.jpeg,.pdf,.tiff,.tif,.bmp,.webp"
+                  onChange={(e) => handleFileSelect(shg.shgId, shg.shgName, e)}
+                  className="hidden"
+                />
+                <input
+                  ref={(el) => (nativeCameraInputRefs.current[shg.shgId] = el)}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={(e) => handleFileSelect(shg.shgId, shg.shgName, e)}
+                  className="hidden"
+                />
+
+                <div className="flex flex-col gap-2">
+                  {!isMobileDevice && (
+                    <button
+                      onClick={() => fileInputRefs.current[shg.shgId]?.click()}
+                      className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-transparent active:scale-95"
+                    >
+                      <Upload size={18} />
+                      <span>{t?.('upload.uploadFile') || 'Upload File'}</span>
+                    </button>
+                  )}
+
+                  {isMobileDevice && (
+                    <button
+                      onClick={() => {
+                        setCameraTarget({ id: shg.shgId, name: shg.shgName });
+                        setShowSmartCamera(true);
+                      }}
+                      disabled={isUploading}
+                      className={`flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white border-transparent active:scale-95 ${isUploading ? 'opacity-50 cursor-not-allowed grayscale' : ''}`}
+                    >
+                      <ScanLine size={18} />
+                      <span>{t('upload.cameraScan') || 'Camera Scan'}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              // Once file is selected, show the full workflow (same as normal upload)
+              <div className="space-y-2 sm:space-y-3">
+                {/* File Info */}
+                <div className="bg-white rounded-lg p-2 sm:p-3 border border-gray-300">
+                  <div className="flex items-start gap-2">
+                    <FileText size={18} className="sm:hidden text-blue-600 flex-shrink-0 mt-1" />
+                    <FileText size={20} className="hidden sm:block text-blue-600 flex-shrink-0 mt-1" />
+                    <div className="flex-1 min-w-0">
+                      <p
+                        className="text-xs sm:text-sm font-semibold text-gray-800 truncate"
+                      >
+                        {fileData.fileName}
+                      </p>
+                      <p className="text-[10px] sm:text-xs text-gray-600">
+                        {formatBytes(fileData.fileSize)}
+                      </p>
+                      {fileData.width && fileData.height && (
+                        <p className="text-[10px] sm:text-xs text-gray-500">
+                          {fileData.width} × {fileData.height}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {!fileData.validated && (
+                  <div className="flex items-center gap-2 text-xs text-red-600 font-semibold">
+                    <AlertCircle size={14} />
+                    {t?.('upload.validateError')}
+                  </div>
+                )}
+
+                {/* Validate & View */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => handleValidateFile(shg.shgId)}
+                    disabled={fileData.validated}
+                    className={`px-2 sm:px-3 py-2 rounded-lg font-semibold text-xs sm:text-sm flex items-center justify-center gap-1 sm:gap-2 transition-all ${fileData.validated
+                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      : 'bg-blue-500 hover:bg-blue-600 text-white'
+                      }`}
+                  >
+                    <CheckCircle size={14} />
+                    {fileData.validated
+                      ? t?.('upload.validated') || 'Validated'
+                      : t?.('upload.validate') || 'Validate'}
+                  </button>
+
+                  <button
+                    onClick={() => handleViewFile(shg.shgId)}
+                    className="px-2 sm:px-3 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg font-semibold text-xs sm:text-sm flex items-center justify-center gap-1 sm:gap-2 transition-all"
+                  >
+                    <Eye size={14} />
+                    {t?.('upload.view') || 'View'}
+                  </button>
+                </div>
+
+                {/* Upload & Remove */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => handleUploadSingleFile(shg.shgId)}
+                    disabled={!fileData.validated || isUploading}
+                    className={`px-2 sm:px-3 py-2 rounded-lg font-semibold text-xs sm:text-sm flex items-center justify-center gap-1 sm:gap-2 transition-all ${fileData.validated && !isUploading
+                      ? 'bg-orange-500 hover:bg-orange-600 text-white'
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      }`}
+                  >
+                    <Upload size={14} />
+                    {isUploading ? (t?.('upload.uploading') || 'Uploading...') : (t?.('upload.uploadFileOne') || 'Upload File')}
+                  </button>
+                  <button
+                    onClick={() => handleRemoveFile(shg.shgId)}
+                    className="px-2 sm:px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold text-xs sm:text-sm flex items-center justify-center gap-1 sm:gap-2 transition-all"
+                  >
+                    <X size={14} />
+                    {t?.('upload.remove') || 'Remove'}
+                  </button>
+                </div>
+              </div>
+            )
+          ) : isPermanentlyUploaded ? (
+            /* 🔒 FINAL LOCKED STATE WITH VIEW OPTION */
+            <div className="flex flex-col items-center justify-center py-0.5 space-y-2">
+              <div className="flex flex-col items-center justify-center text-green-700">
+                <CheckCircle size={24} className="mb-1" />
+                <p className="font-bold text-xs sm:text-sm text-center">
+                  {t?.('upload.successfullyUploaded') || 'Successfully Uploaded'}
+                </p>
+                <p className="text-[10px] sm:text-xs text-gray-600 mt-0.5">
+                  {selectedMonth} / {selectedYear}
+                </p>
+              </div>
+
+              <button
+                onClick={() => handleViewPermanentlyUploadedFile(shg.shgId)}
+                disabled={isViewingPermanent}
+                className="w-full flex items-center justify-center gap-2 px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-semibold text-xs transition-all shadow-sm active:scale-95 disabled:bg-gray-400"
+              >
+                {isViewingPermanent ? (
+                  <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent"></div>
+                ) : (
+                  <Eye size={14} />
+                )}
+                <span>{t?.('upload.view') || 'View'}</span>
+              </button>
+            </div>
+          ) : !isTempUploaded ? (
+            /* 🟦 INITIAL STATE */
+            <div>
+              <input
+                ref={(el) => (fileInputRefs.current[shg.shgId] = el)}
+                type="file"
+                accept="application/pdf,image/jpeg,image/png,image/webp"
+                onChange={(e) =>
+                  handleFileSelect(shg.shgId, shg.shgName, e)
+                }
+                className="hidden"
+                id={`file-input-${shg.shgId}`}
+              />
+              <input
+                ref={(el) => (nativeCameraInputRefs.current[shg.shgId] = el)}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={(e) =>
+                  handleFileSelect(shg.shgId, shg.shgName, e)
+                }
+                className="hidden"
+                id={`camera-input-${shg.shgId}`}
+              />
+
+              {analyzingMap[shg.shgId] ? (
+                <button
+                  disabled
+                  className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl font-semibold cursor-wait transition-all border shadow-sm text-sm sm:text-base bg-gray-100 text-gray-400 border-gray-200"
+                >
+                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-indigo-500 border-t-transparent"></div>
+                  <span>{t?.('upload.analyzing') || 'Analyzing...'}</span>
+                </button>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {!isMobileDevice && (
+                    <button
+                      onClick={() => fileInputRefs.current[shg.shgId]?.click()}
+                      className="flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-transparent active:scale-95"
+                    >
+                      <Upload size={18} />
+                      <span>{t?.('upload.uploadFile') || 'Upload File'}</span>
+                    </button>
+                  )}
+
+                  {isMobileDevice && (
+                    <button
+                      onClick={() => {
+                        setCameraTarget({ id: shg.shgId, name: shg.shgName });
+                        setShowSmartCamera(true);
+                      }}
+                      disabled={isUploading}
+                      className={`flex items-center justify-center gap-2 w-full px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg sm:rounded-xl font-bold cursor-pointer transition-all border shadow-md text-xs sm:text-sm bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white border-transparent active:scale-95 ${isUploading ? 'opacity-50 cursor-not-allowed grayscale' : ''}`}
+                    >
+                      <ScanLine size={18} />
+                      <span>{t('upload.cameraScan') || 'Camera Scan'}</span>
+                    </button>
+                  )}
+                </div>
+
+              )}
+            </div>
+          ) : (
+            /* 🟨 TEMP STATE (VALIDATE / VIEW / SINGLE UPLOAD / REMOVE) */
+            <div className="space-y-2 sm:space-y-3">
+              {/* File Info */}
+              <div className="bg-white rounded-lg p-2 sm:p-3 border border-gray-300">
+                <div className="flex items-start gap-2">
+                  <FileText size={18} className="sm:hidden text-blue-600 flex-shrink-0 mt-1" />
+                  <FileText size={20} className="hidden sm:block text-blue-600 flex-shrink-0 mt-1" />
+                  <div className="flex-1 min-w-0">
+                    <p
+                      className="text-xs sm:text-sm font-semibold text-gray-800 truncate"
+                    >
+                      {fileData.fileName}
+                    </p>
+                    <p className="text-[10px] sm:text-xs text-gray-600">
+                      {formatBytes(fileData.fileSize)}
+                    </p>
+                    {fileData.width && fileData.height && (
+                      <p className="text-[10px] sm:text-xs text-gray-500">
+                        {fileData.width} × {fileData.height}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {!fileData.validated && (
+                <div className="flex items-center gap-2 text-xs text-red-600 font-semibold">
+                  <AlertCircle size={14} />
+                  {t?.('upload.validateError')}
+                </div>
+              )}
+
+              {/* Validate & View */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => handleValidateFile(shg.shgId)}
+                  disabled={fileData.validated}
+                  className={`px-2 sm:px-3 py-2 rounded-lg font-semibold text-xs sm:text-sm flex items-center justify-center gap-1 sm:gap-2 transition-all ${fileData.validated
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    : 'bg-blue-500 hover:bg-blue-600 text-white'
+                    }`}
+                >
+                  <CheckCircle size={14} />
+                  {fileData.validated
+                    ? t?.('upload.validated') || 'Validated'
+                    : t?.('upload.validate') || 'Validate'}
+                </button>
+
+                <button
+                  onClick={() => handleViewFile(shg.shgId)}
+                  className="px-2 sm:px-3 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg font-semibold text-xs sm:text-sm flex items-center justify-center gap-1 sm:gap-2 transition-all"
+                >
+                  <Eye size={14} />
+                  {t?.('upload.view') || 'View'}
+                </button>
+              </div>
+
+              {/* Single Upload & Remove */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => handleUploadSingleFile(shg.shgId)}
+                  disabled={!fileData.validated || isUploading}
+                  className={`px-2 sm:px-3 py-2 rounded-lg font-semibold text-xs sm:text-sm flex items-center justify-center gap-1 sm:gap-2 transition-all ${fileData.validated && !isUploading
+                    ? 'bg-orange-500 hover:bg-orange-600 text-white'
+                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    }`}
+                >
+                  <Upload size={14} />
+                  {isUploading ? (t?.('upload.uploading') || 'Uploading...') : (t?.('upload.uploadFileOne') || 'Upload File')}
+                </button>
+                <button
+                  onClick={() => handleRemoveFile(shg.shgId)}
+                  className="px-2 sm:px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold text-xs sm:text-sm flex items-center justify-center gap-1 sm:gap-2 transition-all"
+                >
+                  <X size={14} />
+                  {t?.('upload.remove') || 'Remove'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div >
     );
   };
 
@@ -2050,12 +2475,11 @@ const SHGUploadSection = ({
       {showSmartCamera && createPortal(
         <SmartCamera
           open={showSmartCamera}
-          onCapture={(file) => handleSmartCameraCapture(file, cameraTarget.id, cameraTarget.name, cameraTarget.page)}
+          onCapture={(file) => handleSmartCameraCapture(file, cameraTarget.id, cameraTarget.name)}
           onClose={() => setShowSmartCamera(false)}
           isUploading={isUploading}
           shgId={cameraTarget.id}
           shgName={cameraTarget.name}
-          page={cameraTarget.page}
           debugMode={true}
           t={t}
         />,

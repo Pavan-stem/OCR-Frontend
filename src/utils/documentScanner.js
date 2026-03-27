@@ -1060,7 +1060,7 @@ export const validateSHGTableStructure = (canvas) => {
 
         console.log(`[SHG-Struct] Detected Peaks: rows=${hPeaks.length} cols=${vPeaks.length}`);
 
-        if (hPeaks.length < 13 || vPeaks.length < 10) {
+        if (hPeaks.length < 6 || vPeaks.length < 6) {
             return {
                 valid: false,
                 reason: "Table structure not clearly detected. Ensure even lighting and steady camera.",
