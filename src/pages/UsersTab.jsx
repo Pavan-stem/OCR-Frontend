@@ -17,6 +17,118 @@ const REJECTION_REASONS = [
   "Wrong Image"
 ];
 
+// Helper Component for Grouped Uploads in Admin View
+const AdminUploadCard = ({ group, status, currentUserRole, uploading, handleQuickStatusUpdate, openStatusModal, openImageViewer, downloadImage }) => {
+  const [pageIndex, setPageIndex] = React.useState(1);
+  const pages = Object.keys(group.pages).map(Number).sort((a, b) => a - b);
+  const currentPage = group.pages[pageIndex] || group.pages[pages[0]];
+  const hasMultiplePages = pages.length > 1;
+
+  const borderColor = status === 'pending' ? 'border-orange-300' : status === 'rejected' ? 'border-red-300' : 'border-green-300';
+  const bgColor = status === 'pending' ? 'bg-orange-50' : status === 'rejected' ? 'bg-red-50' : 'bg-green-50';
+  const badgeColor = status === 'pending' ? 'bg-orange-200 text-orange-800' : status === 'rejected' ? 'bg-red-200 text-red-800' : 'bg-green-200 text-green-800';
+
+  return (
+    <div className={`relative border-2 ${borderColor} ${bgColor} rounded-2xl p-4 transition-all hover:shadow-lg hover:border-indigo-400 flex flex-col`}>
+      {/* Page Tabs */}
+      {hasMultiplePages && (
+        <div className="flex gap-1 mb-3">
+          {pages.map(p => (
+            <button
+              key={p}
+              onClick={() => setPageIndex(p)}
+              className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase transition-all ${pageIndex === p ? 'bg-indigo-600 text-white' : 'bg-white/50 text-gray-600 border border-gray-200'}`}
+            >
+              P{p}
+            </button>
+          ))}
+          <div className="ml-auto text-[8px] font-bold text-gray-400 uppercase self-center">
+            {pages.length} Pages
+          </div>
+        </div>
+      )}
+
+      {/* Thumbnail */}
+      {currentPage.s3Url && (
+        <div className="h-48 -mx-4 -mt-4 mb-3 overflow-hidden rounded-t-2xl border-b border-gray-100 bg-black/5 relative group/img">
+          <img src={currentPage.s3Url} alt="" className="w-full h-full object-contain" />
+          <div className="absolute top-2 right-2 px-2 py-0.5 bg-black/50 text-white text-[9px] font-black rounded-md">
+            Page {currentPage.page || 1}
+          </div>
+        </div>
+      )}
+
+      <div className="flex justify-between items-start mb-3">
+        <div className="flex-1 min-w-0">
+          <h4 className="font-bold text-sm text-gray-900 truncate">{currentPage.shgName}</h4>
+          <p className="text-[10px] text-gray-600">ID: '{currentPage.shgID}</p>
+        </div>
+        <span className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase ${badgeColor}`}>
+          {status}
+        </span>
+      </div>
+
+      <div className="space-y-1.5 text-[11px] mb-3 flex-1 overflow-hidden">
+        <div className="flex items-center gap-2 text-gray-600">
+          <Calendar className="w-3 h-3" />
+          <span>{formatDateTime(currentPage.uploadTimestamp)}</span>
+        </div>
+        {status === 'rejected' && currentPage.rejectionReason && (
+          <div className="bg-white/60 rounded-lg p-2 border-l-4 border-red-500">
+            <p className="text-[9px] font-black text-red-600 mb-0.5">Reason:</p>
+            <p className="text-[10px] text-gray-800 line-clamp-2 leading-tight">{currentPage.rejectionReason}</p>
+          </div>
+        )}
+        <div className="text-gray-400 truncate opacity-60" title={currentPage.originalFilename}>
+          {currentPage.originalFilename}
+        </div>
+      </div>
+
+      <div className="flex gap-2 mt-auto">
+        <button
+          onClick={() => openImageViewer(Object.values(group.pages))}
+          className="px-3 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl font-black text-[10px] transition-all shadow-sm flex items-center justify-center gap-1"
+        >
+          <Eye size={12} /> View {hasMultiplePages ? 'All' : ''}
+        </button>
+
+        {status === 'pending' && currentUserRole !== 'admin - apm' && (
+          <>
+            <button
+              onClick={async () => {
+                // Bulk approve all pages in this group
+                for (const up of Object.values(group.pages)) {
+                  await handleQuickStatusUpdate(up, 'validated');
+                }
+              }}
+              disabled={uploading}
+              className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-[10px] transition-all shadow-sm flex items-center justify-center gap-1"
+            >
+              <CheckCircle size={12} /> Approve
+            </button>
+            <button
+              onClick={() => openStatusModal(currentPage)}
+              disabled={uploading}
+              className="flex-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-black text-[10px] transition-all shadow-sm flex items-center justify-center gap-1"
+            >
+              <X size={12} /> Reject
+            </button>
+          </>
+        )}
+
+        {(status === 'rejected' || status === 'validated') && currentUserRole !== 'admin - apm' && (
+          <button
+            onClick={() => openStatusModal(currentPage)}
+            className="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-[10px] transition-all shadow-sm"
+          >
+            Details
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const UsersTab = ({ filterProps }) => {
   const formatLastActive = (dateStr) => {
     if (!dateStr) return 'Never';
@@ -506,17 +618,42 @@ const UsersTab = ({ filterProps }) => {
   const [status, setStatus] = useState('pending');
   const [rejectionReason, setRejectionReason] = useState('');
   const [showImageViewer, setShowImageViewer] = useState(false);
-  const [viewerImageData, setViewerImageData] = useState({ url: '', title: '', subtitle: '', filename: '' });
+  const [viewerImages, setViewerImages] = useState([]);
+  const [currentViewerIndex, setCurrentViewerIndex] = useState(0);
 
-  const openImageViewer = (upload) => {
-    setViewerImageData({
-      url: upload.s3Url,
-      title: upload.shgName,
-      subtitle: `SHG ID: '${upload.shgID}`,
-      filename: `${upload.shgName}_${upload.shgID}.jpg`
-    });
+  const openImageViewer = (uploads) => {
+    const uploadsArray = Array.isArray(uploads) ? uploads : [uploads];
+    const images = uploadsArray.map(u => ({
+      url: u.s3Url,
+      title: u.shgName,
+      subtitle: `SHG ID: '${u.shgID} - Page ${u.page || 1}`,
+      filename: `${u.shgName}_${u.shgID}_Page${u.page || 1}.jpg`
+    }));
+    setViewerImages(images);
+    setCurrentViewerIndex(0);
     setShowImageViewer(true);
   };
+
+  const groupedUserUploads = React.useMemo(() => {
+    const groups = {
+      pending: {},
+      validated: {},
+      rejected: {}
+    };
+
+    userUploads.forEach(u => {
+      const status = u.status || 'pending';
+      if (!groups[status]) groups[status] = {};
+      if (!groups[status][u.shgID]) groups[status][u.shgID] = { pages: {} };
+      groups[status][u.shgID].pages[u.page || 1] = u;
+    });
+
+    return {
+      pending: Object.values(groups.pending),
+      validated: Object.values(groups.validated),
+      rejected: Object.values(groups.rejected)
+    };
+  }, [userUploads]);
 
   // Location data states (local to tab for better control)
   // ... rest of the states ...
@@ -1722,19 +1859,35 @@ const UsersTab = ({ filterProps }) => {
     setUploading(true);
     try {
       const token = localStorage.getItem('token');
-      const payload = {
-        status: status,
-        rejectionReason: reason
-      };
+      
+      let url;
+      let method;
+      let bodyData;
 
-      const res = await fetch(`${API_BASE}/api/admin/uploads/${upload._id}/status`, {
-        method: 'PUT',
+      if (status === 'validated') {
+        // Use the dedicated approval gate endpoint for validation
+        url = `${API_BASE}/api/approval-gate/approve/${upload._id}`;
+        method = 'POST';
+        bodyData = null;
+      } else {
+        // Use regular status update for rejection/pending
+        url = `${API_BASE}/api/admin/uploads/${upload._id}/status`;
+        method = 'PUT';
+        bodyData = {
+          status: status,
+          rejectionReason: reason
+        };
+      }
+
+      const res = await fetch(url, {
+        method: method,
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(payload)
+        body: bodyData ? JSON.stringify(bodyData) : undefined
       });
+
       const data = await res.json();
       if (data.success) {
         // Refresh uploads in background
@@ -3193,232 +3346,84 @@ const UsersTab = ({ filterProps }) => {
                       ) : (
                         <div className="space-y-8">
                           {/* Pending Section */}
-                          {userUploads.filter(u => u.status === 'pending').length > 0 && (
+                          {groupedUserUploads.pending.length > 0 && (
                             <div>
                               <div className="flex items-center gap-2 mb-4 bg-white rounded-xl p-3 border-2 border-orange-300 shadow-sm">
                                 <AlertCircle className="text-orange-500" size={24} />
                                 <h4 className="text-lg font-black text-gray-900">
-                                  Pending Uploads
-                                  <span className="ml-2 text-sm font-normal text-gray-500">({userUploads.filter(u => u.status === 'pending').length})</span>
+                                  Pending Documents
+                                  <span className="ml-2 text-sm font-normal text-gray-500">({groupedUserUploads.pending.length})</span>
                                 </h4>
                               </div>
                               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {userUploads.filter(u => u.status === 'pending').map(upload => (
-                                  <div key={upload._id} className="relative border-2 border-orange-300 bg-orange-50 rounded-2xl p-4 transition-all hover:shadow-lg hover:border-orange-400 flex flex-col">
-                                    {/* Thumbnail */}
-                                    {upload.s3Url && (
-                                      <div className="h-48 -mx-4 -mt-4 mb-3 overflow-hidden rounded-t-2xl border-b border-orange-200 bg-black/5">
-                                        <img src={upload.s3Url} alt="" className="w-full h-full object-contain" />
-                                      </div>
-                                    )}
-
-                                    <div className="flex justify-between items-start mb-3">
-                                      <div className="flex-1 min-w-0">
-                                        <h4 className="font-bold text-sm text-gray-900 truncate">{upload.shgName}</h4>
-                                        <p className="text-xs text-gray-600">SHG ID: '{upload.shgID}</p>
-                                      </div>
-                                      {currentUserRole !== 'admin - apm' && (
-                                        <span className="px-2 py-1 rounded-lg text-[10px] font-black uppercase bg-orange-200 text-orange-800">
-                                          Pending
-                                        </span>
-                                      )}
-                                    </div>
-
-                                    <div className="space-y-2 text-xs mb-3 flex-1 overflow-hidden">
-                                      <div className="flex items-center gap-2 text-gray-600">
-                                        <Calendar className="w-3 h-3" />
-                                        <span>{formatDateTime(upload.uploadTimestamp)}</span>
-                                      </div>
-                                      <div className="text-gray-400 truncate" title={upload.originalFilename}>
-                                        {upload.originalFilename}
-                                      </div>
-                                    </div>
-
-                                    <div className="flex gap-2 mt-auto">
-                                      {(currentUserRole === 'admin' || currentUserRole === 'admin - developer' || currentUserRole === 'admin - apm') && (
-                                        <button
-                                          onClick={() => downloadImage(upload.s3Url, `${upload.shgName}_${upload.shgID}.jpg`)}
-                                          className={`px-3 py-2 ${currentUserRole === 'admin - apm' ? 'flex-1 bg-blue-600 text-white' : 'bg-blue-50 text-blue-600'} hover:bg-blue-600 hover:text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1`}
-                                          title="Download Image"
-                                        >
-                                          <Download size={14} /> {currentUserRole === 'admin - apm' ? 'Download' : ''}
-                                        </button>
-                                      )}
-                                      <button
-                                        onClick={() => openImageViewer(upload)}
-                                        className="px-3 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1"
-                                        title="View Full Image"
-                                      >
-                                        <Eye size={14} /> View
-                                      </button>
-                                      {currentUserRole !== 'admin - apm' && (
-                                        <>
-                                          <button
-                                            onClick={() => handleQuickStatusUpdate(upload, 'validated')}
-                                            disabled={uploading}
-                                            className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1"
-                                          >
-                                            <CheckCircle size={14} /> Approve
-                                          </button>
-                                          <button
-                                            onClick={() => openStatusModal(upload)}
-                                            disabled={uploading}
-                                            className="flex-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1"
-                                          >
-                                            <X size={14} /> Reject
-                                          </button>
-                                        </>
-                                      )}
-                                    </div>
-                                  </div>
+                                {groupedUserUploads.pending.map((group, idx) => (
+                                  <AdminUploadCard
+                                    key={idx}
+                                    group={group}
+                                    status="pending"
+                                    currentUserRole={currentUserRole}
+                                    uploading={uploading}
+                                    handleQuickStatusUpdate={handleQuickStatusUpdate}
+                                    openStatusModal={openStatusModal}
+                                    openImageViewer={openImageViewer}
+                                    downloadImage={downloadImage}
+                                  />
                                 ))}
                               </div>
                             </div>
                           )}
 
                           {/* Rejected Section */}
-                          {userUploads.filter(u => u.status === 'rejected').length > 0 && (
+                          {groupedUserUploads.rejected.length > 0 && (
                             <div>
                               <div className="flex items-center gap-2 mb-4 bg-white rounded-xl p-3 border-2 border-red-300 shadow-sm">
                                 <AlertTriangle className="text-red-500" size={24} />
                                 <h4 className="text-lg font-black text-gray-900">
-                                  Rejected Uploads
-                                  <span className="ml-2 text-sm font-normal text-gray-500">({userUploads.filter(u => u.status === 'rejected').length})</span>
+                                  Rejected Documents
+                                  <span className="ml-2 text-sm font-normal text-gray-500">({groupedUserUploads.rejected.length})</span>
                                 </h4>
                               </div>
                               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {userUploads.filter(u => u.status === 'rejected').map(upload => (
-                                  <div key={upload._id} className="relative border-2 border-red-300 bg-red-50 rounded-2xl p-4 transition-all hover:shadow-lg hover:border-red-400 flex flex-col">
-                                    {/* Thumbnail */}
-                                    {upload.s3Url && (
-                                      <div className="h-48 -mx-4 -mt-4 mb-3 overflow-hidden rounded-t-2xl border-b border-red-200 bg-black/5">
-                                        <img src={upload.s3Url} alt="" className="w-full h-full object-contain" />
-                                      </div>
-                                    )}
-
-                                    <div className="flex justify-between items-start mb-3">
-                                      <div className="flex-1 min-w-0">
-                                        <h4 className="font-bold text-sm text-gray-900 truncate">{upload.shgName}</h4>
-                                        <p className="text-xs text-gray-600">SHG ID: '{upload.shgID}</p>
-                                      </div>
-                                      <span className="px-2 py-1 rounded-lg text-[10px] font-black uppercase bg-red-200 text-red-800">
-                                        Rejected
-                                      </span>
-                                    </div>
-
-                                    <div className="space-y-2 text-xs mb-3 flex-1 overflow-hidden">
-                                      <div className="flex items-center gap-2 text-gray-600">
-                                        <Calendar className="w-3 h-3" />
-                                        <span>{formatDateTime(upload.uploadTimestamp)}</span>
-                                      </div>
-                                      {upload.rejectionReason && (
-                                        <div className="bg-white rounded-lg p-2 border-l-4 border-red-500">
-                                          <p className="text-[10px] font-bold text-red-600 mb-1">Reason:</p>
-                                          <p className="text-xs text-gray-800 line-clamp-2">{upload.rejectionReason}</p>
-                                        </div>
-                                      )}
-                                      <div className="text-gray-400 truncate" title={upload.originalFilename}>
-                                        {upload.originalFilename}
-                                      </div>
-                                    </div>
-
-                                    <div className="flex gap-2 mt-auto">
-                                      {(currentUserRole === 'admin' || currentUserRole === 'admin - developer' || currentUserRole === 'admin - apm') && (
-                                        <button
-                                          onClick={() => downloadImage(upload.s3Url, `${upload.shgName}_${upload.shgID}.jpg`)}
-                                          className={`px-3 py-2 ${currentUserRole === 'admin - apm' ? 'flex-1 bg-blue-600 text-white' : 'bg-blue-50 text-blue-600'} hover:bg-blue-600 hover:text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1`}
-                                          title="Download Image"
-                                        >
-                                          <Download size={14} /> {currentUserRole === 'admin - apm' ? 'Download' : ''}
-                                        </button>
-                                      )}
-                                      <button
-                                        onClick={() => openImageViewer(upload)}
-                                        className="px-3 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1"
-                                        title="View Full Image"
-                                      >
-                                        <Eye size={14} /> View
-                                      </button>
-                                      <button
-                                        onClick={() => openStatusModal(upload)}
-                                        className="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs transition-all shadow-sm"
-                                      >
-                                        Update Status
-                                      </button>
-                                    </div>
-                                  </div>
+                                {groupedUserUploads.rejected.map((group, idx) => (
+                                  <AdminUploadCard
+                                    key={idx}
+                                    group={group}
+                                    status="rejected"
+                                    currentUserRole={currentUserRole}
+                                    uploading={uploading}
+                                    handleQuickStatusUpdate={handleQuickStatusUpdate}
+                                    openStatusModal={openStatusModal}
+                                    openImageViewer={openImageViewer}
+                                    downloadImage={downloadImage}
+                                  />
                                 ))}
                               </div>
                             </div>
                           )}
 
                           {/* Validated Section */}
-                          {userUploads.filter(u => u.status === 'validated').length > 0 && (
+                          {groupedUserUploads.validated.length > 0 && (
                             <div>
                               <div className="flex items-center gap-2 mb-4 bg-white rounded-xl p-3 border-2 border-green-300 shadow-sm">
                                 <CheckCircle className="text-green-500" size={24} />
                                 <h4 className="text-lg font-black text-gray-900">
-                                  Approved Uploads
-                                  <span className="ml-2 text-sm font-normal text-gray-500">({userUploads.filter(u => u.status === 'validated').length})</span>
+                                  Approved Documents
+                                  <span className="ml-2 text-sm font-normal text-gray-500">({groupedUserUploads.validated.length})</span>
                                 </h4>
                               </div>
                               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {userUploads.filter(u => u.status === 'validated').map(upload => (
-                                  <div key={upload._id} className="relative border-2 border-green-300 bg-green-50 rounded-2xl p-4 transition-all hover:shadow-lg hover:border-green-400 flex flex-col">
-                                    {/* Thumbnail */}
-                                    {upload.s3Url && (
-                                      <div className="h-48 -mx-4 -mt-4 mb-3 overflow-hidden rounded-t-2xl border-b border-green-200 bg-black/5">
-                                        <img src={upload.s3Url} alt="" className="w-full h-full object-contain" />
-                                      </div>
-                                    )}
-
-                                    <div className="flex justify-between items-start mb-3">
-                                      <div className="flex-1 min-w-0">
-                                        <h4 className="font-bold text-sm text-gray-900 truncate">{upload.shgName}</h4>
-                                        <p className="text-xs text-gray-600">SHG ID: '{upload.shgID}</p>
-                                      </div>
-                                      <span className="px-2 py-1 rounded-lg text-[10px] font-black uppercase bg-green-200 text-green-800">
-                                        Approved
-                                      </span>
-                                    </div>
-
-                                    <div className="space-y-1 text-xs mb-3 flex-1 overflow-hidden">
-                                      <div className="flex items-center gap-2 text-gray-600">
-                                        <Calendar className="w-3 h-3" />
-                                        <span>{formatDateTime(upload.uploadTimestamp)}</span>
-                                      </div>
-                                      <div className="text-gray-400 truncate mt-2" title={upload.originalFilename}>
-                                        {upload.originalFilename}
-                                      </div>
-                                    </div>
-
-                                    <div className="flex gap-2 mt-auto">
-                                      {(currentUserRole === 'admin' || currentUserRole === 'admin - developer' || currentUserRole === 'admin - apm') && (
-                                        <button
-                                          onClick={() => downloadImage(upload.s3Url, `${upload.shgName}_${upload.shgID}.jpg`)}
-                                          className={`px-3 py-2 ${currentUserRole === 'admin - apm' ? 'flex-1 bg-blue-600 text-white' : 'bg-blue-50 text-blue-600'} hover:bg-blue-600 hover:text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1`}
-                                          title="Download Image"
-                                        >
-                                          <Download size={14} /> {currentUserRole === 'admin - apm' ? 'Download' : ''}
-                                        </button>
-                                      )}
-                                      <button
-                                        onClick={() => openImageViewer(upload)}
-                                        className="px-3 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl font-bold text-[10px] sm:text-xs transition-all shadow-sm flex items-center justify-center gap-1"
-                                        title="View Full Image"
-                                      >
-                                        <Eye size={14} /> View
-                                      </button>
-                                      {currentUserRole !== 'admin - apm' && (
-                                        <button
-                                          onClick={() => openStatusModal(upload)}
-                                          className="flex-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-xs transition-all"
-                                        >
-                                          Details
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
+                                {groupedUserUploads.validated.map((group, idx) => (
+                                  <AdminUploadCard
+                                    key={idx}
+                                    group={group}
+                                    status="validated"
+                                    currentUserRole={currentUserRole}
+                                    uploading={uploading}
+                                    handleQuickStatusUpdate={handleQuickStatusUpdate}
+                                    openStatusModal={openStatusModal}
+                                    openImageViewer={openImageViewer}
+                                    downloadImage={downloadImage}
+                                  />
                                 ))}
                               </div>
                             </div>
@@ -3575,11 +3580,34 @@ const UsersTab = ({ filterProps }) => {
                         </button>
                       </div>
                     </div>
-                    <div className="flex-1 overflow-auto bg-gray-50/50 custom-scrollbar flex items-start justify-center p-0">
-                      <img src={viewerImageData.url} alt={viewerImageData.title} className="w-auto h-auto shadow-2xl" />
+                    <div className="flex-1 overflow-auto bg-gray-50/50 custom-scrollbar flex items-start justify-center p-0 relative">
+                      <img src={viewerImages[currentViewerIndex]?.url} alt={viewerImages[currentViewerIndex]?.title} className="w-auto h-auto shadow-2xl" />
+                      
+                      {/* Navigation Arrows */}
+                      {viewerImages.length > 1 && (
+                        <div className="absolute inset-0 flex items-center justify-between p-4 pointer-events-none">
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); setCurrentViewerIndex(prev => (prev > 0 ? prev - 1 : viewerImages.length - 1)); }}
+                            className="p-3 bg-black/50 text-white rounded-full hover:bg-black/70 transition-all pointer-events-auto shadow-lg"
+                          >
+                            <ChevronLeft className="w-8 h-8" />
+                          </button>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); setCurrentViewerIndex(prev => (prev < viewerImages.length - 1 ? prev + 1 : 0)); }}
+                            className="p-3 bg-black/50 text-white rounded-full hover:bg-black/70 transition-all pointer-events-auto shadow-lg"
+                          >
+                            <ChevronRight className="w-8 h-8" />
+                          </button>
+                        </div>
+                      )}
                     </div>
-                    <div className="px-8 py-4 border-t border-gray-100 bg-white flex justify-end gap-4">
-                      <button onClick={() => downloadImage(viewerImageData.url, viewerImageData.filename)} className="px-8 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-black transition-all shadow-md flex items-center gap-2">
+                    <div className="px-8 py-4 border-t border-gray-100 bg-white flex justify-between items-center gap-4">
+                      {viewerImages.length > 1 && (
+                        <div className="text-sm font-black text-gray-400 uppercase tracking-widest">
+                          Page {currentViewerIndex + 1} of {viewerImages.length}
+                        </div>
+                      )}
+                      <button onClick={() => downloadImage(viewerImages[currentViewerIndex].url, viewerImages[currentViewerIndex].filename)} className="px-8 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl font-black transition-all shadow-md flex items-center gap-2">
                         <Download size={18} /> Download Original
                       </button>
                     </div>

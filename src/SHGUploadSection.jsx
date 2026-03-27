@@ -192,48 +192,32 @@ const SHGUploadSection = ({
     }
   }, [selectedMonth, selectedYear, user?.voID, serverProgress?.uploadedShgIds]);
 
-  const handleViewPermanentlyUploadedFile = async (shgId) => {
-    // Normalization helper: trim and remove leading zeros
-    const normalize = (id) => {
-      if (!id) return '';
-      // String cast, trim, remove quotes, and then lstrip 0
-      return String(id).trim().replace(/['"]/g, '');
-    };
-    const targetId = normalize(shgId);
-
-    const findUpload = (files) => {
-      console.log(`[findUpload] Searching for targetId: "${targetId}" in ${files.length} files`);
-
-      // 1. Get all matches for this SHG ID
-      const shgMatches = files.filter(u => {
-        const uId = normalize(u.shgID || u.shgId || u.metadata?.shgID || u.metadata?.shgId);
-
-        // ROBUST MATCH: Compare preserved AND stripped versions
-        const strippedUId = uId.replace(/^0+/, '');
-        const strippedTargetId = targetId.replace(/^0+/, '');
-
-        const match = uId === targetId || (strippedUId !== '' && strippedUId === strippedTargetId);
-
-        if (match) console.log(`[findUpload] Found ID match: ${uId} (Target: ${targetId})`);
-        return match;
+  const handleViewPermanentlyUploadedFile = async (shgId, page = null) => {
+    if (isViewingPermanent) return;
+    setIsViewingPermanent(true);
+    
+    // Find matching upload for this SHG ID and Month/Year
+    const targetId = shgId?.toString().toLowerCase();
+    
+    const findUpload = (fileList) => {
+      // 1. Filter by SHG ID
+      const shgMatches = fileList.filter(u => {
+        const uId = (u.shgID || u.shgId || u.metadata?.shgID || u.metadata?.shgId || '').toString().toLowerCase();
+        return uId === targetId || uId.includes(targetId) || targetId.includes(uId);
       });
 
-      if (shgMatches.length === 0) {
-        console.log(`[findUpload] No SHG ID matches for "${targetId}"`);
-        if (files.length > 0) {
-          console.log(`[findUpload] Available IDs in results:`, files.map(f => normalize(f.shgID || f.shgId || f.metadata?.shgID || f.metadata?.shgId)).slice(0, 10));
-        }
-        return null;
-      }
+      if (shgMatches.length === 0) return null;
 
-      console.log(`[findUpload] Found ${shgMatches.length} ID matches for "${targetId}". Checking date: ${selectedMonth}/${selectedYear}`);
-
-      // 2. Filter these by the CURRENTLY SELECTED month/year using timestamp (MATCH DocumentHistory.jsx)
+      // 2. Filter by Month/Year and Page
       const matches = shgMatches.filter(u => {
-        const rawDate = u.date || u.uploadTimestamp;
-        let sanitizedDate = rawDate;
+        // If page is specified, must match page
+        if (page !== null) {
+          const uPage = u.page || u.metadata?.page || 1;
+          if (parseInt(uPage) !== parseInt(page)) return false;
+        }
 
-        // Handle ISO date sanitization as in DocumentHistory
+        const rawDate = u.date || u.uploadTimestamp || u.metadata?.uploadTimestamp;
+        let sanitizedDate = rawDate;
         if (typeof rawDate === 'string' && rawDate.includes('T') && !rawDate.endsWith('Z') && !rawDate.includes('+')) {
           sanitizedDate = rawDate + 'Z';
         }
@@ -244,188 +228,46 @@ const SHGUploadSection = ({
         const uploadMonth = String(uploadDate.getMonth() + 1).padStart(2, '0');
         const uploadYear = String(uploadDate.getFullYear());
 
-        const dateMatch = uploadMonth === selectedMonth && uploadYear === selectedYear;
-        if (dateMatch) console.log(`[findUpload] Found Date match via timestamp: ${uploadMonth}/${uploadYear}`);
-        return dateMatch;
+        return uploadMonth === selectedMonth && uploadYear === selectedYear;
       });
 
-      // 3. If we have matches, return the most recent one (files are already sorted by date desc)
-      if (matches.length > 0) return matches[0];
-
-      console.log(`[findUpload] No timestamp match for ${selectedMonth}/${selectedYear}. Checking tags...`);
-
-      // 4. Fallback: if no date match for THIS month, try matching by explicit tags if they exist
-      const tagMatch = shgMatches.find(u => {
-        const uM = String(u.month || u.metadata?.month || '').padStart(2, '0');
-        const uY = String(u.year || u.metadata?.year || '');
-        const match = uM === selectedMonth && uY === selectedYear;
-        if (match) console.log(`[findUpload] Found Date match via Tags: ${uM}/${uY}`);
-        return match;
-      });
-
-      if (!tagMatch) console.log(`[findUpload] No tag match found for ${selectedMonth}/${selectedYear}`);
-
-      return tagMatch || null;
+      return matches.length > 0 ? matches[0] : null;
     };
 
     let upload = findUpload(permanentlyUploadedFiles);
-
+    
+    // Fallback: If not found in memory, try fetching
     if (!upload) {
-      const availableIds = permanentlyUploadedFiles.map(u => normalize(u.shgID || u.shgId || u.metadata?.shgID || u.metadata?.shgId)).slice(0, 5).join(', ');
-      console.log(`SHG ${shgId} (norm: ${targetId}) not found in current filtered list. Available norm IDs: ${availableIds}`);
-
-      // Try fetching matching uploads for THIS month/year/VO as fallback (Fallback 1)
       try {
         const token = localStorage.getItem('token');
         const voIdParam = user?.voID ? `&voID=${user.voID}` : '';
         const url = `${API_BASE}/api/uploads?month=${selectedMonth}&year=${selectedYear}${voIdParam}`;
-
-        const response = await fetch(url, {
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-        });
-        if (response.ok) {
-          const data = await response.json();
-          const allFiles = Array.isArray(data.files) ? data.files : [];
-          upload = findUpload(allFiles);
-          if (upload) {
-            setPermanentlyUploadedFiles(prev => {
-              if (prev.some(p => p._id === upload._id)) return prev;
-              return [...prev, upload];
-            });
-          }
+        const resp = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+        if (resp.ok) {
+          const data = await resp.json();
+          const files = Array.isArray(data.files) ? data.files : [];
+          upload = findUpload(files);
+          if (upload) setPermanentlyUploadedFiles(files);
         }
-      } catch (err) {
-        console.error('Fallback fetch 1 failed:', err);
-      }
-    }
-
-    // NEW: DIRECT FALLBACK (Fallback 2: Search by shgID directly across all VO uploads)
-    if (!upload) {
-      console.log(`[findUpload] Fallback 2: Direct search for shgID: ${targetId}`);
-      try {
-        const token = localStorage.getItem('token');
-        const voIdParam = user?.voID ? `&voID=${user.voID}` : '';
-        // Note: Backend now supports shgID query param for robust multi-format match
-        const url = `${API_BASE}/api/uploads?month=${selectedMonth}&year=${selectedYear}${voIdParam}&shgID=${targetId}`;
-
-        const response = await fetch(url, {
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-        });
-        if (response.ok) {
-          const data = await response.json();
-          const allFiles = Array.isArray(data.files) ? data.files : [];
-          // Even though backend filtered, we use findUpload for final validation
-          upload = findUpload(allFiles);
-          if (upload) {
-            console.log(`[findUpload] Fallback 2 Found upload! S3 Key: ${upload.s3Key}`);
-            setPermanentlyUploadedFiles(prev => {
-              if (prev.some(p => p._id === upload._id)) return prev;
-              return [...prev, upload];
-            });
-          }
-        }
-      } catch (err) {
-        console.error('Fallback fetch 2 (direct shgID) failed:', err);
-      }
-    }
-
-    // ROBUST FALLBACK (Path requested by user: voID -> userId -> uploads -> shgID)
-    if (!upload && user?.voID) {
-      console.log(`[ROBUST FALLBACK] Starting for VO ${user.voID}, SHG ${targetId}`);
-      try {
-        const token = localStorage.getItem('token');
-        const isAdmin = user?.role?.toLowerCase().includes('admin') || user?.role?.toLowerCase().includes('developer');
-
-        if (isAdmin && token) {
-          // 1. Resolve voID to userId
-          const resolveResp = await fetch(`${API_BASE}/api/users/resolve-by-void/${user.voID}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-          });
-
-          if (resolveResp.ok) {
-            const resolveData = await resolveResp.json();
-            const targetUserId = resolveData.userId;
-            console.log(`[ROBUST FALLBACK] Resolved VO ${user.voID} to userId ${targetUserId}`);
-
-            // 2. Fetch specific upload using the admin user uploads API
-            const uploadUrl = `${API_BASE}/api/admin/users/${targetUserId}/uploads?month=${selectedMonth}&year=${selectedYear}&shgID=${targetId}`;
-            const uploadResp = await fetch(uploadUrl, {
-              headers: { 'Authorization': `Bearer ${token}` }
-            });
-
-            if (uploadResp.ok) {
-              const uploadData = await uploadResp.json();
-              if (uploadData.success && uploadData.uploads && uploadData.uploads.length > 0) {
-                // Return the first match (most recent)
-                upload = uploadData.uploads[0];
-                console.log(`[ROBUST FALLBACK] Found upload! S3 Key: ${upload.s3Key}`);
-
-                // Add to list so it shows up in UI
-                setPermanentlyUploadedFiles(prev => {
-                  if (prev.some(p => p._id === upload._id)) return prev;
-                  return [...prev, upload];
-                });
-              }
-            }
-          }
-        }
-      } catch (err) {
-        console.error('[ROBUST FALLBACK] Failed:', err);
-      }
+      } catch (err) { console.error('Fallback fetch failed:', err); }
     }
 
     if (!upload) {
-      const msg = t?.('upload.fileNotFound') || 'Upload information not found for this SHG';
-
-      // Get detailed diagnostic info for the first failure
-      let diag = `Target ID: ${targetId}\nSelected Period: ${selectedMonth}/${selectedYear}\n\n`;
-
-      if (permanentlyUploadedFiles.length > 0) {
-        const first = permanentlyUploadedFiles[0];
-        const fId = normalize(first.shgID || first.shgId || first.metadata?.shgID || first.metadata?.shgId);
-        const fMonth = String(first.month || first.metadata?.month || '').padStart(2, '0');
-        const fYear = String(first.year || first.metadata?.year || '');
-        const sfId = fId.replace(/^0+/, '');
-        const stId = targetId.replace(/^0+/, '');
-        const robustMatch = fId === targetId || (sfId !== '' && sfId === stId);
-
-        diag += `Found File: ${first.originalFilename || 'unnamed'}\n`;
-        diag += `File SHG ID: ${fId}\n`;
-        diag += `Target SHG ID: ${targetId}\n`;
-        diag += `ID Match (Robust): ${robustMatch ? 'YES' : 'NO'}\n`;
-        if (robustMatch) {
-          diag += `Month Match: ${String(first.month).padStart(2, '0') === selectedMonth ? 'YES' : 'NO'}\n`;
-          diag += `Year Match: ${String(first.year) === selectedYear ? 'YES' : 'NO'}\n`;
-        }
-      } else {
-        diag += "The file list returned from the server is empty.";
-      }
-
-      alert(`${msg}\n\n--- DIAGNOSTICS ---\n${diag}`);
+      alert(t?.('upload.fileNotFound') || 'Upload information not found for this SHG');
+      setIsViewingPermanent(false);
       return;
     }
 
-    setIsViewingPermanent(true);
     let url = upload.url || upload.s3Url || upload.metadata?.s3Url || upload.metadata?.url;
-
-    // Detect if this is a direct S3 link without a signature
-    const isS3Direct = (u) => u && typeof u === 'string' && u.includes('amazonaws.com') && !u.includes('X-Amz-Signature');
-
-    if ((!url || isS3Direct(url)) && upload._id) {
+    if ((!url || (typeof url === 'string' && url.includes('amazonaws.com') && !url.includes('X-Amz-Signature'))) && upload._id) {
       try {
         const token = localStorage.getItem('token');
-        const resp = await fetch(`${API_BASE}/api/uploads/${upload._id}/presign`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {}
-        });
+        const resp = await fetch(`${API_BASE}/api/uploads/${upload._id}/presign`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
         if (resp.ok) {
           const data = await resp.json();
-          if (data && data.url) {
-            url = data.url;
-          }
+          if (data?.url) url = data.url;
         }
-      } catch (e) {
-        console.error('Presign fetch failed', e);
-      }
+      } catch (e) { console.error('Presign fetch failed', e); }
     }
 
     if (!url) {
@@ -435,7 +277,7 @@ const SHGUploadSection = ({
     }
 
     setPreviewFile({
-      fileName: upload.filename || 'Uploaded Document',
+      fileName: upload.filename || upload.originalFilename || 'Uploaded Document',
       previewUrl: url,
       id: shgId,
       shgId: shgId,
@@ -1170,22 +1012,18 @@ const SHGUploadSection = ({
 
   // Helper: Upload file with retry logic
   const uploadFileWithRetry = async (shgData, token, maxRetries = 2) => {
-    const formData = new FormData();
     const { page1, page2 } = shgData;
+    const results = [];
 
-    try {
-      // Handle Rotation/Processing for both pages
-      const file1 = await processFileRotation(page1);
-      const file2 = await processFileRotation(page2);
-
-      // Stitch the two images together
-      const stitchedFile = await stitchImages(file1, file2);
-
-      formData.append('file', stitchedFile);
+    const uploadPage = async (pageData, pageNumber) => {
+      const file = await processFileRotation(pageData);
+      const formData = new FormData();
+      formData.append('file', file);
       formData.append('month', selectedMonth);
       formData.append('year', selectedYear);
-      formData.append('shgId', page1.shgId);
-      formData.append('shgName', page1.shgName);
+      formData.append('shgId', pageData.shgId);
+      formData.append('shgName', pageData.shgName);
+      formData.append('page', pageNumber);
 
       for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
@@ -1194,23 +1032,31 @@ const SHGUploadSection = ({
             headers: { Authorization: `Bearer ${token}` },
             body: formData
           });
-
-          return { response, shgData, success: true };
+          return { response, success: response.ok, pageNumber };
         } catch (err) {
-          if (attempt === maxRetries) {
-            return {
-              response: null,
-              shgData,
-              success: false,
-              error: err
-            };
-          }
+          if (attempt === maxRetries) throw err;
           await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
         }
       }
+    };
+
+    try {
+      // Upload Page 1
+      const res1 = await uploadPage(page1, 1);
+      results.push(res1);
+
+      // Upload Page 2
+      const res2 = await uploadPage(page2, 2);
+      results.push(res2);
+
+      return {
+        success: results.every(r => r.success),
+        results,
+        shgData
+      };
     } catch (err) {
       console.error("Failed preparing upload for SHG", page1.shgId, err);
-      return { response: null, shgData, success: false, error: err };
+      return { success: false, error: err, shgData };
     }
   };
 
@@ -1297,68 +1143,36 @@ const SHGUploadSection = ({
       const uploadResults = await uploadFilesInParallel(filesToUpload, token, 3);
 
       for (const result of uploadResults) {
-        const { response, shgData, success, error } = result;
+        const { success, results, shgData, error } = result;
         const shgId = shgData.page1.shgId;
 
-        if (!success || !response) {
+        if (!success) {
           failCount++;
           console.error(`Upload exception for ${shgId}:`, error);
           continue;
         }
 
         try {
-          if (response.ok) {
-            successCount++;
-            uploadedShgs.push(formatShgLabel(shgData));
+          // Both pages uploaded successfully
+          successCount++;
+          uploadedShgs.push(formatShgLabel(shgData));
 
-            await updateUploadProgress(shgId);
+          await updateUploadProgress(shgId);
 
-            setUploadStatus(prev => ({
-              ...prev,
-              [shgId]: {
-                uploaded: true,
-                uploadDate: new Date().toISOString(),
-                fileName: "Combined Document"
-              }
-            }));
-
-            setUploadedFiles(prev => {
-              const copy = { ...prev };
-              delete copy[shgId];
-              return copy;
-            });
-          } else if (response.status === 503) {
-            console.error("Maintenance mode detected during upload loop");
-            const data = await response.json().catch(() => ({}));
-            handleMaintenanceResponse(data);
-            setIsUploading(false);
-            return;
-          } else if (response.status === 409) {
-            console.warn(`Duplicate upload blocked for SHG ${shgId}`);
-            try {
-              const errorData = await response.json();
-              setUploadStatus(prev => ({
-                ...prev,
-                [shgId]: {
-                  uploaded: true,
-                  uploadDate: errorData.existingUploadDate || new Date().toISOString(),
-                  fileName: 'Already Uploaded'
-                }
-              }));
-
-              setUploadedFiles(prev => {
-                const copy = { ...prev };
-                delete copy[shgId];
-                return copy;
-              });
-            } catch (parseErr) {
-              console.error('Failed to parse duplicate error response:', parseErr);
-              failCount++;
+          setUploadStatus(prev => ({
+            ...prev,
+            [shgId]: {
+              uploaded: true,
+              uploadDate: new Date().toISOString(),
+              fileName: "Page 1 & Page 2"
             }
-          } else {
-            failCount++;
-            console.error(`Upload failed for ${shgId}: ${response.status}`);
-          }
+          }));
+
+          setUploadedFiles(prev => {
+            const copy = { ...prev };
+            delete copy[shgId];
+            return copy;
+          });
         } catch (err) {
           failCount++;
           console.error(`Error processing result for ${shgId}:`, err);
@@ -1412,11 +1226,9 @@ const SHGUploadSection = ({
 
     try {
       const token = localStorage.getItem('token');
-      // Upload via the new stitched function pipeline which passes a formdata response back
       const result = await uploadFileWithRetry(shgData, token);
 
-      const res = result.response;
-      if (res && res.ok) {
+      if (result.success) {
         await updateUploadProgress(shgId);
 
         setUploadStatus(prev => ({
@@ -1424,7 +1236,7 @@ const SHGUploadSection = ({
           [shgId]: {
             uploaded: true,
             uploadDate: new Date().toISOString(),
-            fileName: "Combined Document"
+            fileName: "Page 1 & Page 2"
           }
         }));
 
@@ -1438,34 +1250,11 @@ const SHGUploadSection = ({
           t('upload.uploadSuccessSingle')
             .replace('{{shg}}', formatShgLabel(shgData))
         );
-        if (onUploadComplete) onUploadComplete();
+
+        fetchPermanentlyUploadedFiles(); // Refresh history
         return true;
-      } else if (res && res.status === 503) {
-        const data = await res.json().catch(() => ({}));
-        handleMaintenanceResponse(data);
-        setIsUploading(false);
-        return false;
-      } else if (res && res.status === 409) {
-        const errorData = await res.json();
-        setUploadStatus(prev => ({
-          ...prev,
-          [shgId]: {
-            uploaded: true,
-            uploadDate: errorData.existingUploadDate || new Date().toISOString(),
-            fileName: 'Already Uploaded'
-          }
-        }));
-
-        setUploadedFiles(prev => {
-          const copy = { ...prev };
-          delete copy[shgId];
-          return copy;
-        });
-
-        alert(t?.('upload.alreadyUploaded') || 'File already uploaded for this SHG.');
-        return false;
       } else {
-        throw new Error(`Upload failed with status: ${res ? res.status : 'Unknown'}`);
+        throw new Error(result.error || "Upload failed");
       }
     } catch (err) {
       console.error("Upload Error:", err);
@@ -1512,6 +1301,27 @@ const SHGUploadSection = ({
 
   const renderSHGCard = (shg) => {
     const isPermanentlyUploaded = serverProgress?.uploadedShgIds?.includes(shg.shgId) || uploadStatus[shg.shgId]?.uploaded === true;
+    
+    // Find all permanently uploaded files for this SHG (from history)
+    const targetId = shg.shgId?.toString().toLowerCase();
+    const matchedHistoryUploads = permanentlyUploadedFiles.filter(u => {
+        const uId = (u.shgID || u.shgId || u.metadata?.shgID || u.metadata?.shgId || '').toString().toLowerCase();
+        const idMatch = uId === targetId || uId.includes(targetId) || targetId.includes(uId);
+        if (!idMatch) return false;
+        
+        // Also check month/year
+        const uM = String(u.month || u.metadata?.month || '').padStart(2, '0');
+        const uY = String(u.year || u.metadata?.year || '');
+        const timestamp = u.uploadTimestamp || u.metadata?.uploadTimestamp;
+        let dateMatch = uM === selectedMonth && uY === selectedYear;
+        
+        if (!dateMatch && timestamp) {
+            const d = new Date(timestamp);
+            dateMatch = String(d.getMonth() + 1).padStart(2, '0') === selectedMonth && String(d.getFullYear()) === selectedYear;
+        }
+        return dateMatch;
+    });
+
     // Check if this SHG has been rejected (but only show if NOT permanently uploaded - after re-upload, hide rejection)
     const rejectionInfo = !isPermanentlyUploaded && failedUploads.find(failed => failed.shgID === shg.shgId);
 
@@ -1525,6 +1335,7 @@ const SHGUploadSection = ({
         shg={shg}
         filesData={filesData}
         isPermanentlyUploaded={isPermanentlyUploaded}
+        historyUploads={matchedHistoryUploads}
         rejectionInfo={rejectionInfo}
         analyzingState={shgAnalyzingState}
         isViewingPermanent={isViewingPermanent}

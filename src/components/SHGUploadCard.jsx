@@ -1,5 +1,5 @@
-import React, { useRef } from 'react';
-import { Upload, CheckCircle, X, FileText, AlertCircle, Eye, ScanLine, AlertTriangle } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { Upload, CheckCircle, X, FileText, AlertCircle, Eye, ScanLine, AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const SHGUploadCard = ({
     shg,
@@ -19,11 +19,13 @@ const SHGUploadCard = ({
     onRemoveFile,
     onUploadSingleShg,
     onViewPermanentlyUploadedFile,
+    historyUploads = [],
     selectedMonth,
     selectedYear
 }) => {
     const fileInputRefs = useRef({ page1: null, page2: null });
     const nativeCameraInputRefs = useRef({ page1: null, page2: null });
+    const [currentHistoryIndex, setCurrentHistoryIndex] = useState(0);
 
     // Check if any temporal file is uploaded
     const hasFiles = !!filesData.page1 || !!filesData.page2;
@@ -208,22 +210,72 @@ const SHGUploadCard = ({
                 )}
 
                 {isPermanentlyUploaded ? (
-                    <div className="flex items-center justify-between bg-white rounded-lg p-3 border border-green-200">
-                        <div className="flex items-center gap-2 text-green-700">
-                            <CheckCircle size={18} />
-                            <div>
-                                <p className="font-bold text-sm">Uploaded</p>
-                                <p className="text-[10px] text-gray-500">{selectedMonth} / {selectedYear}</p>
+                    <div className="bg-white rounded-lg border border-green-200 overflow-hidden">
+                        {/* Carousel Header / Indicators */}
+                        {historyUploads.length > 1 && (
+                            <div className="flex items-center justify-between px-3 py-2 bg-green-50/50 border-b border-green-100">
+                                <button 
+                                    onClick={() => setCurrentHistoryIndex(prev => (prev > 0 ? prev - 1 : historyUploads.length - 1))}
+                                    className="p-1 hover:bg-green-100 rounded-full transition-colors"
+                                >
+                                    <ChevronLeft size={16} className="text-green-700" />
+                                </button>
+                                <span className="text-[10px] font-bold text-green-700 uppercase tracking-wider">
+                                    Page {historyUploads[currentHistoryIndex]?.page || historyUploads[currentHistoryIndex]?.metadata?.page || (currentHistoryIndex + 1)} / {historyUploads.length}
+                                </span>
+                                <button 
+                                    onClick={() => setCurrentHistoryIndex(prev => (prev < historyUploads.length - 1 ? prev + 1 : 0))}
+                                    className="p-1 hover:bg-green-100 rounded-full transition-colors"
+                                >
+                                    <ChevronRight size={16} className="text-green-700" />
+                                </button>
                             </div>
+                        )}
+
+                        <div className="p-3">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2 text-green-700">
+                                    <CheckCircle size={18} />
+                                    <div>
+                                        <p className="font-bold text-sm">
+                                            {historyUploads.length > 1 
+                                                ? `Page ${historyUploads[currentHistoryIndex]?.page || historyUploads[currentHistoryIndex]?.metadata?.page || (currentHistoryIndex + 1)} Uploaded` 
+                                                : 'Document Uploaded'
+                                            }
+                                        </p>
+                                        <p className="text-[10px] text-gray-500">{selectedMonth} / {selectedYear}</p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        const doc = historyUploads[currentHistoryIndex];
+                                        const pageToView = doc?.page || doc?.metadata?.page || 1;
+                                        onViewPermanentlyUploadedFile(shg.shgId, pageToView);
+                                    }}
+                                    disabled={isViewingPermanent}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md font-semibold text-xs transition-colors"
+                                >
+                                    {isViewingPermanent ? (
+                                        <div className="animate-spin rounded-full h-3 w-3 border-2 border-blue-600 border-t-transparent" />
+                                    ) : (
+                                        <Eye size={12} />
+                                    )}
+                                    View
+                                </button>
+                            </div>
+                            
+                            {/* Dot Indicators */}
+                            {historyUploads.length > 1 && (
+                                <div className="flex justify-center gap-1.5 mt-2">
+                                    {historyUploads.map((_, idx) => (
+                                        <div 
+                                            key={idx}
+                                            className={`h-1 rounded-full transition-all ${idx === currentHistoryIndex ? 'w-4 bg-green-500' : 'w-1 bg-green-200'}`}
+                                        />
+                                    ))}
+                                </div>
+                            )}
                         </div>
-                        <button
-                            onClick={() => onViewPermanentlyUploadedFile(shg.shgId)}
-                            disabled={isViewingPermanent}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md font-semibold text-xs"
-                        >
-                            {isViewingPermanent ? <div className="animate-spin rounded-full h-3 w-3 border-2 border-blue-600 border-t-transparent" /> : <Eye size={12} />}
-                            View
-                        </button>
                     </div>
                 ) : (
                     <div className="space-y-4">
