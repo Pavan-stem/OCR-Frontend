@@ -801,42 +801,6 @@ const SHGUploadSection = ({
         return;
       }
 
-      // If valid or user forced proceed, reuse existing handler
-      handleFileSelect(shgId, shgName, event, analysis);
-
-    } catch (err) {
-      console.error("Smart scan error:", err);
-      setAnalyzingMap(prev => ({ ...prev, [shgId]: false }));
-      // Fallback to normal handling
-      handleFileSelect(shgId, shgName, event);
-    }
-  };
-
-  const handleSmartCameraCapture = async (file, shgId, shgName, pageIndex) => {
-    const pageKey = pageIndex === 1 ? 'page1' : 'page2';
-
-    // We update analyzing state using a page-specific key so the card can show loading per slot
-    setAnalyzingMap(prev => ({ ...prev, [shgId]: { ...(prev[shgId] || {}), [pageKey]: true } }));
-
-    try {
-      // 1. Convert file to canvas for the central validation pipeline
-      const img = new Image();
-      img.src = URL.createObjectURL(file);
-      await new Promise(r => img.onload = r);
-
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      canvas.getContext('2d').drawImage(img, 0, 0);
-
-      // 2. Centralized validation
-      const validationResult = await processDocumentAndValidate(canvas, pageIndex);
-
-      if (!validationResult.ok) {
-        alert(validationResult.message);
-        return;
-      }
-
       // 3. Store valid file data per page segment
       const fileData = {
         file: file,
