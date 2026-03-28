@@ -121,9 +121,20 @@ export const translations = {
             gallery: "Upload from Gallery",
             smartScan: "Smart Scan",
             camera: "Direct Camera",
-            cameraScan: "Camera Scan",
+            cameraScan: "Capture/Upload File",
             fileNotFound: "Upload information not found for this SHG",
-            viewError: "Could not retrieve image URL"
+            viewError: "Could not retrieve image URL",
+            dualValidationRequired: "Both Page 1 and Page 2 must be validated before uploading.",
+            validationFailedManual: "Document validation failed. You may manually validate if correct.",
+            alreadyUploadedLocked: "This SHG file is already uploaded and locked.",
+            dualUploadRequired: "Both Page 1 and Page 2 must be uploaded before submitting.",
+            pageUploaded: "Page {{page}} Uploaded",
+            documentUploaded: "Document Uploaded",
+            alreadyUploadedSynced: "All files have already been uploaded. Your session state has been updated.",
+            currentPastOnly: "Current & Past Only",
+            locked: "Locked",
+            errorHelp: "Please try selecting a different month or year using the dropdowns above.",
+            rejectedUploads: "Rejected Uploads"
         },
 
 
@@ -355,9 +366,20 @@ export const translations = {
             gallery: "గ్యాలరీ నుండి అప్‌లోడ్ చేయండి",
             smartScan: "స్మార్ట్ స్కాన్",
             camera: "డైరెక్ట్ కెమెరా",
-            cameraScan: "కెమెరా స్కాన్",
+            cameraScan: "పత్రాన్ని క్యాప్చర్ / అప్‌లోడ్ చేయండి",
             fileNotFound: "ఈ SHG కోసం అప్‌లోడ్ సమాచారం కనుగొనబడలేదు",
-            viewError: "చిత్రం యొక్క URLని పొందలేకపోయాము"
+            viewError: "చిత్రం యొక్క URLని పొందలేకపోయాము",
+            dualValidationRequired: "రెండు పత్రాలను ధృవీకరించిన తర్వాతే అప్లోడ్ చేయగలరు.",
+            validationFailedManual: "డాక్యుమెంట్ ధృవీకరణ విఫలమైంది. సరైనదైతే మీరు మాన్యువల్‌గా ధృవీకరించవచ్చు.",
+            alreadyUploadedLocked: "ఈ SHG పత్రం ఇప్పటికే అప్‌లోడ్ చేయబడింది మరియు లాక్ చేయబడింది.",
+            dualUploadRequired: "సమర్పించే ముందు పేజీ 1 మరియు పేజీ 2 రెండూ అప్‌లోడ్ చేయాలి.",
+            pageUploaded: "పేజీ {{page}} అప్‌లోడ్ చేయబడింది",
+            documentUploaded: "పత్రం అప్‌లోడ్ చేయబడింది",
+            alreadyUploadedSynced: "అన్ని పత్రాలు ఇప్పటికే అప్‌లోడ్ చేయబడ్డాయి. మీ సెషన్ స్థితి నవీకరించబడింది.",
+            currentPastOnly: "ప్రస్తుత & గత నెలలు మాత్రమే",
+            locked: "లాక్ చేయబడింది",
+            errorHelp: "దయచేసి పైన ఉన్న డ్రాప్‌డౌన్‌లను ఉపయోగించి మరొక నెల లేదా సంవత్సరాన్ని ఎంచుకోవడానికి ప్రయత్నించండి.",
+            rejectedUploads: "తిరస్కరించబడిన అప్‌లోడ్‌లు"
         },
 
 

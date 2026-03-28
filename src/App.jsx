@@ -520,8 +520,8 @@ export default function EnhancedTableOCRSystem() {
       } catch (e) {
         // Fallback: detect from current path
         const currentPath = window.location.pathname;
-        if (currentPath.startsWith('/Test')) {
-          basePath = '/Test';
+        if (currentPath.startsWith('/SMD')) {
+          basePath = '/SMD';
         } else {
           const pathParts = currentPath.split('/').filter(p => p);
           if (pathParts.length > 0) {
@@ -1756,7 +1756,7 @@ export default function EnhancedTableOCRSystem() {
                   try {
                     const token = localStorage.getItem('token');
                     if (!token) return;
-                    
+
                     console.log('📊 Syncing backend stats after upload completion...');
                     const response = await fetch(`${API_BASE}/api/users/sync-stats`, {
                       method: 'POST',
@@ -1770,7 +1770,7 @@ export default function EnhancedTableOCRSystem() {
                         year: selectedYear
                       })
                     });
-                    
+
                     if (response.ok) {
                       console.log('✅ Backend stats synced successfully');
                     } else {

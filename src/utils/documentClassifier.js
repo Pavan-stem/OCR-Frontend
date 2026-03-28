@@ -1,23 +1,40 @@
 /**
- * documentClassifier.js  —  PAGE-1 vs PAGE-2 DETECTOR  (v6)
+ * documentClassifier.js  —  PAGE-1 vs PAGE-2 DETECTOR  (v7)
  * ===========================================================
  *
- * CALIBRATED against real pixel measurements of both documents:
+ * CHANGES FROM v6 → v7
+ * ─────────────────────
+ * 1. MARGIN TRIMMING (_trimContent):
+ *    Raw camera images contain black/white borders around the document that
+ *    shift all zone percentages. v7 detects the actual ink content bounding
+ *    box first, then computes all zones relative to that trimmed region.
  *
+ * 2. C2 now uses mbkPeakInk (max ink in MBK zone) instead of mbkToTitle ratio.
+ *    With trimmed zones the title area includes table borders which inflate
+ *    titleInk, making the ratio unreliable. A high peak in the MBK zone is a
+ *    direct, robust indicator of the MBK ID row.
+ *
+ * 3. PAGE1_PASS lowered from 10 → 8.
+ *    The three strongest criteria (C1 + C2 + C5) already total 8 pts.
+ *    Requiring 10 created false rejections on raw camera docs with slightly
+ *    different brightness/framing.
+ *
+ * 4. C3 threshold relaxed (hdrToBody ≥ 0.90 for partial, ≥ 1.00 for full).
+ *    Table grid lines inflate bodyInk in raw images, compressing the ratio.
+ *
+ * CALIBRATED VALUES (content-relative after margin trim)
+ * ──────────────────────────────────────────────────────
  *                        PAGE 1      PAGE 2
- *  rightVsMid            0.877       0.472   ← BEST separator (threshold 0.65)
- *  mbkRowInk             0.140       0.001   ← BEST separator (threshold 0.030)
- *  mbk/title ratio       2.80        0.02    ← only Page 1 has MBK row ABOVE title
- *  titleInk              0.050       0.023   ← Page 1 higher
- *  hdrVsBody ratio       1.18x       0.91x   ← Page 1 header denser
- *  colStdDev             0.086       0.073   ← NOT useful (overlap, wrong direction)
- *  bodySepPeaks          56          106     ← WRONG direction (don't use)
+ *  rightVsMid            ≥0.70       ~0.47   ← hard disqualifier @ 0.65
+ *  mbkInk                ≥0.06       ~0.001  ← C1 (absolute MBK row density)
+ *  mbkPeakInk            ≥0.25       ~0.001  ← C2 (dense text peak in MBK zone)
+ *  rightVsMid            ≥0.75       ~0.47   ← C7 (uniform column layout)
  *
  * RULE
  * ────
  *   PAGE1 slot → accept ONLY if Page 1 criteria met
  *   PAGE2 slot → accept ONLY if Page 1 criteria NOT met
- *   Portrait   → always rejected
+ *   Portrait   → always rejected (enforced upstream in documentProcessor.js)
  */
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -143,6 +160,12 @@ function _avg(arr, from, to) {
     return s / Math.max(1, to - from);
 }
 
+function _max(arr, from, to) {
+    let m = 0;
+    for (let i = from; i < to; i++) if (arr[i] > m) m = arr[i];
+    return m;
+}
+
 function _peaks(arr, minVal, hw) {
     let n = 0;
     for (let i = hw; i < arr.length - hw; i++) {
@@ -157,7 +180,40 @@ function _peaks(arr, minVal, hw) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FEATURE EXTRACTION  (calibrated zone boundaries)
+// MARGIN TRIMMING  (v7 — new)
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Finds the actual ink-content bounding box inside the image.
+ * Raw camera captures have variable-sized black/white borders around the
+ * document (phone status bar, browser chrome, document shadow, etc.).
+ * Trimming these out before computing zones makes zone percentages
+ * consistent regardless of how much margin surrounds the document.
+ *
+ * @param {Float64Array} rowInk  - per-row ink fraction [0,1]
+ * @param {Float64Array} colInk  - per-col ink fraction [0,1]
+ * @param {number} H             - image height
+ * @param {number} W             - image width
+ * @returns {{ r0, r1, c0, c1 }} - trimmed content boundaries
+ */
+function _trimContent(rowInk, colInk, H, W) {
+    const THRESH = 0.015; // rows/cols below this are considered margin
+
+    let r0 = 0, r1 = H, c0 = 0, c1 = W;
+
+    for (let i = 0; i < H; i++) { if (rowInk[i] > THRESH) { r0 = i; break; } }
+    for (let i = H - 1; i >= 0; i--) { if (rowInk[i] > THRESH) { r1 = i + 1; break; } }
+    for (let i = 0; i < W; i++) { if (colInk[i] > THRESH) { c0 = i; break; } }
+    for (let i = W - 1; i >= 0; i--) { if (colInk[i] > THRESH) { c1 = i + 1; break; } }
+
+    // Safety: ensure at least 50% of image is kept (prevents edge cases)
+    if ((r1 - r0) < H * 0.5) { r0 = 0; r1 = H; }
+    if ((c1 - c0) < W * 0.5) { c0 = 0; c1 = W; }
+
+    return { r0, r1, c0, c1 };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FEATURE EXTRACTION  (v7 — zones computed on margin-trimmed region)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function _extractFeatures(canvas) {
@@ -165,17 +221,21 @@ function _extractFeatures(canvas) {
     const { gray, width: W, height: H } = _grayscale(norm);
     const thr = _otsu(gray);
     const bin = _binarize(gray, thr);
-    const { rowInk, colInk } = _rowColProfiles(bin, W, H);
+    const { rowInk: rowInkFull, colInk: colInkFull } = _rowColProfiles(bin, W, H);
 
-    const r = f => Math.floor(H * f);
-    const c = f => Math.floor(W * f);
+    // ── Margin trim: find actual document content boundaries ──────────────────
+    const { r0, r1, c0, c1 } = _trimContent(rowInkFull, colInkFull, H, W);
+    const CH = r1 - r0; // content height
+    const CW = c1 - c0; // content width
 
-    // ── Row zone ink averages ─────────────────────────────────────────────────
-    // Calibrated from measurements:
-    //   Page 1 title zone   → 0.050  |  Page 2 → 0.023
-    //   Page 1 mbk zone     → 0.140  |  Page 2 → 0.001   ← biggest gap
-    //   Page 1 hdrfull avg  → 0.112  |  Page 2 → 0.104
-    //   Page 1 body avg     → 0.095  |  Page 2 → 0.115
+    // Slice row/col profiles to content region only
+    const rowInk = rowInkFull.slice(r0, r1);
+    const colInk = colInkFull.slice(c0, c1);
+
+    const r = f => Math.floor(CH * f);
+    const c = f => Math.floor(CW * f);
+
+    // ── Row zone ink averages (content-relative) ──────────────────────────────
     const titleInk = _avg(rowInk, r(0.00), r(0.07));
     const mbkInk = _avg(rowInk, r(0.07), r(0.14));
     const headingInk = _avg(rowInk, r(0.14), r(0.20));
@@ -185,11 +245,13 @@ function _extractFeatures(canvas) {
     const footerInk = _avg(rowInk, r(0.88), r(1.00));
     const hdrFullInk = _avg(rowInk, r(0.00), r(0.40));
 
-    // ── Column zone ink averages ──────────────────────────────────────────────
-    // Calibrated:
-    //   Page 1 rightPanel → 0.095  |  Page 2 → 0.049
-    //   Page 1 midBlock   → 0.108  |  Page 2 → 0.104
-    //   rightVsMid: Page 1 → 0.878 |  Page 2 → 0.472   ← biggest gap
+    // ── NEW: MBK zone peak ink ────────────────────────────────────────────────
+    // The MBK ID row in Page 1 creates a single very dense row (high peak).
+    // This is more reliable than the mbkToTitle ratio when titleInk is inflated
+    // by table border lines or when document margins vary.
+    const mbkPeakInk = _max(rowInk, r(0.07), r(0.14));
+
+    // ── Column zone ink averages (content-relative) ───────────────────────────
     const leftBlockInk = _avg(colInk, c(0.00), c(0.40));
     const midBlockInk = _avg(colInk, c(0.40), c(0.75));
     const rightPanelInk = _avg(colInk, c(0.75), c(1.00));
@@ -197,66 +259,61 @@ function _extractFeatures(canvas) {
 
     const rightVsMid = midBlockInk > 0.001 ? rightPanelInk / midBlockInk : 1.0;
 
-    // ── MBK row vs title ratio ────────────────────────────────────────────────
-    // Page 1: mbk row (0.140) is MUCH denser than title row (0.050) → ratio ~2.8
-    // Page 2: mbk zone is near-zero (0.001) → ratio ~0.02
-    // This is the single most reliable discriminator.
+    // ── Legacy ratio (kept for logging/debug, not used in scoring) ────────────
     const mbkToTitle = titleInk > 0.001 ? mbkInk / titleInk : 0;
 
     // ── Header vs body density ratio ─────────────────────────────────────────
-    // Page 1: header (0.112) denser than body (0.095) → ratio 1.18
-    // Page 2: header (0.104) lighter than body (0.115) → ratio 0.91
     const hdrToBody = bodyInk > 0.001 ? hdrFullInk / bodyInk : 1.0;
 
     // ── Header row peaks ──────────────────────────────────────────────────────
-    // Page 1: 13 peaks (title + MBK + heading + 2-level headers = many rows)
-    // Page 2: 10 peaks
     const headerRowPeaks = _peaks(rowInk.subarray(r(0.00), r(0.40)), 0.25, 1);
 
     // ── Body row peaks ────────────────────────────────────────────────────────
     const bodyRowPeaks = _peaks(rowInk.subarray(r(0.40), r(0.88)), 0.06, 1);
 
-    // ── Footer ────────────────────────────────────────────────────────────────
-    // Page 1: footer totals row → 0.100  |  Page 2: → 0.050
-    // (Page 2 has lighter footer because it's mostly blank signature lines)
-
     return {
         W, H, thr,
-        titleInk, mbkInk, headingInk,
+        // margin trim bounds (for debug)
+        trimR0: r0, trimR1: r1, trimC0: c0, trimC1: c1,
+        // row features
+        titleInk, mbkInk, mbkPeakInk, headingInk,
         colHdr1Ink, colHdr2Ink,
         bodyInk, footerInk, hdrFullInk,
+        // col features
         leftBlockInk, midBlockInk, rightPanelInk, rightTailInk,
+        // derived ratios
         rightVsMid, mbkToTitle, hdrToBody,
+        // peak counts
         headerRowPeaks, bodyRowPeaks,
     };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PAGE 1 SCORING
-// Calibrated thresholds derived from real measurements:
-//   Page 1 values in parentheses | Page 2 values in brackets
+// PAGE 1 SCORING  (v7)
+// Max possible = 14 pts.  Pass threshold = 8 pts.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const PAGE1_PASS = 10;
+const PAGE1_PASS = 8; // lowered from 10 to handle raw camera variance
 
 function _scorePage1(fp) {
     let score = 0;
     const hits = [], misses = [];
 
     // ── HARD DISQUALIFIER ────────────────────────────────────────────────────
-    // rightVsMid: Page1=0.878, Page2=0.472. Threshold=0.65 safely splits them.
-    // This single check catches Page 2 being uploaded to Page 1 slot.
+    // rightVsMid: Page1 ≥ 0.70, Page2 ≈ 0.47. Threshold 0.65 safely splits.
+    // Page 2 has a sparse right panel (blank signature / summary columns).
+    // This check is the single most reliable negative indicator for Page 2.
     if (fp.rightVsMid < 0.65) {
         return {
             score: -99,
             hits: [],
-            misses: [`DISQUALIFY: rightVsMid=${fp.rightVsMid.toFixed(3)} < 0.65 (Page 2 has sparse right panel)`],
+            misses: [`DISQUALIFY: rightVsMid=${fp.rightVsMid.toFixed(3)} < 0.65 (Page 2 sparse right panel)`],
         };
     }
 
-    // ── CRITERION 1: MBK ID row ink (3 pts) ──────────────────────────────────
-    // Page1=0.140, Page2=0.001. Threshold=0.030 gives huge margin.
-    // This is the single strongest positive indicator for Page 1.
+    // ── CRITERION 1: MBK ID row absolute ink density (3 pts) ─────────────────
+    // Page1: mbkInk ≥ 0.06 (dense text row).  Page2: mbkInk ≈ 0.001 (near zero).
+    // Computed on the margin-trimmed region so it's consistent across cameras.
     if (fp.mbkInk >= 0.060) {
         score += 3; hits.push(`C1: mbkInk=${fp.mbkInk.toFixed(3)} ✓✓✓`);
     } else if (fp.mbkInk >= 0.030) {
@@ -267,33 +324,37 @@ function _scorePage1(fp) {
         misses.push(`C1: mbkInk=${fp.mbkInk.toFixed(3)} too low (no MBK ID row)`);
     }
 
-    // ── CRITERION 2: MBK row notably denser than title (3 pts) ───────────────
-    // Page1: mbk(0.140) / title(0.050) = 2.80x  (MBK text fills more of the row)
-    // Page2: mbk(0.001) / title(0.023) = 0.02x
-    // Threshold=1.0 safely splits them.
-    if (fp.mbkToTitle >= 1.5) {
-        score += 3; hits.push(`C2: mbkToTitle=${fp.mbkToTitle.toFixed(2)} ✓✓✓`);
-    } else if (fp.mbkToTitle >= 1.0) {
-        score += 2; hits.push(`C2: mbkToTitle=${fp.mbkToTitle.toFixed(2)} ✓`);
-    } else if (fp.mbkToTitle >= 0.5) {
-        score += 1; hits.push(`C2: mbkToTitle=${fp.mbkToTitle.toFixed(2)} partial`);
+    // ── CRITERION 2: Dense text peak in MBK zone (3 pts) ─────────────────────
+    // v7 change: replaced mbkToTitle ratio with mbkPeakInk.
+    // The ratio was unreliable on raw images because table border lines inflate
+    // titleInk. Instead we check directly: is there a high-ink spike in the
+    // MBK zone row profile? This spike = a row of Telugu text filling the zone.
+    // Page1: mbkPeakInk ≥ 0.25 (clear text row).  Page2: ≈ 0.001.
+    if (fp.mbkPeakInk >= 0.25) {
+        score += 3; hits.push(`C2: mbkPeakInk=${fp.mbkPeakInk.toFixed(3)} ✓✓✓`);
+    } else if (fp.mbkPeakInk >= 0.15) {
+        score += 2; hits.push(`C2: mbkPeakInk=${fp.mbkPeakInk.toFixed(3)} ✓`);
+    } else if (fp.mbkPeakInk >= 0.08) {
+        score += 1; hits.push(`C2: mbkPeakInk=${fp.mbkPeakInk.toFixed(3)} partial`);
     } else {
-        misses.push(`C2: mbkToTitle=${fp.mbkToTitle.toFixed(2)} too low`);
+        misses.push(`C2: mbkPeakInk=${fp.mbkPeakInk.toFixed(3)} too low`);
     }
 
-    // ── CRITERION 3: Header denser than body (2 pts) ─────────────────────────
-    // Page1: hdrToBody=1.18x  |  Page2: 0.91x
-    // Threshold=1.05 splits them cleanly.
-    if (fp.hdrToBody >= 1.10) {
+    // ── CRITERION 3: Header vs body density (2 pts) ───────────────────────────
+    // v7: threshold relaxed from 1.10/1.05 to 1.00/0.90.
+    // Raw camera docs have bodyInk inflated by dense table grid lines,
+    // compressing the ratio. We allow partial credit down to 0.90.
+    if (fp.hdrToBody >= 1.00) {
         score += 2; hits.push(`C3: hdrToBody=${fp.hdrToBody.toFixed(3)} ✓`);
-    } else if (fp.hdrToBody >= 1.05) {
+    } else if (fp.hdrToBody >= 0.90) {
         score += 1; hits.push(`C3: hdrToBody=${fp.hdrToBody.toFixed(3)} partial`);
     } else {
         misses.push(`C3: hdrToBody=${fp.hdrToBody.toFixed(3)} (header not denser than body)`);
     }
 
     // ── CRITERION 4: Title row ink (2 pts) ───────────────────────────────────
-    // Page1=0.050, Page2=0.023. Threshold=0.030.
+    // After margin trimming, the title zone should contain the top table border
+    // + first header text rows, giving a moderate ink density.
     if (fp.titleInk >= 0.035) {
         score += 2; hits.push(`C4: titleInk=${fp.titleInk.toFixed(3)} ✓`);
     } else if (fp.titleInk >= 0.020) {
@@ -303,10 +364,6 @@ function _scorePage1(fp) {
     }
 
     // ── CRITERION 5: Two-level column headers (2 pts) ────────────────────────
-    // Page1: colHdr1=0.139, colHdr2=0.106  |  Page2: 0.189, 0.132
-    // Both docs have col headers so this is not a discriminator on its own,
-    // but Page 1's two levels are similarly dense (ratio close to 1.0).
-    // Page 2's first level is notably denser than second (it has fewer header rows).
     if (fp.colHdr1Ink >= 0.080 && fp.colHdr2Ink >= 0.060) {
         score += 2; hits.push(`C5: two-level hdrs ${fp.colHdr1Ink.toFixed(3)}/${fp.colHdr2Ink.toFixed(3)} ✓`);
     } else if (fp.colHdr1Ink >= 0.050 || fp.colHdr2Ink >= 0.040) {
@@ -316,29 +373,25 @@ function _scorePage1(fp) {
     }
 
     // ── CRITERION 6: Header row peaks (1 pt) ─────────────────────────────────
-    // Page1=13, Page2=10.
     if (fp.headerRowPeaks >= 12) {
         score += 1; hits.push(`C6: headerRowPeaks=${fp.headerRowPeaks} ✓`);
     } else {
         misses.push(`C6: headerRowPeaks=${fp.headerRowPeaks}`);
     }
 
-    // ── CRITERION 7: Right panel not sparse (1 pt) ───────────────────────────
-    // Already handled by disqualifier, but give extra point for being clearly uniform.
-    // Page1=0.878, threshold=0.75.
+    // ── CRITERION 7: Right panel uniformity (1 pt) ───────────────────────────
+    // Already enforced by disqualifier, but gives extra credit for clearly
+    // uniform right-panel density (Page 1 has data columns spanning full width).
     if (fp.rightVsMid >= 0.75) {
-        score += 1; hits.push(`C7: rightVsMid=${fp.rightVsMid.toFixed(3)} (uniform layout) ✓`);
+        score += 1; hits.push(`C7: rightVsMid=${fp.rightVsMid.toFixed(3)} ✓`);
     }
 
     // ── CRITERION 8: Footer totals row (1 pt) ────────────────────────────────
-    // Page1=0.100, Page2=0.050.
-    if (fp.footerInk >= 0.070) {
+    if (fp.footerInk >= 0.050) {
         score += 1; hits.push(`C8: footerInk=${fp.footerInk.toFixed(3)} ✓`);
     }
 
     // ── CRITERION 9: Body row peaks (1 pt) ───────────────────────────────────
-    // Page1=30, Page2=61 (Page 2 has more rows — not a good discriminator by itself)
-    // But Page 1 still has ≥10.
     if (fp.bodyRowPeaks >= 10) {
         score += 1; hits.push(`C9: bodyRowPeaks=${fp.bodyRowPeaks} ✓`);
     }
@@ -355,15 +408,17 @@ function _classify(canvas) {
     const p1 = _scorePage1(fp);
 
     const isPage1 = p1.score >= PAGE1_PASS;
-    const p1Conf = p1.score >= 14 ? 'high'
+    const p1Conf = p1.score >= 12 ? 'high'
         : p1.score >= PAGE1_PASS ? 'medium' : 'low';
 
     const reasons = [
         `p1Score=${p1.score}/${PAGE1_PASS}`,
         `rightVsMid=${fp.rightVsMid.toFixed(3)}`,
         `mbkInk=${fp.mbkInk.toFixed(3)}`,
+        `mbkPeakInk=${fp.mbkPeakInk.toFixed(3)}`,
         `mbkToTitle=${fp.mbkToTitle.toFixed(2)}`,
         `hdrToBody=${fp.hdrToBody.toFixed(3)}`,
+        `trim=[${fp.trimR0},${fp.trimR1},${fp.trimC0},${fp.trimC1}]`,
         ...p1.hits,
         ...p1.misses,
     ];
@@ -411,7 +466,7 @@ function _classifyForSlot(canvas, expectedPage) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PUBLIC API (unchanged surface)
+// PUBLIC API  (unchanged surface — drop-in replacement for v6)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function validateDocumentForSlot(classification, expectedPage) {
@@ -470,7 +525,7 @@ export async function classifyAndValidate(imageInput, expectedPage) {
             ? result.classification.reasons.join(', ')
             : (result.message || 'Rejected'),
         features: result.features || {},
-        method: 'calibrated_page1_v6',
+        method: 'calibrated_page1_v7',
         tableDetected: true,
     };
 }

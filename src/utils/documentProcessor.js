@@ -6,6 +6,7 @@
  *
  * Flow:
  *   canvas + expectedPage
+ *       → orientation check                        [portrait → reject immediately]
  *       → (optional) quick table structure check   [OpenCV — non-blocking]
  *       → classifyAndValidate()                    [Claude vision API]
  *       → { ok, message, classification, details }
@@ -75,7 +76,6 @@ async function _fileToCanvas(file) {
 export const processDocumentAndValidate = async (canvasOrFile, expectedPage) => {
     const tag = `[DocumentProcessor] Page${expectedPage}`;
     const expectedCls = expectedPage === 1 ? 'PAGE1' : 'PAGE2';
-    const unexpectedCls = expectedPage === 1 ? 'PAGE2' : 'PAGE1';
 
     try {
         console.log(`${tag} — Starting classification-first validation...`);
@@ -94,6 +94,18 @@ export const processDocumentAndValidate = async (canvasOrFile, expectedPage) => 
                     details: {}
                 };
             }
+        }
+
+        // ── 1b. Orientation check (PORTRAIT → reject immediately) ─────────────
+        if (canvas.height > canvas.width) {
+            console.warn(`${tag} — REJECTED: Portrait orientation (${canvas.width}x${canvas.height})`);
+            return {
+                ok: false,
+                errorType: 'orientation',
+                message: 'Please rotate your phone to Landscape and try again.',
+                classification: 'REJECTED',
+                details: {}
+            };
         }
 
         // ── 2. AI Classification (PRIMARY — mandatory attempt) ────────────────
