@@ -88,7 +88,7 @@ const SHGUploadSection = ({
   };
 
   const isDeveloper = user?.role?.toLowerCase().includes('developer') || (user?.voID && String(user.voID).length === 4);
-  const isTestMode = window.location.pathname.startsWith('/SMD');
+  const isTestMode = window.location.pathname.startsWith('/Test');
   const hasAIFeatures = isTestMode && isDeveloper;
 
   // Smart Preview Logic
