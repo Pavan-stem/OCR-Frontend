@@ -704,6 +704,18 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
                 canvas = rotateCanvas(canvas, manualRotation);
             }
 
+            // [NEW] Orientation Gate: Reject portrait images inside the camera viewer
+            // This allows the user to rotate and try again without closing the camera.
+            if (canvas.height > canvas.width) {
+                console.warn('[Camera] Rejection: Portrait orientation detected.');
+                setGalleryRejection({
+                    message: t?.('upload.portraitError') || "Please rotate the image to landscape and try again.",
+                    stayInReview: true
+                });
+                setIsProcessing(false);
+                return;
+            }
+
             console.log('[Camera] Proceeding to capture finalized image.');
 
             const file = await canvasToFile(canvas, "scanned_doc.jpg");
@@ -1190,12 +1202,15 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
                         <p className="text-red-300 text-sm mb-8 max-w-xs leading-relaxed font-medium">{galleryRejection.message}</p>
                         <button
                             onClick={() => {
+                                const shouldStay = galleryRejection?.stayInReview;
                                 setGalleryRejection(null);
-                                if (capturedImageData) handleRetake();
+                                // If it's an orientation error, we stay in the review screen to allow rotation.
+                                // Otherwise, we go back to the camera (handleRetake).
+                                if (capturedImageData && !shouldStay) handleRetake();
                             }}
                             className="px-8 py-3 bg-red-600 hover:bg-red-500 rounded-full text-white font-bold text-sm transition-all shadow-xl active:scale-95"
                         >
-                            Try Again
+                            {galleryRejection?.stayInReview ? (t?.('common.close') || 'Close') : (t?.('common.retry') || 'Try Again')}
                         </button>
                     </div>
                 )}

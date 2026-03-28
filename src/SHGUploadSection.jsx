@@ -744,24 +744,66 @@ const SHGUploadSection = ({
   // Only callable when validated=false. SHGUploadCard must hide the button
   // when validated=true (see renderSHGCard below for how we enforce this).
   // ─────────────────────────────────────────────────────────────────────────
-  const handleValidateFile = (shgId, pageIndex) => {
+  // ─────────────────────────────────────────────────────────────────────────
+  // handleValidateFile — manual trigger for files that failed AI check or were rotated.
+  // Now ASYNC: re-runs the full AI pipeline on the CURRENT oriented/rotated image.
+  // ─────────────────────────────────────────────────────────────────────────
+  const handleValidateFile = async (shgId, pageIndex) => {
     const pageKey = pageIndex === 1 ? 'page1' : 'page2';
+    const fileData = uploadedFiles[shgId]?.[pageKey];
+    if (!fileData || fileData.validated) return;
 
-    setUploadedFiles(prev => {
-      const currentShgData = prev[shgId];
-      if (!currentShgData || !currentShgData[pageKey]) return prev;
+    setAnalyzingMap(prev => ({ ...prev, [shgId]: { ...(prev[shgId] || {}), [pageKey]: true } }));
 
-      // Guard: don't re-validate an already validated file
-      if (currentShgData[pageKey].validated === true) return prev;
+    try {
+      // 1. Get the current rotated/cropped version of the file
+      const rotatedFile = await processFileRotation(fileData);
 
-      return {
-        ...prev,
-        [shgId]: {
-          ...currentShgData,
-          [pageKey]: { ...currentShgData[pageKey], validated: true }
-        }
-      };
-    });
+      // 2. Load into canvas for validation
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(rotatedFile);
+      img.src = objectUrl;
+      await new Promise((res, rej) => {
+        img.onload = res;
+        img.onerror = rej;
+      });
+
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      canvas.getContext('2d').drawImage(img, 0, 0);
+      URL.revokeObjectURL(objectUrl);
+
+      // 3. Re-run validation pipeline
+      const validationResult = await processDocumentAndValidate(canvas, pageIndex);
+
+      // 4. Update state with new validation result
+      setUploadedFiles(prev => {
+        const shg = prev[shgId];
+        if (!shg || !shg[pageKey]) return prev;
+        return {
+          ...prev,
+          [shgId]: {
+            ...shg,
+            [pageKey]: {
+              ...shg[pageKey],
+              validated: validationResult.ok,
+              validationMessage: validationResult.message,
+              classification: validationResult.classification
+            }
+          }
+        };
+      });
+
+      if (!validationResult.ok) {
+        alert(validationResult.message);
+      }
+    } catch (err) {
+      console.error("Manual validation error:", err);
+      alert("Validation failed. Please ensure the image is clear and try again.");
+    } finally {
+      setAnalyzingMap(prev => ({ ...prev, [shgId]: { ...(prev[shgId] || {}), [pageKey]: false } }));
+    }
   };
 
   const handleValidateAll = () => {

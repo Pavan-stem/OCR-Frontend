@@ -42,8 +42,8 @@ const SHGUploadCard = ({
 
         return (
             <div className={`p-3 rounded-xl border-2 transition-all ${fileData
-                    ? fileData.validated ? 'border-green-400 bg-green-50/50' : 'border-yellow-400 bg-yellow-50/50'
-                    : 'border-dashed border-gray-300 bg-gray-50/50'
+                ? fileData.validated ? 'border-green-400 bg-green-50/50' : 'border-yellow-400 bg-yellow-50/50'
+                : 'border-dashed border-gray-300 bg-gray-50/50'
                 }`}>
                 <div className="flex items-center justify-between mb-2">
                     <span className="font-bold text-sm text-gray-700">{pageTitle}</span>
@@ -124,37 +124,46 @@ const SHGUploadCard = ({
                             </div>
                         </div>
 
-                        {/* Validation Warning (Old Card Style) */}
+                        {/* Validation Warning (AI feedback or generic) */}
                         {!fileData.validated && (
-                            <div className="flex items-center gap-2 text-[12px] text-red-600 font-bold px-1">
-                                <AlertTriangle size={14} />
-                                <span>{t?.('upload.validateError') || 'Validate document before uploading'}</span>
+                            <div className="flex items-start gap-2 text-[11px] text-red-600 font-bold px-1 leading-tight">
+                                <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                                <span>{fileData.validationMessage || t?.('upload.validateError') || 'Validate document before uploading'}</span>
                             </div>
                         )}
 
-                        {/* Redesigned Actions (Removal of individual upload, fixed overlaps) */}
+                        {/* Redesigned Actions (Restored View for rotation recovery) */}
                         <div className="flex flex-col gap-2 mt-1">
+                            <div className="grid grid-cols-2 gap-2">
+                                {/* View Button (వీక్షించండి) */}
+                                <button
+                                    onClick={() => onViewFile(shg.shgId, pageKey === 'page1' ? 1 : 2)}
+                                    className="flex items-center justify-center gap-2 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-bold text-[11px] transition-all shadow-sm active:scale-95"
+                                >
+                                    <Eye size={14} />
+                                    <span>{t?.('upload.view') || 'View'}</span>
+                                </button>
+
+                                {/* Remove Button (తొలగించండి) */}
+                                <button
+                                    onClick={() => onRemoveFile(shg.shgId, pageKey === 'page1' ? 1 : 2)}
+                                    className="flex items-center justify-center gap-2 py-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 rounded-lg font-bold text-[11px] transition-all shadow-sm active:scale-95"
+                                >
+                                    <X size={14} />
+                                    <span>{t?.('upload.remove') || 'Remove'}</span>
+                                </button>
+                            </div>
+
                             {/* Validate Button (ధృవీకరించండి) - Only show if not validated */}
                             {fileData && !fileData.validated && !(pageKey === 'page1' ? page1Validated : page2Validated) && (
                                 <button
                                     onClick={() => onValidateFile(shg.shgId, pageKey === 'page1' ? 1 : 2)}
-                                    className="flex items-center justify-center gap-2 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-[12px] transition-all shadow-sm active:scale-95 w-full"
+                                    className="flex items-center justify-center gap-2 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold text-[12px] transition-all shadow-md active:scale-95 w-full mt-1"
                                 >
                                     <CheckCircle size={16} />
-                                    <span>{t?.('upload.validate') || 'ధృవీకరించండి'}</span>
+                                    <span>{t?.('upload.validate') || 'Validate'}</span>
                                 </button>
                             )}
-
-                            <div className="flex flex-col gap-2 mt-1">
-                                {/* Remove Button (తొలగించండి) */}
-                                <button
-                                    onClick={() => onRemoveFile(shg.shgId, pageKey === 'page1' ? 1 : 2)}
-                                    className="flex items-center justify-center gap-2 py-2.5 bg-[#ff4d4d] hover:bg-[#e64040] text-white rounded-lg font-bold text-[12px] transition-all shadow-sm active:scale-95"
-                                >
-                                    <X size={16} />
-                                    <span>{t?.('upload.remove') || 'Remove'}</span>
-                                </button>
-                            </div>
                         </div>
                     </div>
                 )}
@@ -164,9 +173,9 @@ const SHGUploadCard = ({
 
     return (
         <div className={`relative bg-white rounded-xl shadow-md border transition-all ${rejectionInfo ? 'border-red-300' :
-                isPermanentlyUploaded ? 'border-green-300 bg-green-50/30' :
-                    isReadyToSubmit ? 'border-blue-400 hover:shadow-lg' :
-                        'border-gray-200 hover:border-blue-300'
+            isPermanentlyUploaded ? 'border-green-300 bg-green-50/30' :
+                isReadyToSubmit ? 'border-blue-400 hover:shadow-lg' :
+                    'border-gray-200 hover:border-blue-300'
             }`}>
 
             {/* PERMANENT UPLOAD STATUS BADGE */}
@@ -284,8 +293,8 @@ const SHGUploadCard = ({
                                     onClick={() => onUploadSingleShg(shg.shgId)}
                                     disabled={!page1Validated || !page2Validated || isUploading || isPermanentlyUploaded}
                                     className={`w-full py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-3 transition-all shadow-md group ${(page1Validated && page2Validated && !isUploading && !isPermanentlyUploaded)
-                                            ? 'bg-blue-600 hover:bg-blue-700 text-white transform active:scale-95'
-                                            : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                                        ? 'bg-blue-600 hover:bg-blue-700 text-white transform active:scale-95'
+                                        : 'bg-gray-200 text-gray-500 cursor-not-allowed'
                                         }`}
                                 >
                                     <Upload size={20} className={(page1Validated && page2Validated) ? 'animate-bounce group-hover:animate-none' : ''} />
