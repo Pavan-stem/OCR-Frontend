@@ -471,6 +471,17 @@ const ConversionView = ({ userId, userName, filterProps, onClose }) => {
                                                 <div>
                                                     <h5 className="text-sm sm:text-base font-black text-gray-900 leading-tight flex items-center gap-2 flex-wrap">
                                                         <span className="truncate">{item.shgName}</span>
+                                                        {/* Page badge — P1 (indigo) or P2 (violet) */}
+                                                        <span
+                                                            className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest ${
+                                                                (item.page || 1) === 2
+                                                                    ? 'bg-violet-100 text-violet-700'
+                                                                    : 'bg-indigo-100 text-indigo-700'
+                                                            }`}
+                                                            title={`Form Page ${item.page || 1}`}
+                                                        >
+                                                            P{item.page || 1}
+                                                        </span>
                                                         {item.isSynced && (
                                                             <BookCheck className="w-4 h-4 text-emerald-500 shrink-0" title="Sent to DB" />
                                                         )}

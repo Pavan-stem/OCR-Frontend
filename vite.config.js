@@ -20,13 +20,14 @@ export default defineConfig(({ command, mode }) => {
     ],
     server: {
       open: true,
-      host: '0.0.0.0',  // Accept connections from all network interfaces
-      port: 5173,       // Make port explicit
+      // Listen on all network interfaces to allow mobile/network testing
+      host: true, 
+      port: 5175,
+      strictPort: false, // Fallback to 5176 if 5175 is busy
       allowedHosts: [
         'localhost',
         '127.0.0.1',
-        '192.168.1.19',   // Current IP
-        '192.168.1.*',    // Allow any 192.168.1.x
+        '192.168.*',      // Allow any local network IP
       ],
       proxy: {
 

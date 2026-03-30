@@ -317,7 +317,6 @@ const SHGUploadSection = ({
   useEffect(() => {
     const shgIds = Object.keys(uploadedFiles);
 
-    // No files uploaded at all → not validated
     if (shgIds.length === 0) {
       setAllFilesValidated(false);
       return;
@@ -326,7 +325,30 @@ const SHGUploadSection = ({
     const allValidated = shgIds.every(shgId => {
       const p1 = uploadedFiles[shgId]?.page1;
       const p2 = uploadedFiles[shgId]?.page2;
-      // Both pages must exist AND both must be validated
+
+      // ── Partial re-upload: check if the OTHER page is accepted on the server.
+      // We rely on permanentlyUploadedFiles to detect server-accepted pages.
+      const targetId = shgId?.toString().toLowerCase();
+      const serverPages = permanentlyUploadedFiles.filter(u => {
+        const uId = (u.shgID || u.shgId || u.metadata?.shgID || u.metadata?.shgId || '').toString().toLowerCase();
+        return uId === targetId || uId.includes(targetId) || targetId.includes(uId);
+      });
+      const serverPageNums = serverPages
+        .filter(u => !['rejected'].includes((u.status || '').toLowerCase()))
+        .map(u => parseInt(u.page || u.metadata?.page || 0))
+        .filter(Boolean);
+
+      const p1OnServer = serverPageNums.includes(1);
+      const p2OnServer = serverPageNums.includes(2);
+
+      // Partial reupload: only the locally-provided page(s) need to be validated
+      if ((p1OnServer && !p2OnServer && p2 && !p1) || (!p1OnServer && p2OnServer && p1 && !p2)) {
+        // One page on server, one local → just validate the local one
+        if (p1OnServer && p2) return p2.validated === true;
+        if (p2OnServer && p1) return p1.validated === true;
+      }
+
+      // Standard: Both pages must exist AND both must be validated
       return (
         p1 && p2 &&
         p1.validated === true &&
@@ -335,7 +357,7 @@ const SHGUploadSection = ({
     });
 
     setAllFilesValidated(allValidated);
-  }, [uploadedFiles]);
+  }, [uploadedFiles, permanentlyUploadedFiles]);
 
   const fetchUploadProgress = async () => {
     if (!selectedMonth || !selectedYear) return;
@@ -929,8 +951,9 @@ const SHGUploadSection = ({
     }
   };
 
-  const uploadFileWithRetry = async (shgData, token, maxRetries = 2) => {
-    const { page1, page2 } = shgData;
+  const uploadFileWithRetry = async (shgFileData, token, maxRetries = 2) => {
+    const { page1, page2 } = shgFileData;
+    const results = [];
 
     const uploadPage = async (pageData, pageNumber) => {
       const file = await processFileRotation(pageData);
@@ -958,16 +981,17 @@ const SHGUploadSection = ({
     };
 
     try {
-      const res1 = await uploadPage(page1, 1);
-      const res2 = await uploadPage(page2, 2);
+      if (page1) results.push(await uploadPage(page1, 1));
+      if (page2) results.push(await uploadPage(page2, 2));
+      
       return {
-        success: res1.success && res2.success,
-        results: [res1, res2],
-        shgData
+        success: results.every(r => r.success),
+        results: results,
+        shgData: shgFileData
       };
     } catch (err) {
-      console.error("Failed preparing upload for SHG", page1.shgId, err);
-      return { success: false, error: err, shgData };
+      console.error("Failed preparing upload for SHG", (page1 || page2)?.shgId, err);
+      return { success: false, error: err, shgData: shgFileData };
     }
   };
 
@@ -1000,9 +1024,33 @@ const SHGUploadSection = ({
   const handleUploadAllFiles = async () => {
     const validatedFiles = Object.keys(uploadedFiles)
       .filter(shgId => {
+        if (uploadStatus[shgId]?.uploaded) return false;
+        
         const p1 = uploadedFiles[shgId].page1;
         const p2 = uploadedFiles[shgId].page2;
-        return p1?.validated && p2?.validated && !uploadStatus[shgId]?.uploaded;
+
+        // Check server status for partial flows
+        const targetId = shgId?.toString().toLowerCase();
+        const serverPages = permanentlyUploadedFiles.filter(u => {
+            const uId = (u.shgID || u.shgId || u.metadata?.shgID || u.metadata?.shgId || '').toString().toLowerCase();
+            return uId === targetId || uId.includes(targetId) || targetId.includes(uId);
+        });
+        const serverPageNums = serverPages
+            .filter(u => !['rejected'].includes((u.status || '').toLowerCase()))
+            .map(u => parseInt(u.page || u.metadata?.page || 0))
+            .filter(Boolean);
+
+        const p1OnServer = serverPageNums.includes(1);
+        const p2OnServer = serverPageNums.includes(2);
+
+        // Case 1: Both local pages exist and are validated
+        if (p1 && p2) return p1.validated && p2.validated;
+        
+        // Case 2: One on server, the other local and validated
+        if (p1OnServer && p2) return p2.validated;
+        if (p2OnServer && p1) return p1.validated;
+
+        return false;
       })
       .map(shgId => uploadedFiles[shgId]);
 
@@ -1035,7 +1083,7 @@ const SHGUploadSection = ({
 
       for (const result of uploadResults) {
         const { success, shgData, error } = result;
-        const shgId = shgData.page1.shgId;
+        const shgId = (shgData.page1 || shgData.page2)?.shgId;
 
         if (!success) {
           failCount++;
@@ -1079,9 +1127,9 @@ const SHGUploadSection = ({
   };
 
   const handleUploadSingleFile = async (shgId) => {
-    const shgData = uploadedFiles[shgId];
-    if (!shgData?.page1 || !shgData?.page2) {
-      alert(t?.('upload.dualUploadRequired') || "Both Page 1 and Page 2 must be uploaded before submitting.");
+    const shgFileData = uploadedFiles[shgId];
+    if (!shgFileData) {
+      alert(t?.('upload.noFilesSelected') || 'No files selected.');
       return false;
     }
 
@@ -1090,12 +1138,28 @@ const SHGUploadSection = ({
       return false;
     }
 
-    if (!shgData.page1.validated || !shgData.page2.validated) {
-      alert(t?.('upload.dualValidationRequired') || 'Both pages must be validated before uploading.');
+    // ── Determine which pages need uploading ──────────────────────────────
+    // If a page is accepted on the server and no local file for it → skip it.
+    // If BOTH pages are local → require both validated (standard flow).
+    const hasP1 = !!shgFileData.page1;
+    const hasP2 = !!shgFileData.page2;
+
+    if (!hasP1 && !hasP2) {
+      alert(t?.('upload.dualUploadRequired') || 'Please select at least one page to upload.');
       return false;
     }
 
-    if (uploadStatus[shgId]?.uploaded) {
+    // Validate what we have
+    if (hasP1 && !shgFileData.page1.validated) {
+      alert(t?.('upload.validatePage1First') || 'Please validate Page 1 before uploading.');
+      return false;
+    }
+    if (hasP2 && !shgFileData.page2.validated) {
+      alert(t?.('upload.validatePage2First') || 'Please validate Page 2 before uploading.');
+      return false;
+    }
+
+    if (uploadStatus[shgId]?.uploaded && !hasP1 && !hasP2) {
       alert(t?.('upload.alreadyUploaded') || 'This file is already uploaded.');
       return false;
     }
@@ -1104,14 +1168,48 @@ const SHGUploadSection = ({
 
     try {
       const token = localStorage.getItem('token');
-      const result = await uploadFileWithRetry(shgData, token);
+      const results = [];
 
-      if (result.success) {
+      // Upload only the pages we have locally
+      const uploadPage = async (pageData, pageNumber) => {
+        const file = await processFileRotation(pageData);
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('month', selectedMonth);
+        formData.append('year', selectedYear);
+        formData.append('shgId', pageData.shgId);
+        formData.append('shgName', pageData.shgName);
+        formData.append('page', pageNumber);
+
+        for (let attempt = 0; attempt <= 2; attempt++) {
+          try {
+            const response = await fetch(`${API_BASE}/api/upload`, {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${token}` },
+              body: formData
+            });
+            return { response, success: response.ok, pageNumber };
+          } catch (err) {
+            if (attempt === 2) throw err;
+            await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+          }
+        }
+      };
+
+      if (hasP1) results.push(await uploadPage(shgFileData.page1, 1));
+      if (hasP2) results.push(await uploadPage(shgFileData.page2, 2));
+
+      const allOk = results.every(r => r.success);
+
+      if (allOk) {
         await updateUploadProgress(shgId);
+
+        const pagesLabel = hasP1 && hasP2 ? 'Page 1 & Page 2'
+          : hasP1 ? 'Page 1' : 'Page 2';
 
         setUploadStatus(prev => ({
           ...prev,
-          [shgId]: { uploaded: true, uploadDate: new Date().toISOString(), fileName: "Page 1 & Page 2" }
+          [shgId]: { uploaded: true, uploadDate: new Date().toISOString(), fileName: pagesLabel }
         }));
 
         setUploadedFiles(prev => {
@@ -1120,14 +1218,16 @@ const SHGUploadSection = ({
           return copy;
         });
 
-        alert(t('upload.uploadSuccessSingle').replace('{{shg}}', formatShgLabel(shgData)));
+        const shgName = shgFileData.page1?.shgName || shgFileData.page2?.shgName || shgId;
+        alert(t('upload.uploadSuccessSingle').replace('{{shg}}', `${shgName} (${shgId})`) ||
+          `Successfully uploaded ${pagesLabel} for ${shgName}`);
         fetchPermanentlyUploadedFiles();
         return true;
       } else {
-        throw new Error(result.error || "Upload failed");
+        throw new Error('One or more pages failed to upload');
       }
     } catch (err) {
-      console.error("Upload Error:", err);
+      console.error('Upload Error:', err);
       alert(t?.('upload.uploadError') || 'Upload failed. Please try again.');
       return false;
     } finally {
