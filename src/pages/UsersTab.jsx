@@ -18,30 +18,42 @@ const REJECTION_REASONS = [
 ];
 
 // Helper Component for Grouped Uploads in Admin View
-const AdminUploadCard = ({ group, status, currentUserRole, uploading, handleQuickStatusUpdate, openStatusModal, openImageViewer, downloadImage }) => {
+const AdminUploadCard = ({ group, currentUserRole, uploading, handleQuickStatusUpdate, openStatusModal, openImageViewer, downloadImage }) => {
   const [pageIndex, setPageIndex] = React.useState(1);
   const pages = Object.keys(group.pages).map(Number).sort((a, b) => a - b);
   const currentPage = group.pages[pageIndex] || group.pages[pages[0]];
   const hasMultiplePages = pages.length > 1;
 
+  // Use the status of the CURRENTLY SELECTED page
+  const status = currentPage?.status || 'pending';
   const borderColor = status === 'pending' ? 'border-orange-300' : status === 'rejected' ? 'border-red-300' : 'border-green-300';
   const bgColor = status === 'pending' ? 'bg-orange-50' : status === 'rejected' ? 'bg-red-50' : 'bg-green-50';
   const badgeColor = status === 'pending' ? 'bg-orange-200 text-orange-800' : status === 'rejected' ? 'bg-red-200 text-red-800' : 'bg-green-200 text-green-800';
 
+  const getStatusColor = (s) => {
+    if (s === 'validated') return 'bg-emerald-500';
+    if (s === 'rejected') return 'bg-red-500';
+    return 'bg-orange-500';
+  };
+
   return (
     <div className={`relative border-2 ${borderColor} ${bgColor} rounded-2xl p-4 transition-all hover:shadow-lg hover:border-indigo-400 flex flex-col`}>
-      {/* Page Tabs */}
+      {/* Page Tabs with status dots */}
       {hasMultiplePages && (
         <div className="flex gap-1 mb-3">
-          {pages.map(p => (
-            <button
-              key={p}
-              onClick={() => setPageIndex(p)}
-              className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase transition-all ${pageIndex === p ? 'bg-indigo-600 text-white' : 'bg-white/50 text-gray-600 border border-gray-200'}`}
-            >
-              P{p}
-            </button>
-          ))}
+          {pages.map(p => {
+            const pageStatus = group.pages[p]?.status || 'pending';
+            return (
+              <button
+                key={p}
+                onClick={() => setPageIndex(p)}
+                className={`relative px-3 py-1 rounded-lg text-[9px] font-black uppercase transition-all ${pageIndex === p ? 'bg-indigo-600 text-white' : 'bg-white/50 text-gray-600 border border-gray-200'}`}
+              >
+                P{p}
+                <div className={`absolute -top-1 -right-1 w-2 h-2 rounded-full border border-white ${getStatusColor(pageStatus)} shadow-sm`}></div>
+              </button>
+            );
+          })}
           <div className="ml-auto text-[8px] font-bold text-gray-400 uppercase self-center">
             {pages.length} Pages
           </div>
@@ -63,9 +75,11 @@ const AdminUploadCard = ({ group, status, currentUserRole, uploading, handleQuic
           <h4 className="font-bold text-sm text-gray-900 truncate">{currentPage.shgName}</h4>
           <p className="text-[10px] text-gray-600">ID: '{currentPage.shgID}</p>
         </div>
-        <span className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase ${badgeColor}`}>
-          {status}
-        </span>
+        <div className="flex flex-col items-end gap-1">
+          <span className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase ${badgeColor}`}>
+            {status}
+          </span>
+        </div>
       </div>
 
       <div className="space-y-1.5 text-[11px] mb-3 flex-1 overflow-hidden">
@@ -75,7 +89,7 @@ const AdminUploadCard = ({ group, status, currentUserRole, uploading, handleQuic
         </div>
         {status === 'rejected' && currentPage.rejectionReason && (
           <div className="bg-white/60 rounded-lg p-2 border-l-4 border-red-500">
-            <p className="text-[9px] font-black text-red-600 mb-0.5">Reason:</p>
+            <p className="text-[9px] font-black text-red-600 mb-0.5">Reason (P{currentPage.page || 1}):</p>
             <p className="text-[10px] text-gray-800 line-clamp-2 leading-tight">{currentPage.rejectionReason}</p>
           </div>
         )}
@@ -84,44 +98,63 @@ const AdminUploadCard = ({ group, status, currentUserRole, uploading, handleQuic
         </div>
       </div>
 
-      <div className="flex gap-2 mt-auto">
+      <div className="flex flex-col gap-2 mt-auto">
+        {/* Main View All Button */}
         <button
           onClick={() => openImageViewer(Object.values(group.pages))}
-          className="px-3 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl font-black text-[10px] transition-all shadow-sm flex items-center justify-center gap-1"
+          className="w-full px-3 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl font-black text-[10px] transition-all shadow-sm flex items-center justify-center gap-1"
         >
-          <Eye size={12} /> View {hasMultiplePages ? 'All' : ''}
+          <Eye size={12} /> View Document Package
         </button>
 
-        {status === 'pending' && currentUserRole !== 'admin - apm' && (
-          <>
-            <button
-              onClick={async () => {
-                // Bulk approve all pages in this group
-                for (const up of Object.values(group.pages)) {
-                  await handleQuickStatusUpdate(up, 'validated');
-                }
-              }}
-              disabled={uploading}
-              className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-[10px] transition-all shadow-sm flex items-center justify-center gap-1"
-            >
-              <CheckCircle size={12} /> Approve
-            </button>
+        {/* Page Specific Actions */}
+        <div className="flex gap-2">
+          {status === 'pending' && currentUserRole !== 'admin - apm' && (
+            <>
+              <button
+                onClick={() => handleQuickStatusUpdate(currentPage, 'validated')}
+                disabled={uploading}
+                className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-[10px] transition-all shadow-sm flex items-center justify-center gap-1"
+                title={`Approve Page ${currentPage.page || 1}`}
+              >
+                <CheckCircle size={12} /> Approve P{currentPage.page || 1}
+              </button>
+              <button
+                onClick={() => openStatusModal(currentPage)}
+                disabled={uploading}
+                className="flex-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-black text-[10px] transition-all shadow-sm flex items-center justify-center gap-1"
+                title={`Reject Page ${currentPage.page || 1}`}
+              >
+                <X size={12} /> Reject P{currentPage.page || 1}
+              </button>
+            </>
+          )}
+
+          {(status === 'rejected' || status === 'validated') && currentUserRole !== 'admin - apm' && (
             <button
               onClick={() => openStatusModal(currentPage)}
-              disabled={uploading}
-              className="flex-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-black text-[10px] transition-all shadow-sm flex items-center justify-center gap-1"
+              className="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-[10px] transition-all shadow-sm flex items-center justify-center gap-1"
             >
-              <X size={12} /> Reject
+              <Settings size={12} /> Page Details
             </button>
-          </>
-        )}
+          )}
+        </div>
 
-        {(status === 'rejected' || status === 'validated') && currentUserRole !== 'admin - apm' && (
+        {/* Bulk Approve option if multiple pages and at least one is pending */}
+        {hasMultiplePages && pages.some(p => group.pages[p]?.status === 'pending') && currentUserRole !== 'admin - apm' && (
           <button
-            onClick={() => openStatusModal(currentPage)}
-            className="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-[10px] transition-all shadow-sm"
+            onClick={async () => {
+              for (const p of pages) {
+                const up = group.pages[p];
+                if (up.status === 'pending' || up.status === 'rejected') {
+                  await handleQuickStatusUpdate(up, 'validated');
+                }
+              }
+            }}
+            disabled={uploading}
+            className="w-full py-1 text-[9px] font-black text-emerald-600 hover:text-emerald-700 transition-all uppercase tracking-widest border border-emerald-200 border-dashed rounded-lg bg-emerald-50/50"
           >
-            Details
+            Mark both as approved
           </button>
         )}
       </div>
@@ -635,24 +668,41 @@ const UsersTab = ({ filterProps }) => {
   };
 
   const groupedUserUploads = React.useMemo(() => {
-    const groups = {
-      pending: {},
-      validated: {},
-      rejected: {}
-    };
-
+    // 1. Group all uploads by shgID regardless of status
+    const shgGroups = {};
+    
     userUploads.forEach(u => {
-      const status = u.status || 'pending';
-      if (!groups[status]) groups[status] = {};
-      if (!groups[status][u.shgID]) groups[status][u.shgID] = { pages: {} };
-      groups[status][u.shgID].pages[u.page || 1] = u;
+      if (!shgGroups[u.shgID]) {
+        shgGroups[u.shgID] = {
+          shgID: u.shgID,
+          shgName: u.shgName,
+          pages: {}
+        };
+      }
+      shgGroups[u.shgID].pages[u.page || 1] = u;
     });
 
-    return {
-      pending: Object.values(groups.pending),
-      validated: Object.values(groups.validated),
-      rejected: Object.values(groups.rejected)
+    // 2. Assign each SHG group to a section based on "most pending" status
+    const sections = {
+      pending: [],
+      rejected: [],
+      validated: []
     };
+
+    Object.values(shgGroups).forEach(group => {
+      const pageUploads = Object.values(group.pages);
+      const statuses = pageUploads.map(p => p.status || 'pending');
+      
+      if (statuses.includes('pending')) {
+        sections.pending.push(group);
+      } else if (statuses.includes('rejected')) {
+        sections.rejected.push(group);
+      } else {
+        sections.validated.push(group);
+      }
+    });
+
+    return sections;
   }, [userUploads]);
 
   // Location data states (local to tab for better control)
