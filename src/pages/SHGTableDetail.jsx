@@ -20,7 +20,8 @@ import {
     EyeOff,
     BookCheck,
     BookOpen,
-    Book
+    Book,
+    Lock
 } from 'lucide-react';
 import { API_BASE } from '../utils/apiConfig';
 import { formatDateTime } from '../utils/dateUtils';
