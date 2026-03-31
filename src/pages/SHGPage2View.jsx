@@ -56,7 +56,7 @@ export default function SHGPage2View({ tableData, isEditing, onCellEdit }) {
         const map = {};
         (tableData?.data_rows || []).forEach(row => {
             (row.cells || []).forEach(cell => {
-                if (cell.debug_id != null) map[cell.debug_id] = { text: cell.text || '', confidence: cell.confidence || 0 };
+                if (cell.debug_id != null) map[`cell_${cell.debug_id}`] = { text: cell.text || '', confidence: cell.confidence || 0 };
             });
         });
         return map;
@@ -64,20 +64,24 @@ export default function SHGPage2View({ tableData, isEditing, onCellEdit }) {
 
     const handleEdit = (id, val) => onCellEdit?.(id, val);
 
+    const editableIds = useMemo(() => new Set([
+        10, 12, 17, 19, 24, 26, 31, 33, 36, 38, 42, 43, 46, 48, 51, 53, 56, 58, 61, 63, 66, 68, 70, 72, 74, 76, 78, 80, 83, 85, 87, 89, 91, 93, 95, 97, 99, 101, 103, 105, 107, 109, 111, 113, 115, 117, 119, 121, 123
+    ]), []);
+
+    const DataValueCellRefined = (props) => (
+        <DataValueCell {...props} idMap={idMap} isEditing={isEditing && editableIds.has(props.id)} onEdit={handleEdit} />
+    );
+
     return (
         <div className="flex flex-col items-center bg-gray-100 p-4 sm:p-10 min-h-screen">
-            {/* Simulation of a Physical Ledger Page */}
             <div className="bg-white shadow-2xl p-[0.3in] border-t-8 border-indigo-600 w-full max-w-[1200px] border border-gray-300">
-
                 <table className="w-full border-collapse border-2 border-black">
                     <tbody>
-                        {/* R1: MAIN TITLES */}
+                        {/* Headers */}
                         <tr>
                             <RowHeaderCell text="సంఘం స్థాయిలో జరిగిన ఆర్థిక లావాదేవీలు" colSpan={4} center bold />
                             <RowHeaderCell text="గత నెల (.........................) బ్యాంక్ నిల్వలు" colSpan={6} center bold />
                         </tr>
-
-                        {/* R2: TABLE HEADERS */}
                         <tr>
                             <RowHeaderCell text="సంఘానికి వచ్చిన వివరములు" small />
                             <RowHeaderCell text="మొత్తం రూ." center small />
@@ -88,184 +92,152 @@ export default function SHGPage2View({ tableData, isEditing, onCellEdit }) {
                             <RowHeaderCell text="రూ." center colSpan={4} small />
                         </tr>
 
-                        {/* R3 */}
-                        <tr>
-                            <RowHeaderCell text="సంఘానికి వచ్చిన పొదుపు మొత్తం" />
-                            <DataValueCell id={10} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
-                            <RowHeaderCell text="సంఘం పెట్టుబడులు" />
-                            <DataValueCell id={12} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
-                            <RowHeaderCell text="చేతి నిల్వ" />
-                            <DataValueCell id={14} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
-                            <DataValueCell id={15} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} colSpan={4} />
-                        </tr>
+                        {/* Balance Section (R3-R5) */}
+                        {[
+                            { t1: "సంఘానికి వచ్చిన పొదుపు మొత్తం", id1: 10, t2: "సంఘం పెట్టుబడులు", id2: 12, label: "చేతి నిల్వ", idV1: 14, idV2: 15 },
+                            { t1: "పొదుపులు (SN+VO+Other Saving)", id1: 17, t2: "VO లో కట్టిన వడ్డీ ధనం", id2: 19, label: "పొదుపు ఖాతా", idV1: 21, idV2: 22 },
+                            { t1: "సంఘానికి వచ్చిన ఫండ్స్", id1: 24, t2: "VO లో కట్టిన పొదుపు", id2: 26, label: "బ్యాంక్ లోన్ ఖాతా", idV1: 28, idV2: 29 }
+                        ].map((row, idx) => (
+                            <tr key={idx}>
+                                <RowHeaderCell text={row.t1} />
+                                <DataValueCellRefined id={row.id1} />
+                                <RowHeaderCell text={row.t2} />
+                                <DataValueCellRefined id={row.id2} />
+                                <RowHeaderCell text={row.label} />
+                                <DataValueCellRefined id={row.idV1} />
+                                <DataValueCellRefined id={row.idV2} colSpan={4} />
+                            </tr>
+                        ))}
 
-                        {/* R4 */}
-                        <tr>
-                            <RowHeaderCell text="పొదుపులు (SN+VO+Other Saving)" />
-                            <DataValueCell id={17} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
-                            <RowHeaderCell text="VO లో కట్టిన వడ్డీ ధనం" />
-                            <DataValueCell id={19} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
-                            <RowHeaderCell text="పొదుపు ఖాతా" />
-                            <DataValueCell id={21} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
-                            <DataValueCell id={22} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} colSpan={4} />
-                        </tr>
-
-                        {/* R5 */}
-                        <tr>
-                            <RowHeaderCell text="సంఘానికి వచ్చిన ఫండ్స్" />
-                            <DataValueCell id={24} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
-                            <RowHeaderCell text="VO లో కట్టిన పొదుపు" />
-                            <DataValueCell id={26} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
-                            <RowHeaderCell text="బ్యాంక్ లోన్ ఖాతా" />
-                            <DataValueCell id={28} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
-                            <DataValueCell id={29} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} colSpan={4} />
-                        </tr>
-
-                        {/* R6 */}
+                        {/* R6: Heading */}
                         <tr>
                             <RowHeaderCell text="రివాల్వింగ్ ఫండ్" />
-                            <DataValueCell id={31} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
+                            <DataValueCellRefined id={31} />
                             <RowHeaderCell text="శ్రీనిధి లో కట్టిన పొదుపు" />
-                            <DataValueCell id={33} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
+                            <DataValueCellRefined id={33} />
                             <RowHeaderCell text="ఈ నెల SB A/C మరియు LOAN A/C నందు నగదు జమ వివరములు" colSpan={6} center small />
                         </tr>
 
-                        {/* R8 */}
+                        {/* R7-R8: Amount and Expenses */}
+                        <tr>
+                            <RowHeaderCell text="ఆధార్ గ్రాంట్స్" />
+                            <DataValueCellRefined id={36} />
+                            <RowHeaderCell text="బ్యాంకు లో చేసిన డిపాజిట్" />
+                            <DataValueCellRefined id={38} />
+                            <RowHeaderCell text="అమౌంట్ రూ." rowSpan={2} center small />
+                            <td colSpan={5} rowSpan={2} className="border border-black p-2 text-[12px] italic text-gray-500 align-middle">
+                                అక్షరాల........................................................ మాత్రమే
+                            </td>
+                        </tr>
                         <tr>
                             <RowHeaderCell text="సంఘానికి తిరిగి వచ్చినవి" />
-                            <DataValueCell id={42} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
+                            <DataValueCellRefined id={42} />
                             <RowHeaderCell text="సంఘం ఖర్చులు" />
-                            <DataValueCell id={43} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
-                            <RowHeaderCell text="అమౌంట్ రూ." rowSpan={2} colSpan={1} small />
-                            <RowHeaderCell text="అక్షరాల..." rowSpan={2} colSpan={3} small />
+                            <DataValueCellRefined id={43} />
                         </tr>
 
-                        {/* R9 */}
+                        {/* R9-R10: VO returns/savings */}
                         <tr>
                             <RowHeaderCell text="VO నుండి తిరిగి వచ్చిన వడ్డీధనం" />
-                            <DataValueCell id={46} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
-                            <RowHeaderCell text="VO కు చెల్లించిన ప్రవేశరుసుము/సభ్యత్వ రుసుము" />
-                            <DataValueCell id={48} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
+                            <DataValueCellRefined id={46} />
+                            <RowHeaderCell text="VO కు చెల్లించిన సభ్యత్వ రుసుము" />
+                            <DataValueCellRefined id={48} />
+                            <RowHeaderCell text="జమ చేసిన సభ్యురాలి పేరు:....................................." colSpan={6} small />
                         </tr>
-
-                        {/* R10 */}
                         <tr>
                             <RowHeaderCell text="VO నుండి తిరిగి వచ్చిన పొదుపు" />
-                            <DataValueCell id={51} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
+                            <DataValueCellRefined id={51} />
                             <RowHeaderCell text="VO కు చెల్లించిన జరిమానాలు" />
-                            <DataValueCell id={53} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
+                            <DataValueCellRefined id={53} />
+                            <RowHeaderCell text="జమ చేసిన సభ్యురాలి సంతకం:....................................." colSpan={6} rowSpan={2} small />
                         </tr>
 
-                        {/* R11 */}
+                        {/* R11-R12: Salaries and VOA Signature Box (2 rows) */}
                         <tr>
                             <RowHeaderCell text="శ్రీనిధి నుండి తిరిగి వచ్చిన పొదుపు" />
-                            <DataValueCell id={56} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
+                            <DataValueCellRefined id={56} />
                             <RowHeaderCell text="గౌరవవేతనం చెల్లింపు" />
-                            <DataValueCell id={58} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
-                            <RowHeaderCell text="జమ చేసిన సభ్యురాలి పేరు:....................................." colSpan={3} small />
+                            <DataValueCellRefined id={58} />
                         </tr>
-
-                        {/* R12 */}
                         <tr>
-                            <RowHeaderCell text="బ్యాంకు నుండి తీసిన డిపాజిట్" />
-                            <DataValueCell id={61} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
+                            <RowHeaderCell text="బ్యాంకు నుండి తీసిన నగదు" />
+                            <DataValueCellRefined id={61} />
                             <RowHeaderCell text="ప్రయాణపు చార్జీల చెల్లింపు" />
-                            <DataValueCell id={63} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
-                            <RowHeaderCell text="జమ చేసిన సభ్యురాలి సంతకం:....................................." colSpan={3} rowSpan={2} small />
+                            <DataValueCellRefined id={63} />
+                            <RowHeaderCell text="VOA సంతకం" colSpan={6} center small />
                         </tr>
 
-                        {/* R13 */}
+                        {/* R13-R16: SHG Stamp (4 rows) */}
                         <tr>
                             <RowHeaderCell text="" />
-                            <DataValueCell id={66} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
+                            <DataValueCellRefined id={66} />
                             <RowHeaderCell text="ఇతర ఖర్చులు" />
-                            <DataValueCell id={68} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
+                            <DataValueCellRefined id={68} />
+                            <td colSpan={6} rowSpan={4} className="border border-black px-2 py-1 text-center align-middle font-bold text-gray-200 italic text-[11px]">
+                                SHG స్టాంప్
+                            </td>
                         </tr>
-
-                        {/* R14 & R15: VOA Signature */}
                         <tr>
                             <RowHeaderCell text="" />
-                            <DataValueCell id={70} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
+                            <DataValueCellRefined id={70} />
                             <RowHeaderCell text="స్టేషనరీ" />
-                            <DataValueCell id={72} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
-                            <RowHeaderCell text="VOA సంతకం" colSpan={3} rowSpan={2} small center />
+                            <DataValueCellRefined id={72} />
+                        </tr>
+                        <tr>
+                            <RowHeaderCell text="బ్యాంక్ లో చెల్లించిన వడ్డీ" />
+                            <DataValueCellRefined id={74} />
+                            <RowHeaderCell text="ఆడిట్ ఫీజు" />
+                            <DataValueCellRefined id={76} />
                         </tr>
                         <tr>
                             <RowHeaderCell text="" />
-                            <DataValueCell id={74} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
-                            <RowHeaderCell text="ఆడిట్ ఫీజు" />
-                            <DataValueCell id={76} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
+                            <DataValueCellRefined id={78} />
+                            <RowHeaderCell text="బ్యాంకు చార్జీలు" />
+                            <DataValueCellRefined id={80} />
                         </tr>
 
-                        {/* R16, R17, R18: SHG Stamp & Income */}
-                        <tr>
-                            <RowHeaderCell text="" />
-                            <DataValueCell id={78} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
-                            <RowHeaderCell text="బ్యాంకు చార్జీలు" />
-                            <DataValueCell id={80} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
-                            <RowHeaderCell text="SHG స్టాంప్" colSpan={3} rowSpan={3} small center />
-                        </tr>
+                        {/* R17-R27: Member Signatures (11 rows) starting from Income row */}
                         <tr>
                             <RowHeaderCell text="సంఘానికి వచ్చిన ఆదాయాలు" bold />
-                            <DataValueCell id={83} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
+                            <DataValueCellRefined id={83} />
                             <RowHeaderCell text="ఋణాలకు సంఘం చెల్లించిన రికవరీలు" bold />
-                            <DataValueCell id={85} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
-                        </tr>
-                        <tr>
-                            <RowHeaderCell text="బ్యాంకు వడ్డీలు" />
-                            <DataValueCell id={87} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
-                            <RowHeaderCell text="బ్యాంక్ లోన్ ఋణానికి చెల్లింపు" />
-                            <DataValueCell id={89} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
-                        </tr>
-
-                        {/* R19: Signature Header */}
-                        <tr>
-                            <RowHeaderCell text="డిపాజిట్ లపై వచ్చిన వడ్డీలు" />
-                            <DataValueCell id={91} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
-                            <RowHeaderCell text="శ్రీనిధి మైక్రో ఋణానికి చెల్లింపు" />
-                            <DataValueCell id={93} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
-                            <RowHeaderCell text="సభ్యుల సంతకాలు :" colSpan={6} small bold />
-                        </tr>
-
-                        {/* R20-R27: Signature Large Box + Loans */}
-                        <tr>
-                            <RowHeaderCell text="" />
-                            <DataValueCell id={95} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
-                            <RowHeaderCell text="SCSP రుణం చెల్లింపు" />
-                            <DataValueCell id={97} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} />
-                            <td colSpan={6} rowSpan={8} className="border-2 border-black p-4 align-top bg-white">
+                            <DataValueCellRefined id={85} />
+                            <td colSpan={6} rowSpan={11} className="border-2 border-black p-4 align-top bg-white">
+                                <div className="font-bold text-[11px] mb-6">సభ్యుల సంతకాలు :</div>
                                 <div className="grid grid-cols-2 gap-x-24 px-12 py-2">
-                                    <div className="flex flex-col gap-4 font-bold text-[13px] text-gray-800">
+                                    <div className="flex flex-col gap-5 font-bold text-[13px] text-gray-800">
                                         {[1, 2, 3, 4, 5, 6, 7, 8].map(n => <div key={n} className="flex items-center h-6">{n}</div>)}
                                     </div>
-                                    <div className="flex flex-col gap-4 font-bold text-[13px] text-gray-800 pr-12">
+                                    <div className="flex flex-col gap-5 font-bold text-[13px] text-gray-800 pr-12">
                                         {[9, 10, 11, 12, 13, 14, 15].map(n => <div key={n} className="flex items-center h-6">{n}</div>)}
                                     </div>
                                 </div>
                             </td>
                         </tr>
-
                         {[
+                            { l1: "బ్యాంకు వడ్డీలు", v1: 87, l2: "బ్యాంక్ లోన్ ఋణానికి చెల్లింపు", v2: 89 },
+                            { l1: "డిపాజిట్ లపై వచ్చిన వడ్డీలు", v1: 91, l2: "శ్రీనిధి మైక్రో ఋణానికి చెల్లింపు", v2: 93 },
+                            { l1: "", v1: 95, l2: "SCSP రుణం చెల్లింపు", v2: 97 },
                             { l1: "", v1: 99, l2: "వలస రుణం చెల్లింపు", v2: 101 },
                             { l1: "", v1: 103, l2: "ఆపద రుణం చెల్లింపు", v2: 105 },
                             { l1: "", v1: 107, l2: "TSP రుణం చెల్లింపు", v2: 109 },
                             { l1: "", v1: 111, l2: "CIF ఋణానికి చెల్లింపు", v2: 113 },
-                            { l1: "", v1: 200, l2: "VO అంతర్గత ఋణానికి చెల్లింపు", v2: 113 },
+                            { l1: "", v1: 123, l2: "VO అంతర్గత ఋణానికి చెల్లింపు", v2: 113 },
                             { l1: "బ్యాంకు నుండి తీసిన నగదు", v1: 115, l2: "బ్యాంకు నందు జమ చేసిన నగదు", v2: 117 },
                             { l1: "మొత్తం రూ.", v1: 119, l2: "మొత్తం రూ.", v2: 121, bold: true }
                         ].map((row, idx) => (
                             <tr key={idx}>
                                 <RowHeaderCell text={row.l1} bold={row.bold} />
-                                <DataValueCell id={row.v1} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} bold={row.bold} />
+                                <DataValueCellRefined id={row.v1} />
                                 <RowHeaderCell text={row.l2} bold={row.bold} />
-                                <DataValueCell id={row.v2} idMap={idMap} isEditing={isEditing} onEdit={handleEdit} bold={row.bold} />
+                                <DataValueCellRefined id={row.v2} />
                             </tr>
                         ))}
                     </tbody>
                 </table>
             </div>
 
-            {/* Minimal Legency Overlay */}
+            {/* Status Overlay */}
             <div className="mt-8 flex gap-8 items-center text-[10px] font-black text-gray-400 tracking-widest uppercase">
                 <div className="flex items-center gap-2">
                     <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-sm" />
@@ -273,10 +245,10 @@ export default function SHGPage2View({ tableData, isEditing, onCellEdit }) {
                 </div>
                 <div className="flex items-center gap-2">
                     <div className="w-2.5 h-2.5 rounded-full bg-amber-400 shadow-sm" />
-                    <span>Human Review Suggested</span>
+                    <span>Review Suggested</span>
                 </div>
                 <div className="border-l border-gray-200 pl-8 text-indigo-600">
-                    Proprietary Digitized Format — SHG-P2-V1.0
+                    SHG-P2-V1.1
                 </div>
             </div>
         </div>
