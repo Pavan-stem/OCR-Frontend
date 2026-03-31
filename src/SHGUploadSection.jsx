@@ -41,6 +41,7 @@ const SHGUploadSection = ({
   const [analyzingMap, setAnalyzingMap] = useState({});
   const [smartPreviewUrl, setSmartPreviewUrl] = useState(null);
   const [isProcessingPreview, setIsProcessingPreview] = useState(false);
+  const previewSessionUrlRef = useRef(null);
   const [failedUploads, setFailedUploads] = useState([]);
   const [showFailedOnly, setShowFailedOnly] = useState(false);
   const [activeShgId, setActiveShgId] = useState(null);
@@ -94,7 +95,10 @@ const SHGUploadSection = ({
   // Smart Preview Logic
   useEffect(() => {
     if (!previewFile) {
-      if (smartPreviewUrl) URL.revokeObjectURL(smartPreviewUrl);
+      if (previewSessionUrlRef.current) {
+        URL.revokeObjectURL(previewSessionUrlRef.current);
+        previewSessionUrlRef.current = null;
+      }
       setSmartPreviewUrl(null);
       return;
     }
@@ -112,9 +116,16 @@ const SHGUploadSection = ({
         if (previewFile.rotation && previewFile.rotation % 360 !== 0) {
           const processedFile = await processFileRotation(previewFile, { quality: 0.9 });
           const url = URL.createObjectURL(processedFile);
-          if (smartPreviewUrl) URL.revokeObjectURL(smartPreviewUrl);
+          
+          if (previewSessionUrlRef.current) URL.revokeObjectURL(previewSessionUrlRef.current);
+          previewSessionUrlRef.current = url;
           setSmartPreviewUrl(url);
         } else {
+          // If we return to 0 rotation, clear session URL but keep the original
+          if (previewSessionUrlRef.current) {
+            URL.revokeObjectURL(previewSessionUrlRef.current);
+            previewSessionUrlRef.current = null;
+          }
           setSmartPreviewUrl(previewFile.previewUrl);
         }
       } catch (err) {
