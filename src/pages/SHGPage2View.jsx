@@ -16,6 +16,31 @@ const RowHeaderCell = ({ text, colSpan = 1, rowSpan = 1, center = false, bold = 
     </td>
 );
 
+const DataValueInline = ({ id, idMap, isEditing, onEdit }) => {
+    const cellId = `cell_${id}`;
+    const cell = idMap[cellId] || {};
+    const text = cell.text || '';
+    const isEmpty = !text.trim();
+
+    return (
+        <div className="w-full mt-1">
+            {isEditing ? (
+                <input
+                    type="text"
+                    value={text}
+                    onChange={(e) => onEdit(id, e.target.value)}
+                    className="w-full bg-indigo-100/50 border-none text-center font-mono font-black text-indigo-900 px-1 py-0.5 outline-none rounded text-[13px]"
+                    placeholder="—"
+                />
+            ) : (
+                <div className="text-center font-mono font-black text-indigo-900 text-[13px]">
+                    <span className={isEmpty ? 'opacity-20 italic' : ''}>{isEmpty ? '—' : text}</span>
+                </div>
+            )}
+        </div>
+    );
+};
+
 const DataValueCell = ({ id, idMap, isEditing, onEdit, colSpan = 1, rowSpan = 1, center = true, bold = true }) => {
     const cellId = `cell_${id}`;
     const cell = idMap[cellId] || {};
@@ -51,6 +76,16 @@ const DataValueCell = ({ id, idMap, isEditing, onEdit, colSpan = 1, rowSpan = 1,
     );
 };
 
+const RECEIPT_IDS = [10, 17, 24, 31, 36, 42, 46, 51, 56, 61, 66, 70, 74, 78, 83, 87, 91, 95, 99, 103, 107, 111, 115];
+const PAYMENT_IDS = [12, 19, 26, 33, 38, 43, 48, 53, 58, 63, 68, 72, 76, 80, 85, 89, 93, 97, 101, 105, 109, 113, 117];
+
+const parseValue = (val) => {
+    if (!val) return 0;
+    const clean = val.toString().replace(/,/g, '').replace(/[^0-9.-]/g, '');
+    const num = parseFloat(clean);
+    return isNaN(num) ? 0 : num;
+};
+
 export default function SHGPage2View({ tableData, isEditing, onCellEdit }) {
     const idMap = useMemo(() => {
         const map = {};
@@ -65,8 +100,35 @@ export default function SHGPage2View({ tableData, isEditing, onCellEdit }) {
     const handleEdit = (id, val) => onCellEdit?.(id, val);
 
     const editableIds = useMemo(() => new Set([
-        10, 12, 17, 19, 24, 26, 31, 33, 36, 38, 42, 43, 46, 48, 51, 53, 56, 58, 61, 63, 66, 68, 70, 72, 74, 76, 78, 80, 83, 85, 87, 89, 91, 93, 95, 97, 99, 101, 103, 105, 107, 109, 111, 113, 115, 117, 119, 121
+        10, 12, 17, 19, 24, 26, 31, 33, 36, 38, 42, 43, 46, 48, 51, 53, 56, 58, 61, 63, 66, 68, 70, 72, 74, 76, 78, 80, 83, 85, 87, 89, 91, 93, 95, 97, 99, 101, 103, 105, 107, 109, 111, 113, 115, 117
     ]), []);
+
+    const totals = useMemo(() => {
+        let receipts = 0;
+        let payments = 0;
+        RECEIPT_IDS.forEach(id => {
+            const val = idMap[`cell_${id}`]?.text || '';
+            receipts += parseValue(val);
+        });
+        PAYMENT_IDS.forEach(id => {
+            const val = idMap[`cell_${id}`]?.text || '';
+            payments += parseValue(val);
+        });
+        return { receipts, payments };
+    }, [idMap]);
+
+    // Auto-update parent state if calculated totals differ from stored ones
+    React.useEffect(() => {
+        const storedReceipts = parseValue(idMap[`cell_119`]?.text || '');
+        const storedPayments = parseValue(idMap[`cell_121`]?.text || '');
+
+        if (Math.abs(storedReceipts - totals.receipts) > 0.01) {
+            onCellEdit?.(119, totals.receipts.toString());
+        }
+        if (Math.abs(storedPayments - totals.payments) > 0.01) {
+            onCellEdit?.(121, totals.payments.toString());
+        }
+    }, [totals, idMap, onCellEdit]);
 
     // Removed nested DataValueCellRefined to prevent focus loss during re-renders.
     // Instead of using a nested component, we call DataValueCell directly with props.
@@ -123,7 +185,10 @@ export default function SHGPage2View({ tableData, isEditing, onCellEdit }) {
                             <DataValueCell id={36} idMap={idMap} isEditing={isEditing && editableIds.has(36)} onEdit={handleEdit} />
                             <RowHeaderCell text="బ్యాంకు లో చేసిన డిపాజిట్" />
                             <DataValueCell id={38} idMap={idMap} isEditing={isEditing && editableIds.has(38)} onEdit={handleEdit} />
-                            <RowHeaderCell text="అమౌంట్ రూ." rowSpan={2} center small />
+                            <td rowSpan={2} className="border border-black px-2 py-1.5 align-middle bg-gray-50/50 text-center min-w-[80px]">
+                                <div className="font-bold text-gray-900 text-[10px]">అమౌంట్ రూ.</div>
+                                <DataValueInline id={117} idMap={idMap} isEditing={isEditing && editableIds.has(117)} onEdit={handleEdit} />
+                            </td>
                             <td colSpan={5} rowSpan={2} className="border border-black p-2 text-[12px] italic text-gray-500 align-middle">
                                 అక్షరాల........................................................ మాత్రమే
                             </td>
