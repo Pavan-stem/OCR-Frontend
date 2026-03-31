@@ -173,7 +173,7 @@ export default function SHGPage2View({ tableData, isEditing, onCellEdit }) {
                             <DataValueCellRefined id={66} />
                             <RowHeaderCell text="ఇతర ఖర్చులు" />
                             <DataValueCellRefined id={68} />
-                            <td colSpan={6} rowSpan={4} className="border border-black px-2 py-1 text-center align-middle font-bold text-gray-200 italic text-[11px]">
+                            <td colSpan={6} rowSpan={4} className="border border-black px-2 py-1 text-center bg-gray-50/50 align-middle font-bold text-gray-700 text-[11px]">
                                 SHG స్టాంప్
                             </td>
                         </tr>
@@ -202,7 +202,7 @@ export default function SHGPage2View({ tableData, isEditing, onCellEdit }) {
                             <DataValueCellRefined id={83} />
                             <RowHeaderCell text="ఋణాలకు సంఘం చెల్లించిన రికవరీలు" bold />
                             <DataValueCellRefined id={85} />
-                            <td colSpan={6} rowSpan={11} className="border-2 border-black p-4 align-top bg-white">
+                            <td colSpan={6} rowSpan={11} className="border-2 border-black p-4 align-top bg-gray-50/50">
                                 <div className="font-bold text-[11px] mb-6">సభ్యుల సంతకాలు :</div>
                                 <div className="grid grid-cols-2 gap-x-24 px-12 py-2">
                                     <div className="flex flex-col gap-5 font-bold text-[13px] text-gray-800">
