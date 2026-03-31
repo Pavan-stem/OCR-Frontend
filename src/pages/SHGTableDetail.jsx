@@ -21,7 +21,8 @@ import {
     BookCheck,
     BookOpen,
     Book,
-    Lock
+    Lock,
+    Database
 } from 'lucide-react';
 import { API_BASE } from '../utils/apiConfig';
 import { formatDateTime } from '../utils/dateUtils';
@@ -594,30 +595,28 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                             </button>
                         )}
 
-                        {!isPage2 && (
-                            <button
-                                onClick={handleSyncToPayments}
-                                disabled={isSyncing || isEditing}
-                                className={`hidden sm:flex items-center gap-2 px-6 py-2.5 rounded-full shadow-xl transition-all border-2 ${isSyncing
-                                    ? 'bg-indigo-400 border-indigo-300 text-white cursor-not-allowed'
-                                    : 'bg-emerald-500 border-emerald-400 text-white hover:bg-emerald-600 hover:scale-110 active:scale-95'
-                                    } ${isEditing ? 'opacity-50 cursor-not-allowed' : 'animate-pulse-subtle'}`}
-                                title="Save data to member payments collection"
-                            >
-                                {isSyncing ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-                                <span className="text-[11px] font-black uppercase tracking-widest text-white">
-                                    {isSyncing ? 'Processing...' : 'Save Member Payments'}
-                                </span>
-                            </button>
-                        )}
-                        {isPage2 && (
-                            <div className="hidden lg:flex items-center gap-2 px-6 py-2.5 bg-violet-600/50 rounded-full border border-white/20">
-                                <Lock size={16} className="text-violet-200" />
-                                <span className="text-[10px] font-black uppercase tracking-[0.1em] text-white">
-                                    Ledger Mode: Save Edits only
-                                </span>
-                            </div>
-                        )}
+                        <button
+                            onClick={handleSyncToPayments}
+                            disabled={isSyncing || isEditing || data?.isSynced}
+                            className={`px-5 sm:px-8 py-3 sm:py-4 rounded-xl sm:rounded-2xl transition-all font-black shadow-lg flex items-center gap-2 sm:gap-3 ${
+                                data?.isSynced 
+                                    ? 'bg-emerald-500 text-white cursor-default border-emerald-400' 
+                                    : isPage2 
+                                        ? 'bg-violet-500 text-white hover:bg-violet-600 border-violet-400' 
+                                        : 'bg-emerald-500 text-white hover:bg-emerald-600 border-emerald-400'
+                            }`}
+                        >
+                            {isSyncing ? (
+                                <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
+                            ) : data?.isSynced ? (
+                                <BookCheck className="w-4 h-4 sm:w-5 sm:h-5" />
+                            ) : (
+                                <Database className="w-4 h-4 sm:w-5 sm:h-5" />
+                            )}
+                            <span className="text-sm sm:text-base">
+                                {data?.isSynced ? 'Sent to DB' : isPage2 ? 'Save Finance Ledger' : 'Send to DB'}
+                            </span>
+                        </button>
                     </div>
                 </div>
 
