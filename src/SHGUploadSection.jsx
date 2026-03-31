@@ -1016,6 +1016,26 @@ const SHGUploadSection = ({
       return;
     }
 
+    // Role & Period Restrictions (Submission Guard)
+    const isVO = user?.role?.toLowerCase() === 'vo';
+    const m = parseInt(selectedMonth);
+    const y = parseInt(selectedYear);
+
+    if (!isVO) {
+      alert(t?.('upload.voOnlyError') || 'Only VOs are authorized to perform uploads.');
+      return;
+    }
+
+    if (y === 2026 && (m === 4 || m === 5)) {
+      alert(t?.('upload.restrictedAprilMay') || 'Uploads for April and May are temporarily disabled. Please complete March uploads.');
+      return;
+    }
+
+    if (y > 2026 || (y === 2026 && m > 3)) {
+      alert(t?.('upload.restrictedPeriod') || 'Uploads for the selected period are locked.');
+      return;
+    }
+
     setIsUploading(true);
     let successCount = 0, failCount = 0, uploadedShgs = [];
 
@@ -1087,6 +1107,26 @@ const SHGUploadSection = ({
 
     if (!selectedMonth || !selectedYear) {
       alert(t?.('upload.selectMonthYear') || 'Please select month and year');
+      return false;
+    }
+
+    // Role & Period Restrictions (Submission Guard)
+    const isVO = user?.role?.toLowerCase() === 'vo';
+    const m = parseInt(selectedMonth);
+    const y = parseInt(selectedYear);
+
+    if (!isVO) {
+      alert(t?.('upload.voOnlyError') || 'Only VOs are authorized to perform uploads.');
+      return false;
+    }
+
+    if (y === 2026 && (m === 4 || m === 5)) {
+      alert(t?.('upload.restrictedAprilMay') || 'Uploads for April and May are temporarily disabled. Please complete March uploads.');
+      return false;
+    }
+
+    if (y > 2026 || (y === 2026 && m > 3)) {
+      alert(t?.('upload.restrictedPeriod') || 'Uploads for the selected period are locked.');
       return false;
     }
 
@@ -1264,9 +1304,16 @@ const SHGUploadSection = ({
                 const selectedM = parseInt(e.target.value);
                 const selectedY = parseInt(selectedYear);
 
-                if (user?.role?.toLowerCase() === 'vo') {
-                  if (selectedY > currentYear || (selectedY === currentYear && selectedM > currentMonth)) return;
-                }
+                // Role & Period Restrictions (March/April/May 2026 Enforcement)
+                const isVO = user?.role?.toLowerCase() === 'vo';
+                if (!isVO) return; // Only VOs can select ANY month for upload
+
+                // Block April & May 2026 for everyone (even VOs/Developers)
+                if (selectedY === 2026 && (selectedM === 4 || selectedM === 5)) return;
+
+                // Block any month after March 2026 for everyone
+                if (selectedY > 2026 || (selectedY === 2026 && selectedM > 3)) return;
+
                 onMonthChange?.(e.target.value);
               }}
               className="w-full px-3 sm:px-4 py-2 sm:py-3 border-2 border-white/30 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-white bg-white/95 appearance-none cursor-pointer font-semibold text-sm sm:text-base"
@@ -1287,10 +1334,22 @@ const SHGUploadSection = ({
                 { val: "12", label: t?.('months.december') || 'December' }
               ].map(m => {
                 const now = new Date();
-                const isFuture = parseInt(selectedYear) > now.getFullYear() ||
-                  (parseInt(selectedYear) === now.getFullYear() && parseInt(m.val) > (now.getMonth() + 1));
-                const disabled = user?.role?.toLowerCase() === 'vo' && isFuture;
-                return <option key={m.val} value={m.val} disabled={disabled}>{m.label} {disabled ? `(${t?.('upload.locked') || 'Locked'})` : ''}</option>;
+                const selectedY = parseInt(selectedYear);
+                const mVal = parseInt(m.val);
+
+                // NEW RESTRICTIONS:
+                const isVO = user?.role?.toLowerCase() === 'vo';
+                const isAprilMay2026 = selectedY === 2026 && (mVal === 4 || mVal === 5);
+                const isPostMarch2026 = selectedY > 2026 || (selectedY === 2026 && mVal > 3);
+
+                // Disable if not VO, or if it's April/May 2026, or if it's any future month
+                const disabled = !isVO || isAprilMay2026 || isPostMarch2026;
+
+                let statusLabel = '';
+                if (isAprilMay2026) statusLabel = `(${t?.('upload.temporaryDisabled') || 'Temp Disabled'})`;
+                else if (isPostMarch2026) statusLabel = `(${t?.('upload.locked') || 'Locked'})`;
+
+                return <option key={m.val} value={m.val} disabled={disabled}>{m.label} {statusLabel}</option>;
               })}
             </select>
           </div>
@@ -1308,9 +1367,13 @@ const SHGUploadSection = ({
               <option value="">{t?.('upload.selectYear') || 'Select Year'}</option>
               {Array.from({ length: 5 }, (_, i) => {
                 const y = new Date().getFullYear() - 1 + i;
-                const isFutureYear = y > new Date().getFullYear();
-                const disabled = user?.role?.toLowerCase() === 'vo' && isFutureYear;
-                return <option key={y} value={y} disabled={disabled}>{y} {disabled ? `(${t?.('upload.locked') || 'Locked'})` : ''}</option>;
+                const isVO = user?.role?.toLowerCase() === 'vo';
+                const isFutureYear = y > 2026;
+                const disabled = !isVO || isFutureYear;
+                let statusLabel = '';
+                if (isFutureYear) statusLabel = `(${t?.('upload.locked') || 'Locked'})`;
+
+                return <option key={y} value={y} disabled={disabled}>{y} {statusLabel}</option>;
               })}
             </select>
           </div>

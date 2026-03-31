@@ -130,11 +130,13 @@ export const translations = {
             dualUploadRequired: "Both Page 1 and Page 2 must be uploaded before submitting.",
             pageUploaded: "Page {{page}} Uploaded",
             documentUploaded: "Document Uploaded",
-            alreadyUploadedSynced: "All files have already been uploaded. Your session state has been updated.",
-            currentPastOnly: "Current & Past Only",
-            locked: "Locked",
             errorHelp: "Please try selecting a different month or year using the dropdowns above.",
-            rejectedUploads: "Rejected Uploads"
+            rejectedUploads: "Rejected Uploads",
+            voOnlyError: "Only VOs are authorized to perform uploads.",
+            restrictedAprilMay: "Uploads for April and May are temporarily disabled. Please complete March uploads.",
+            restrictedPeriod: "Uploads for the selected period are locked.",
+            voOnly: "VO Only",
+            temporaryDisabled: "Temp Disabled"
         },
 
 
@@ -375,11 +377,13 @@ export const translations = {
             dualUploadRequired: "సమర్పించే ముందు పేజీ 1 మరియు పేజీ 2 రెండూ అప్‌లోడ్ చేయాలి.",
             pageUploaded: "పేజీ {{page}} అప్‌లోడ్ చేయబడింది",
             documentUploaded: "పత్రం అప్‌లోడ్ చేయబడింది",
-            alreadyUploadedSynced: "అన్ని పత్రాలు ఇప్పటికే అప్‌లోడ్ చేయబడ్డాయి. మీ సెషన్ స్థితి నవీకరించబడింది.",
-            currentPastOnly: "ప్రస్తుత & గత నెలలు మాత్రమే",
-            locked: "లాక్ చేయబడింది",
             errorHelp: "దయచేసి పైన ఉన్న డ్రాప్‌డౌన్‌లను ఉపయోగించి మరొక నెల లేదా సంవత్సరాన్ని ఎంచుకోవడానికి ప్రయత్నించండి.",
-            rejectedUploads: "తిరస్కరించబడిన అప్‌లోడ్‌లు"
+            rejectedUploads: "తిరస్కరించబడిన అప్‌లోడ్‌లు",
+            voOnlyError: "కేవలం VOలు మాత్రమే అప్‌లోడ్ చేయడానికి అధికారం కలిగి ఉన్నారు.",
+            restrictedAprilMay: "ఏప్రిల్ మరియు మే నెలలకు అప్‌లోడ్‌లు తాత్కాలికంగా నిలిపివేయబడ్డాయి. దయచేసి మార్చి అప్‌లోడ్‌లను పూర్తి చేయండి.",
+            restrictedPeriod: "ఎంచుకున్న కాలానికి అప్‌లోడ్‌లు లాక్ చేయబడ్డాయి.",
+            voOnly: "VO మాత్రమే",
+            temporaryDisabled: "తాత్కాలికంగా నిలిపివేయబడింది"
         },
 
 

@@ -372,9 +372,9 @@ export default function EnhancedTableOCRSystem() {
 
   // Helper: refresh user state from localStorage and sync location selectors
   const refreshUserFromStorage = () => {
-    const now = new Date();
-    setSelectedMonth(String(now.getMonth() + 1).padStart(2, '0'));
-    setSelectedYear(String(now.getFullYear()));
+    // Force default to March 2026 for completion phase
+    setSelectedMonth('03');
+    setSelectedYear('2026');
 
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
