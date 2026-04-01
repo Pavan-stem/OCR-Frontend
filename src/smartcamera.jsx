@@ -206,7 +206,7 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
             }
 
             if (videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
-                let src, gray, lap, mean, std, blurred, edges, contours, hierarchy, detected, shadowRoi;
+                let src, gray, lap, mean, std, blurred, edges, contours, hierarchy, detected, shadowRoi, paddedPoints;
                 try {
                     let isAnyPartBlurry = false;
                     const video = videoRef.current;
@@ -275,8 +275,8 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
                         const c = contours.get(i);
                         const area = cv.contourArea(c);
 
-                        // Ignore extremely small table noise
-                        if (area < 10000) continue;
+                        // Ignore extremely small table noise (Threshold lowered to 1% to support 1.5m distance)
+                        if (area < (canvas.width * canvas.height * 0.01)) continue;
 
                         const peri = cv.arcLength(c, true);
                         const approx = new cv.Mat();
@@ -335,7 +335,12 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
                                 }
                             }
                             const shadowDiff = Math.max(...tileMeans) - Math.min(...tileMeans);
-                            if (shadowDiff > 60) hasHardShadow = true;
+
+                            // NEW: Relax shadow detection for distant shots (small documents)
+                            // A document covering < 5% of the frame at 1m distance is more prone to minor background shadows.
+                            const areaRatio = detectedArea / (canvas.width * canvas.height);
+                            const shadowThreshold = areaRatio < 0.05 ? 100 : 60;
+                            if (shadowDiff > shadowThreshold) hasHardShadow = true;
                         }
 
                         // 4. Regional Blur Check (3x3 Grid on Document)
@@ -404,21 +409,24 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
                             }
                         });
 
-                        // Calculate orientation for Smart Padding
+                        // Calculate orientation & Distance-Aware Padding
                         const w = Math.hypot(rawPoints[1].x - rawPoints[0].x, rawPoints[1].y - rawPoints[0].y);
                         const h = Math.hypot(rawPoints[3].x - rawPoints[0].x, rawPoints[3].y - rawPoints[0].y);
-                        isLandscape = h > w; // Inverted based on user feedback (Portrait camera feed)
+                        isLandscape = h > w;
 
-                        // Apply Orientation-Aware Padding:
-                        // Landscape: 15% sides, 6% top/bottom  |  Portrait: 15% sides, 8% top/bottom
-                        const padSide = 0.15;                       // ← was 0.10/0.08 — wider to cover full table width
-                        const padTopBot = isLandscape ? 0.06 : 0.08; // ← was 0.06/0.25 — normalised
+                        // NEW: Distance-Aware Dynamic Padding (0.3m -> 1.5m)
+                        // distFactor: 0 (near/large) to 1 (far/small)
+                        const areaRatio = detectedArea / (canvas.width * canvas.height);
+                        const distFactor = Math.max(0, Math.min(1.0, 1.0 - (areaRatio * 1.8)));
+
+                        const padSide = 0.08 + (distFactor * 0.12); // Near: 8% | Far: 20%
+                        const padTopBot = (isLandscape ? 0.04 : 0.06) + (distFactor * 0.08); // Near: 4-6% | Far: 12-14%
 
 
                         const centerX = rawPoints.reduce((sum, p) => sum + p.x, 0) / 4;
                         const centerY = rawPoints.reduce((sum, p) => sum + p.y, 0) / 4;
 
-                        rawPoints = rawPoints.map(p => {
+                        paddedPoints = rawPoints.map(p => {
                             let newX = p.x + (p.x - centerX) * padSide;
                             let newY = p.y + (p.y - centerY) * padTopBot;
                             return {
@@ -427,7 +435,7 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
                             };
                         });
 
-                        // Update high-speed ref for drawLoop immediately
+                        // UI Visual Feedback: Dots snap to REAL corners (unpadded)
                         rawPointsRef.current = rawPoints;
 
                         // High-Frequency Sync (200ms)
@@ -449,7 +457,7 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
                             bestFrameRef.current.getContext("2d").drawImage(video, 0, 0);
 
                             // SYNC: Store exact points for this specific "Perfect Frame"
-                            bestPointsRef.current = JSON.parse(JSON.stringify(rawPoints));
+                            bestPointsRef.current = JSON.parse(JSON.stringify(paddedPoints));
                         }
                     } else if (now - lastStableUpdate.current > 1000) {
                         // Reset if lost for 1s
@@ -464,11 +472,20 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
                             pointsTracker.current = JSON.parse(JSON.stringify(rawPoints));
                         } else {
                             // Interpolate for smoothness
+                            // LOWER amt = Smoother/Slower movement (0.2 is ideal for stabilization)
                             const lerp = (start, end, amt) => start + (end - start) * amt;
-                            pointsTracker.current = pointsTracker.current.map((p, i) => ({
-                                x: lerp(p.x, rawPoints[i].x, 0.5), // Faster interpolation for better tracking
-                                y: lerp(p.y, rawPoints[i].y, 0.5)
-                            }));
+                            
+                            // Dead-zone check: Only update if total corner movement is significant (> 1.5 pixels)
+                            // This prevents microscopic sensor jitter from causing visual flickering.
+                            const totalMove = rawPoints.reduce((sum, p, i) => 
+                                sum + Math.abs(p.x - pointsTracker.current[i].x) + Math.abs(p.y - pointsTracker.current[i].y), 0);
+
+                            if (totalMove > 1.5) {
+                                pointsTracker.current = pointsTracker.current.map((p, i) => ({
+                                    x: lerp(p.x, rawPoints[i].x, 0.2), 
+                                    y: lerp(p.y, rawPoints[i].y, 0.2)
+                                }));
+                            }
                         }
                         setSmoothedContour([...pointsTracker.current]);
                     }
@@ -482,8 +499,6 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
                         isValid = false;
                         msg = "Searching for document...";
                         color = "text-white";
-                        steadyCount.current = 0;
-                        setCaptureProgress(0);
                         maxBlurVarRef.current = 0; // Reset sampling
                     } else {
                         // 6. Tilt Detection (Anti-Squeeze)
@@ -535,17 +550,19 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
                             }
 
                             if (progress >= 100 && !capturedImageData && !captureTriggeredRef.current) {
-                                steadyCount.current = 0;
-                                setCaptureProgress(0);
-                                handleCapture(rawPoints);
+                                // Final lock-in: don't reset progress until handleCapture takes over
+                                handleCapture(paddedPoints);
                             }
                         }
                     }
 
+                    // Stability Latch (De-flicker): Keep the box visible if we have a recent lock
+                    const isUiStable = isValid || steadyCount.current > 0;
+                    
                     setLiveStatus({
-                        isValid,
-                        message: msg,
-                        color,
+                        isValid: isUiStable,
+                        message: isUiStable ? msg : "Searching for document...",
+                        color: isUiStable ? color : "text-white",
                         orientation: isLandscape ? "Landscape" : "Portrait"
                     });
 
@@ -1047,10 +1064,10 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
 
             {/* Main Content Area */}
             <div className="flex-1 relative min-h-0 bg-black flex flex-col overflow-hidden">
-                
-                    {/* Status Overlays */}
-                    <div className="absolute top-4 left-0 right-0 flex flex-col items-center z-[110] gap-3 pointer-events-none">
-                        {!capturedImageData && (
+
+                {/* Status Overlays */}
+                <div className="absolute top-4 left-0 right-0 flex flex-col items-center z-[110] gap-3 pointer-events-none">
+                    {!capturedImageData && (
                         <>
                             <div className={`px-3 py-1 ${liveStatus.isValid ? 'bg-blue-600/80' : 'bg-gray-600/50'} rounded-full text-white text-[10px] font-bold uppercase tracking-wider backdrop-blur-sm border border-white/20 transition-colors`}>
                                 {liveStatus.isValid ? liveStatus.orientation : "Detecting"} Mode
@@ -1059,7 +1076,7 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
                             <div className={`px-4 py-1.5 rounded-full backdrop-blur-md bg-black/60 border border-white/20 font-bold text-sm ${liveStatus.color} shadow-lg transition-colors duration-300`}>
                                 {liveStatus.message}
                             </div>
-                            
+
                             {captureProgress > 0 && (
                                 <div className="flex flex-col items-center gap-1.5 mt-1">
                                     <div className="px-3 py-0.5 rounded-full bg-green-500/20 border border-green-500/40 text-green-400 text-[11px] font-bold tracking-wide backdrop-blur-sm animate-pulse">
@@ -1154,7 +1171,7 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
                                     alt="Scanned"
                                 />
                             </div>
-                            
+
                             {isEnhancing && (
                                 <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur-md px-5 py-2.5 rounded-2xl border border-indigo-100 flex items-center gap-3 z-30 shadow-2xl">
                                     <RotateCw className="animate-spin text-indigo-600" size={16} />

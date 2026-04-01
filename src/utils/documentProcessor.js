@@ -80,7 +80,6 @@ export const processDocumentAndValidate = async (canvasOrFile, expectedPage) => 
     try {
         console.log(`${tag} — Starting classification-first validation...`);
 
-        // ── 1. Normalise input to canvas ──────────────────────────────────────
         let canvas;
         if (canvasOrFile instanceof HTMLCanvasElement) {
             canvas = canvasOrFile;
@@ -89,14 +88,14 @@ export const processDocumentAndValidate = async (canvasOrFile, expectedPage) => 
             if (!canvas) {
                 return {
                     ok: false,
-                    message: 'Failed to read the image file. Please try a different image.',
+                    errorType: 'file_read_error',
+                    message: 'Failed to read the image file. Please try again.',
                     classification: 'REJECTED',
                     details: {}
                 };
             }
         }
 
-        // ── 1b. Orientation check (PORTRAIT → reject immediately) ─────────────
         if (canvas.height > canvas.width) {
             console.warn(`${tag} — REJECTED: Portrait orientation (${canvas.width}x${canvas.height})`);
             return {
@@ -108,38 +107,35 @@ export const processDocumentAndValidate = async (canvasOrFile, expectedPage) => 
             };
         }
 
-        // ── 2. AI Classification (PRIMARY — mandatory attempt) ────────────────
-        // Now handles ML + OCR Fallback internally in documentClassifier.js
         const aiResult = await classifyAndValidate(canvas, expectedPage);
-        console.log(`${tag} — Final Prediction: ${aiResult.classification} (via ${aiResult.method})`);
-
-        // ── 3. FINAL DECISION (Strict Policy) ─────────────────────────────────
-        //
-        //  The system ONLY accepts if the detected page matches the expected slot.
-        //  If both ML and OCR fail to identify the document, we REJECT with a helpful message.
-
-        const failureResponse = {
-            ok: false,
-            errorType: aiResult?.errorType,
-            classification: aiResult?.classification || 'REJECTED',
-            message: aiResult?.reason
-                ? `Wrong document type. Expected ${expectedCls}, but detected ${aiResult?.classification}. Details: ${aiResult?.reason}`
-                : 'Wrong document type. Please upload the correct page.',
-            details: { aiResult, tableDetected: aiResult?.tableDetected }
-        };
+        console.log(`${tag} — Final Prediction: ${aiResult?.classification} (via ${aiResult?.method})`);
 
         if (!aiResult || !aiResult.classification) {
-            console.warn(`${tag} — Classification FAILED or NO RESULT.`);
-            return failureResponse;
+            return {
+                ok: false,
+                errorType: 'classification_failed',
+                classification: 'REJECTED',
+                message: expectedPage === 1
+                    ? 'Unable to confirm this as Page 1. Please upload only the Page 1 document.'
+                    : 'Unable to confirm this as Page 2. Please upload only the Page 2 document.',
+                details: { aiResult, tableDetected: aiResult?.tableDetected }
+            };
         }
 
         if (aiResult.classification !== expectedCls) {
-            console.warn(`${tag} — WRONG PAGE: expected ${expectedCls} but got ${aiResult.classification}`);
-            return failureResponse;
+            return {
+                ok: false,
+                errorType: 'wrong_page',
+                classification: aiResult.classification || 'REJECTED',
+                message: aiResult.message || (
+                    expectedPage === 1
+                        ? 'Wrong document uploaded. Please upload the Page 1 document.'
+                        : 'Wrong document uploaded. Please upload the Page 2 document.'
+                ),
+                details: { aiResult, tableDetected: aiResult?.tableDetected }
+            };
         }
 
-        // ONLY here → ACCEPT
-        console.log(`${tag} — AI ACCEPTED (${aiResult.classification})`);
         return {
             ok: true,
             classification: expectedCls,
@@ -151,6 +147,7 @@ export const processDocumentAndValidate = async (canvasOrFile, expectedPage) => 
         console.error(`${tag} — Pipeline fatal error:`, error);
         return {
             ok: false,
+            errorType: 'pipeline_error',
             classification: 'REJECTED',
             message: 'Wrong document type. Please upload the correct page.',
             details: { error: error.message }

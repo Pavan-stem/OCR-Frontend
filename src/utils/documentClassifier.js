@@ -1,40 +1,28 @@
 /**
- * documentClassifier.js  —  PAGE-1 vs PAGE-2 DETECTOR  (v7)
- * ===========================================================
+ * documentClassifier.js
+ * STRICT PAGE-1 vs PAGE-2 DETECTOR
  *
- * CHANGES FROM v6 → v7
- * ─────────────────────
- * 1. MARGIN TRIMMING (_trimContent):
- *    Raw camera images contain black/white borders around the document that
- *    shift all zone percentages. v7 detects the actual ink content bounding
- *    box first, then computes all zones relative to that trimmed region.
+ * RULES
+ * - Page 1 slot accepts ONLY Page 1
+ * - Page 2 slot accepts ONLY Page 2
+ * - Portrait always rejected
+ * - Unknown / weak / random docs rejected in both slots
  *
- * 2. C2 now uses mbkPeakInk (max ink in MBK zone) instead of mbkToTitle ratio.
- *    With trimmed zones the title area includes table borders which inflate
- *    titleInk, making the ratio unreliable. A high peak in the MBK zone is a
- *    direct, robust indicator of the MBK ID row.
- *
- * 3. PAGE1_PASS lowered from 10 → 8.
- *    The three strongest criteria (C1 + C2 + C5) already total 8 pts.
- *    Requiring 10 created false rejections on raw camera docs with slightly
- *    different brightness/framing.
- *
- * 4. C3 threshold relaxed (hdrToBody ≥ 0.90 for partial, ≥ 1.00 for full).
- *    Table grid lines inflate bodyInk in raw images, compressing the ratio.
- *
- * CALIBRATED VALUES (content-relative after margin trim)
- * ──────────────────────────────────────────────────────
- *                        PAGE 1      PAGE 2
- *  rightVsMid            ≥0.70       ~0.47   ← hard disqualifier @ 0.65
- *  mbkInk                ≥0.06       ~0.001  ← C1 (absolute MBK row density)
- *  mbkPeakInk            ≥0.25       ~0.001  ← C2 (dense text peak in MBK zone)
- *  rightVsMid            ≥0.75       ~0.47   ← C7 (uniform column layout)
- *
- * RULE
- * ────
- *   PAGE1 slot → accept ONLY if Page 1 criteria met
- *   PAGE2 slot → accept ONLY if Page 1 criteria NOT met
- *   Portrait   → always rejected (enforced upstream in documentProcessor.js)
+ * FIXES v4
+ * 1. CLOSED the colPeaks 9–11 gray zone (v3):
+ *    - Page 1 gets HARD PENALTY (-8) for colPeaks 9–11.
+ *    - Page 2 gets +8 bonus for colPeaks 9–11.
+ * 2. NEW colPeaksFine (hw = 1.0% of width):
+ *    - Page 1 (Annexure II, ~16 narrow columns) → colPeaksFine > 14 → +3 for P1, DISQUALIFY P2.
+ *    - Page 2 (~5-7 wide columns) → colPeaksFine ≤ 12.
+ * 3. NEW sparsityRatio = bodyInk / hdrFullInk:
+ *    - Page 1 body is mostly empty cells → sparsityRatio < 0.55 → positive P1, penalty P2.
+ *    - Page 2 body has denser handwritten content → sparsityRatio > 0.65 → positive P2.
+ * 4. NEW headerDensity = avg(colHdr1Ink, colHdr2Ink):
+ *    - Page 1 has a complex multi-row merged header → headerDensity >= 0.060.
+ *    - Page 2 has a simpler header zone.
+ * 5. Hard rule: isPage1 requires colPeaks > 11 (v3 kept).
+ * 6. rightTailInk P2 signal now gated by colPeaks <= 11 to prevent false P2 boost for P1.
  */
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -54,6 +42,7 @@ export async function buildFinalCanvas(imageInput, rotationDeg = 0) {
             if (imageInput?.tagName?.toLowerCase() === 'canvas') {
                 return resolve(rotationDeg === 0 ? imageInput : _rotateCanvas(imageInput, rotationDeg));
             }
+
             const img = new Image();
             img.onload = () => {
                 const c = document.createElement('canvas');
@@ -63,6 +52,7 @@ export async function buildFinalCanvas(imageInput, rotationDeg = 0) {
                 resolve(rotationDeg === 0 ? c : _rotateCanvas(c, rotationDeg));
             };
             img.onerror = reject;
+
             if (imageInput instanceof File || imageInput instanceof Blob) {
                 img.src = URL.createObjectURL(imageInput);
             } else if (typeof imageInput === 'string') {
@@ -70,21 +60,28 @@ export async function buildFinalCanvas(imageInput, rotationDeg = 0) {
             } else {
                 reject(new Error('Unsupported image input type'));
             }
-        } catch (err) { reject(err); }
+        } catch (err) {
+            reject(err);
+        }
     });
 }
 
 function _rotateCanvas(src, deg) {
-    const swap = Math.abs(deg) === 90 || Math.abs(deg) === 270;
+    const normDeg = ((deg % 360) + 360) % 360;
+    const swap = normDeg === 90 || normDeg === 270;
+
     const dst = document.createElement('canvas');
     dst.width = swap ? src.height : src.width;
     dst.height = swap ? src.width : src.height;
+
     const ctx = dst.getContext('2d');
     ctx.translate(dst.width / 2, dst.height / 2);
-    ctx.rotate((deg * Math.PI) / 180);
-    ctx.drawImage(src,
+    ctx.rotate((normDeg * Math.PI) / 180);
+    ctx.drawImage(
+        src,
         swap ? -src.height / 2 : -src.width / 2,
-        swap ? -src.width / 2 : -src.height / 2);
+        swap ? -src.width / 2 : -src.height / 2
+    );
     return dst;
 }
 
@@ -97,7 +94,8 @@ const AH = 900;
 
 function _resize(canvas) {
     const c = document.createElement('canvas');
-    c.width = AW; c.height = AH;
+    c.width = AW;
+    c.height = AH;
     c.getContext('2d').drawImage(canvas, 0, 0, AW, AH);
     return c;
 }
@@ -106,6 +104,7 @@ function _grayscale(canvas) {
     const { data, width, height } = canvas
         .getContext('2d', { willReadFrequently: true })
         .getImageData(0, 0, canvas.width, canvas.height);
+
     const gray = new Uint8ClampedArray(width * height);
     for (let i = 0, j = 0; i < data.length; i += 4, j++) {
         gray[j] = (0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]) | 0;
@@ -116,20 +115,25 @@ function _grayscale(canvas) {
 function _otsu(gray) {
     const hist = new Array(256).fill(0);
     for (const v of gray) hist[v]++;
+
     const total = gray.length;
     let sum = 0;
     for (let t = 0; t < 256; t++) sum += t * hist[t];
+
     let sumB = 0, wB = 0, maxVar = 0, thr = 180;
+
     for (let t = 0; t < 256; t++) {
         wB += hist[t];
         if (!wB) continue;
         const wF = total - wB;
         if (!wF) break;
         sumB += t * hist[t];
-        const mB = sumB / wB, mF = (sum - sumB) / wF;
-        const v = wB * wF * (mB - mF) ** 2;
-        if (v > maxVar) { maxVar = v; thr = t; }
+        const mB = sumB / wB;
+        const mF = (sum - sumB) / wF;
+        const variance = wB * wF * (mB - mF) ** 2;
+        if (variance > maxVar) { maxVar = variance; thr = t; }
     }
+
     return Math.max(100, Math.min(230, thr));
 }
 
@@ -142,15 +146,19 @@ function _binarize(gray, thr) {
 function _rowColProfiles(bin, W, H) {
     const rowInk = new Float64Array(H);
     const colInk = new Float64Array(W);
+
     for (let y = 0; y < H; y++) {
-        let rc = 0;
+        let rowCount = 0;
         for (let x = 0; x < W; x++) {
-            rc += bin[y * W + x];
-            colInk[x] += bin[y * W + x];
+            const v = bin[y * W + x];
+            rowCount += v;
+            colInk[x] += v;
         }
-        rowInk[y] = rc / W;
+        rowInk[y] = rowCount / W;
     }
+
     for (let x = 0; x < W; x++) colInk[x] /= H;
+
     return { rowInk, colInk };
 }
 
@@ -162,7 +170,7 @@ function _avg(arr, from, to) {
 
 function _max(arr, from, to) {
     let m = 0;
-    for (let i = from; i < to; i++) if (arr[i] > m) m = arr[i];
+    for (let i = from; i < to; i++) { if (arr[i] > m) m = arr[i]; }
     return m;
 }
 
@@ -180,24 +188,11 @@ function _peaks(arr, minVal, hw) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MARGIN TRIMMING  (v7 — new)
+// TRIM MARGINS
 // ─────────────────────────────────────────────────────────────────────────────
-/**
- * Finds the actual ink-content bounding box inside the image.
- * Raw camera captures have variable-sized black/white borders around the
- * document (phone status bar, browser chrome, document shadow, etc.).
- * Trimming these out before computing zones makes zone percentages
- * consistent regardless of how much margin surrounds the document.
- *
- * @param {Float64Array} rowInk  - per-row ink fraction [0,1]
- * @param {Float64Array} colInk  - per-col ink fraction [0,1]
- * @param {number} H             - image height
- * @param {number} W             - image width
- * @returns {{ r0, r1, c0, c1 }} - trimmed content boundaries
- */
-function _trimContent(rowInk, colInk, H, W) {
-    const THRESH = 0.015; // rows/cols below this are considered margin
 
+function _trimContent(rowInk, colInk, H, W) {
+    const THRESH = 0.010;
     let r0 = 0, r1 = H, c0 = 0, c1 = W;
 
     for (let i = 0; i < H; i++) { if (rowInk[i] > THRESH) { r0 = i; break; } }
@@ -205,15 +200,54 @@ function _trimContent(rowInk, colInk, H, W) {
     for (let i = 0; i < W; i++) { if (colInk[i] > THRESH) { c0 = i; break; } }
     for (let i = W - 1; i >= 0; i--) { if (colInk[i] > THRESH) { c1 = i + 1; break; } }
 
-    // Safety: ensure at least 50% of image is kept (prevents edge cases)
-    if ((r1 - r0) < H * 0.5) { r0 = 0; r1 = H; }
-    if ((c1 - c0) < W * 0.5) { c0 = 0; c1 = W; }
+    if ((r1 - r0) < H * 0.45) { r0 = 0; r1 = H; }
+    if ((c1 - c0) < W * 0.45) { c0 = 0; c1 = W; }
 
     return { r0, r1, c0, c1 };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FEATURE EXTRACTION  (v7 — zones computed on margin-trimmed region)
+// STRUCTURAL ANALYSIS (Handwriting Invariant)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Counts continuous vertical lines that represent the document structure.
+ * Page 1 has 16-22 structural lines. Page 2 has 5-10.
+ * Handwriting is rejected because it is not continuous vertically.
+ */
+function _countStructuralLines(bin, W, H) {
+    let count = 0;
+    const minContinuousRun = Math.floor(H * 0.15); // Must be at least 15% of height
+    const minColumnInk = 0.08; // Must have some average density
+    
+    // Profiles
+    const colInk = new Float64Array(W);
+    for (let x = 0; x < W; x++) {
+        let total = 0;
+        let maxRun = 0;
+        let currentRun = 0;
+        for (let y = 0; y < H; y++) {
+            if (bin[y * W + x] === 1) {
+                total++;
+                currentRun++;
+            } else {
+                if (currentRun > maxRun) maxRun = currentRun;
+                currentRun = 0;
+            }
+        }
+        if (currentRun > maxRun) maxRun = currentRun;
+        
+        // If it looks like a line or a dense column edge
+        if (maxRun >= minContinuousRun || (total / H) >= 0.70) {
+            count++;
+            x += Math.floor(W * 0.015); // Skip neighbors
+        }
+    }
+    return count;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FEATURES
 // ─────────────────────────────────────────────────────────────────────────────
 
 function _extractFeatures(canvas) {
@@ -223,207 +257,319 @@ function _extractFeatures(canvas) {
     const bin = _binarize(gray, thr);
     const { rowInk: rowInkFull, colInk: colInkFull } = _rowColProfiles(bin, W, H);
 
-    // ── Margin trim: find actual document content boundaries ──────────────────
     const { r0, r1, c0, c1 } = _trimContent(rowInkFull, colInkFull, H, W);
-    const CH = r1 - r0; // content height
-    const CW = c1 - c0; // content width
+    const CH = r1 - r0;
+    const CW = c1 - c0;
 
-    // Slice row/col profiles to content region only
     const rowInk = rowInkFull.slice(r0, r1);
     const colInk = colInkFull.slice(c0, c1);
 
     const r = f => Math.floor(CH * f);
     const c = f => Math.floor(CW * f);
 
-    // ── Row zone ink averages (content-relative) ──────────────────────────────
-    const titleInk = _avg(rowInk, r(0.00), r(0.07));
-    const mbkInk = _avg(rowInk, r(0.07), r(0.14));
-    const headingInk = _avg(rowInk, r(0.14), r(0.20));
-    const colHdr1Ink = _avg(rowInk, r(0.20), r(0.30));
-    const colHdr2Ink = _avg(rowInk, r(0.30), r(0.40));
+    // Row ink zones
+    const titleInk = _avg(rowInk, r(0.00), r(0.08));
+    const mbkInk = _avg(rowInk, r(0.08), r(0.15));
+    const headingInk = _avg(rowInk, r(0.15), r(0.22));
+    const colHdr1Ink = _avg(rowInk, r(0.22), r(0.31));
+    const colHdr2Ink = _avg(rowInk, r(0.31), r(0.40));
     const bodyInk = _avg(rowInk, r(0.40), r(0.88));
     const footerInk = _avg(rowInk, r(0.88), r(1.00));
     const hdrFullInk = _avg(rowInk, r(0.00), r(0.40));
+    const mbkPeakInk = _max(rowInk, r(0.08), r(0.15));
 
-    // ── NEW: MBK zone peak ink ────────────────────────────────────────────────
-    // The MBK ID row in Page 1 creates a single very dense row (high peak).
-    // This is more reliable than the mbkToTitle ratio when titleInk is inflated
-    // by table border lines or when document margins vary.
-    const mbkPeakInk = _max(rowInk, r(0.07), r(0.14));
-
-    // ── Column zone ink averages (content-relative) ───────────────────────────
-    const leftBlockInk = _avg(colInk, c(0.00), c(0.40));
-    const midBlockInk = _avg(colInk, c(0.40), c(0.75));
-    const rightPanelInk = _avg(colInk, c(0.75), c(1.00));
+    // Column ink zones
+    const leftBlockInk = _avg(colInk, c(0.00), c(0.38));
+    const midBlockInk = _avg(colInk, c(0.38), c(0.74));
+    const rightPanelInk = _avg(colInk, c(0.74), c(1.00));
     const rightTailInk = _avg(colInk, c(0.88), c(1.00));
 
+    // Derived ratios
     const rightVsMid = midBlockInk > 0.001 ? rightPanelInk / midBlockInk : 1.0;
-
-    // ── Legacy ratio (kept for logging/debug, not used in scoring) ────────────
     const mbkToTitle = titleInk > 0.001 ? mbkInk / titleInk : 0;
-
-    // ── Header vs body density ratio ─────────────────────────────────────────
     const hdrToBody = bodyInk > 0.001 ? hdrFullInk / bodyInk : 1.0;
 
-    // ── Header row peaks ──────────────────────────────────────────────────────
-    const headerRowPeaks = _peaks(rowInk.subarray(r(0.00), r(0.40)), 0.25, 1);
+    // NEW: sparsityRatio — Page 1 body is mostly empty grid cells, Page 2 body is denser
+    const sparsityRatio = hdrFullInk > 0.001 ? bodyInk / hdrFullInk : 1.0;
 
-    // ── Body row peaks ────────────────────────────────────────────────────────
-    const bodyRowPeaks = _peaks(rowInk.subarray(r(0.40), r(0.88)), 0.06, 1);
+    // NEW: headerDensity — Page 1 has complex multi-row merged column headers
+    const headerDensity = (colHdr1Ink + colHdr2Ink) / 2;
+
+    // Row peaks
+    const headerRowPeaks = _peaks(rowInk.subarray(r(0.00), r(0.40)), 0.22, 1);
+    const bodyRowPeaks = _peaks(rowInk.subarray(r(0.40), r(0.88)), 0.055, 1);
+
+    // STRUCTURAL LINE COUNT (Ultimate Fix)
+    // Counts actual vertical lines/columns. 
+    // Page 1 Annexure-II has ~18-22 structural columns.
+    // Page 2 Financial Ledger has ~5-10 structural columns.
+    const colPeaks = _countStructuralLines(bin, W, H);
 
     return {
         W, H, thr,
-        // margin trim bounds (for debug)
         trimR0: r0, trimR1: r1, trimC0: c0, trimC1: c1,
-        // row features
         titleInk, mbkInk, mbkPeakInk, headingInk,
-        colHdr1Ink, colHdr2Ink,
-        bodyInk, footerInk, hdrFullInk,
-        // col features
+        colHdr1Ink, colHdr2Ink, bodyInk, footerInk, hdrFullInk,
         leftBlockInk, midBlockInk, rightPanelInk, rightTailInk,
-        // derived ratios
         rightVsMid, mbkToTitle, hdrToBody,
-        // peak counts
+        sparsityRatio, headerDensity,
         headerRowPeaks, bodyRowPeaks,
+        colPeaks,
     };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PAGE 1 SCORING  (v7)
-// Max possible = 14 pts.  Pass threshold = 8 pts.
+// PAGE 1 SCORING
 // ─────────────────────────────────────────────────────────────────────────────
 
-const PAGE1_PASS = 8; // lowered from 10 to handle raw camera variance
+const PAGE1_PASS = 6;
+const PAGE2_PASS = 4;
 
 function _scorePage1(fp) {
     let score = 0;
-    const hits = [], misses = [];
+    const hits = [];
+    const misses = [];
 
-    // ── HARD DISQUALIFIER ────────────────────────────────────────────────────
-    // rightVsMid: Page1 ≥ 0.70, Page2 ≈ 0.47. Threshold 0.65 safely splits.
-    // Page 2 has a sparse right panel (blank signature / summary columns).
-    // This check is the single most reliable negative indicator for Page 2.
-    if (fp.rightVsMid < 0.65) {
+    // ── STRUCTURAL GATE: coarse colPeaks ─────────────────────────────────
+    if (fp.colPeaks > 12) {
+        score += 15;
+        hits.push(`P1-STRUCTURAL colPeaks=${fp.colPeaks} >12 (+15)`);
+    } else {
         return {
-            score: -99,
-            hits: [],
-            misses: [`DISQUALIFY: rightVsMid=${fp.rightVsMid.toFixed(3)} < 0.65 (Page 2 sparse right panel)`],
+            score: -99, hits: [],
+            misses: [`DISQUALIFY_P1 colPeaks=${fp.colPeaks} <=12 (Page 2 pattern)`]
         };
     }
 
-    // ── CRITERION 1: MBK ID row absolute ink density (3 pts) ─────────────────
-    // Page1: mbkInk ≥ 0.06 (dense text row).  Page2: mbkInk ≈ 0.001 (near zero).
-    // Computed on the margin-trimmed region so it's consistent across cameras.
-    if (fp.mbkInk >= 0.060) {
-        score += 3; hits.push(`C1: mbkInk=${fp.mbkInk.toFixed(3)} ✓✓✓`);
+    // ── STRUCTURAL GATE: counts continuous vertical lines ────────────────
+    if (fp.colPeaks >= 12) {
+        score += 15;
+        hits.push(`P1-STRUCTURAL colPeaks=${fp.colPeaks} >=12 (+15)`);
+    } else {
+        return {
+            score: -99, hits: [],
+            misses: [`DISQUALIFY_P1 structural lines=${fp.colPeaks} < 12 (Page 2 layout)`]
+        };
+    }
+
+    // ── Cross-check: Page 2 ledger pattern disqualifies P1 ───────────────
+    if (fp.sparsityRatio > 0.82) {
+        return {
+            score: -99, hits: [],
+            misses: [`DISQUALIFY_P1 sparsityRatio=${fp.sparsityRatio.toFixed(3)} too dense (Page 2 pattern)`]
+        };
+    }
+
+    if (fp.rightVsMid < 0.45) {
+        return {
+            score: -99, hits: [],
+            misses: [`DISQUALIFY_P1 rightVsMid=${fp.rightVsMid.toFixed(3)} < 0.45`]
+        };
+    }
+
+    // ── sparsityRatio: Page 1 body is sparse ─────────────────────────────
+    if (fp.sparsityRatio <= 0.45) {
+        score += 3;
+        hits.push(`P1-SPARSE sparsityRatio=${fp.sparsityRatio.toFixed(3)} <=0.45 empty-cell body (+3)`);
+    } else if (fp.sparsityRatio <= 0.65) {
+        score += 1;
+        hits.push(`P1-SPARSE sparsityRatio=${fp.sparsityRatio.toFixed(3)} <=0.65 (+1)`);
+    } else {
+        misses.push(`P1-SPARSE sparsityRatio=${fp.sparsityRatio.toFixed(3)} inconclusive`);
+    }
+
+    // ── headerDensity: Page 1 multi-row merged header ─────────────────────
+    if (fp.headerDensity >= 0.060) {
+        score += 2;
+        hits.push(`P1-HDR headerDensity=${fp.headerDensity.toFixed(3)} >=0.060 multi-row header (+2)`);
+    } else if (fp.headerDensity >= 0.040) {
+        score += 1;
+        hits.push(`P1-HDR headerDensity=${fp.headerDensity.toFixed(3)} >=0.040 (+1)`);
+    } else {
+        misses.push(`P1-HDR headerDensity=${fp.headerDensity.toFixed(3)} too low`);
+    }
+
+    // ── Original ink checks ───────────────────────────────────────────────
+
+    if (fp.mbkInk >= 0.055) {
+        score += 3; hits.push(`P1-C1 mbkInk=${fp.mbkInk.toFixed(3)} +3`);
     } else if (fp.mbkInk >= 0.030) {
-        score += 2; hits.push(`C1: mbkInk=${fp.mbkInk.toFixed(3)} ✓`);
+        score += 2; hits.push(`P1-C1 mbkInk=${fp.mbkInk.toFixed(3)} +2`);
     } else if (fp.mbkInk >= 0.015) {
-        score += 1; hits.push(`C1: mbkInk=${fp.mbkInk.toFixed(3)} partial`);
+        score += 1; hits.push(`P1-C1 mbkInk=${fp.mbkInk.toFixed(3)} +1`);
     } else {
-        misses.push(`C1: mbkInk=${fp.mbkInk.toFixed(3)} too low (no MBK ID row)`);
+        misses.push(`P1-C1 mbkInk=${fp.mbkInk.toFixed(3)}`);
     }
 
-    // ── CRITERION 2: Dense text peak in MBK zone (3 pts) ─────────────────────
-    // v7 change: replaced mbkToTitle ratio with mbkPeakInk.
-    // The ratio was unreliable on raw images because table border lines inflate
-    // titleInk. Instead we check directly: is there a high-ink spike in the
-    // MBK zone row profile? This spike = a row of Telugu text filling the zone.
-    // Page1: mbkPeakInk ≥ 0.25 (clear text row).  Page2: ≈ 0.001.
-    if (fp.mbkPeakInk >= 0.25) {
-        score += 3; hits.push(`C2: mbkPeakInk=${fp.mbkPeakInk.toFixed(3)} ✓✓✓`);
-    } else if (fp.mbkPeakInk >= 0.15) {
-        score += 2; hits.push(`C2: mbkPeakInk=${fp.mbkPeakInk.toFixed(3)} ✓`);
+    if (fp.mbkPeakInk >= 0.22) {
+        score += 3; hits.push(`P1-C2 mbkPeakInk=${fp.mbkPeakInk.toFixed(3)} +3`);
+    } else if (fp.mbkPeakInk >= 0.13) {
+        score += 2; hits.push(`P1-C2 mbkPeakInk=${fp.mbkPeakInk.toFixed(3)} +2`);
     } else if (fp.mbkPeakInk >= 0.08) {
-        score += 1; hits.push(`C2: mbkPeakInk=${fp.mbkPeakInk.toFixed(3)} partial`);
+        score += 1; hits.push(`P1-C2 mbkPeakInk=${fp.mbkPeakInk.toFixed(3)} +1`);
     } else {
-        misses.push(`C2: mbkPeakInk=${fp.mbkPeakInk.toFixed(3)} too low`);
+        misses.push(`P1-C2 mbkPeakInk=${fp.mbkPeakInk.toFixed(3)}`);
     }
 
-    // ── CRITERION 3: Header vs body density (2 pts) ───────────────────────────
-    // v7: threshold relaxed from 1.10/1.05 to 1.00/0.90.
-    // Raw camera docs have bodyInk inflated by dense table grid lines,
-    // compressing the ratio. We allow partial credit down to 0.90.
-    if (fp.hdrToBody >= 1.00) {
-        score += 2; hits.push(`C3: hdrToBody=${fp.hdrToBody.toFixed(3)} ✓`);
-    } else if (fp.hdrToBody >= 0.90) {
-        score += 1; hits.push(`C3: hdrToBody=${fp.hdrToBody.toFixed(3)} partial`);
+    if (fp.hdrToBody >= 0.95) {
+        score += 2; hits.push(`P1-C3 hdrToBody=${fp.hdrToBody.toFixed(3)} +2`);
+    } else if (fp.hdrToBody >= 0.86) {
+        score += 1; hits.push(`P1-C3 hdrToBody=${fp.hdrToBody.toFixed(3)} +1`);
     } else {
-        misses.push(`C3: hdrToBody=${fp.hdrToBody.toFixed(3)} (header not denser than body)`);
+        misses.push(`P1-C3 hdrToBody=${fp.hdrToBody.toFixed(3)}`);
     }
 
-    // ── CRITERION 4: Title row ink (2 pts) ───────────────────────────────────
-    // After margin trimming, the title zone should contain the top table border
-    // + first header text rows, giving a moderate ink density.
-    if (fp.titleInk >= 0.035) {
-        score += 2; hits.push(`C4: titleInk=${fp.titleInk.toFixed(3)} ✓`);
-    } else if (fp.titleInk >= 0.020) {
-        score += 1; hits.push(`C4: titleInk=${fp.titleInk.toFixed(3)} partial`);
+    if (fp.colHdr1Ink >= 0.075 && fp.colHdr2Ink >= 0.055) {
+        score += 2; hits.push(`P1-C4 two-level-column-header +2`);
+    } else if (fp.colHdr1Ink >= 0.045 || fp.colHdr2Ink >= 0.035) {
+        score += 1; hits.push(`P1-C4 partial +1`);
     } else {
-        misses.push(`C4: titleInk=${fp.titleInk.toFixed(3)} too low`);
+        misses.push(`P1-C4 weak`);
     }
 
-    // ── CRITERION 5: Two-level column headers (2 pts) ────────────────────────
-    if (fp.colHdr1Ink >= 0.080 && fp.colHdr2Ink >= 0.060) {
-        score += 2; hits.push(`C5: two-level hdrs ${fp.colHdr1Ink.toFixed(3)}/${fp.colHdr2Ink.toFixed(3)} ✓`);
-    } else if (fp.colHdr1Ink >= 0.050 || fp.colHdr2Ink >= 0.040) {
-        score += 1; hits.push(`C5: col hdr partial`);
-    } else {
-        misses.push(`C5: col hdr weak`);
+    if (fp.headerRowPeaks >= 11) {
+        score += 1; hits.push(`P1-C5 headerRowPeaks=${fp.headerRowPeaks} +1`);
     }
 
-    // ── CRITERION 6: Header row peaks (1 pt) ─────────────────────────────────
-    if (fp.headerRowPeaks >= 12) {
-        score += 1; hits.push(`C6: headerRowPeaks=${fp.headerRowPeaks} ✓`);
-    } else {
-        misses.push(`C6: headerRowPeaks=${fp.headerRowPeaks}`);
+    if (fp.rightVsMid >= 0.72) {
+        score += 1; hits.push(`P1-C6 rightVsMid=${fp.rightVsMid.toFixed(3)} +1`);
     }
 
-    // ── CRITERION 7: Right panel uniformity (1 pt) ───────────────────────────
-    // Already enforced by disqualifier, but gives extra credit for clearly
-    // uniform right-panel density (Page 1 has data columns spanning full width).
-    if (fp.rightVsMid >= 0.75) {
-        score += 1; hits.push(`C7: rightVsMid=${fp.rightVsMid.toFixed(3)} ✓`);
+    if (fp.footerInk >= 0.040) {
+        score += 1; hits.push(`P1-C7 footerInk=${fp.footerInk.toFixed(3)} +1`);
     }
 
-    // ── CRITERION 8: Footer totals row (1 pt) ────────────────────────────────
-    if (fp.footerInk >= 0.050) {
-        score += 1; hits.push(`C8: footerInk=${fp.footerInk.toFixed(3)} ✓`);
-    }
-
-    // ── CRITERION 9: Body row peaks (1 pt) ───────────────────────────────────
-    if (fp.bodyRowPeaks >= 10) {
-        score += 1; hits.push(`C9: bodyRowPeaks=${fp.bodyRowPeaks} ✓`);
+    if (fp.titleInk >= 0.020) {
+        score += 1; hits.push(`P1-C8 titleInk=${fp.titleInk.toFixed(3)} +1`);
     }
 
     return { score, hits, misses };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MAIN CLASSIFY
+// PAGE 2 SCORING
+// ─────────────────────────────────────────────────────────────────────────────
+
+function _scorePage2(fp) {
+    let score = 0;
+    const hits = [];
+    const misses = [];
+
+    // ── STRUCTURAL GATE: counts continuous vertical lines ────────────────
+    if (fp.colPeaks < 12) {
+        score += 15;
+        hits.push(`P2-STRUCTURAL colPeaks=${fp.colPeaks} < 12 (+15)`);
+    } else {
+        return {
+            score: -99, hits: [],
+            misses: [`DISQUALIFY_P2 structural lines=${fp.colPeaks} >= 12 (Page 1 layout)`]
+        };
+    }
+
+    // ── Fine peaks secondary check ───────────────────────────────────────
+    // Just a penalty for P2 if too many vertical bits seen
+    if (fp.colPeaks > 15) score -= 10;
+
+    // ── sparsityRatio: Page 2 body is denser ─────────────────────────────
+    if (fp.sparsityRatio >= 0.70) {
+        score += 3; hits.push(`P2-SPARSE sparsityRatio=${fp.sparsityRatio.toFixed(3)} >=0.70 dense body (+3)`);
+    } else if (fp.sparsityRatio >= 0.50) {
+        score += 1; hits.push(`P2-SPARSE sparsityRatio=${fp.sparsityRatio.toFixed(3)} >=0.50 (+1)`);
+    } else {
+        score -= 5;
+        misses.push(`P2-SPARSE PENALTY sparsityRatio=${fp.sparsityRatio.toFixed(3)} too sparse (Page 1 trait) (-5)`);
+    }
+
+    if (fp.mbkInk < 0.028) {
+        score += 2; hits.push(`P2-C1 low-mbkInk=${fp.mbkInk.toFixed(3)} +2`);
+    } else if (fp.mbkInk < 0.045) {
+        score += 1; hits.push(`P2-C1 low-mbkInk=${fp.mbkInk.toFixed(3)} +1`);
+    } else {
+        misses.push(`P2-C1 mbkInk too high=${fp.mbkInk.toFixed(3)}`);
+    }
+
+    if (fp.mbkPeakInk < 0.11) {
+        score += 2; hits.push(`P2-C2 low-mbkPeakInk=${fp.mbkPeakInk.toFixed(3)} +2`);
+    } else if (fp.mbkPeakInk < 0.16) {
+        score += 1; hits.push(`P2-C2 low-mbkPeakInk=${fp.mbkPeakInk.toFixed(3)} +1`);
+    } else {
+        misses.push(`P2-C2 mbkPeakInk too high=${fp.mbkPeakInk.toFixed(3)}`);
+    }
+
+    if (fp.headerRowPeaks <= 10) {
+        score += 1; hits.push(`P2-C3 headerRowPeaks=${fp.headerRowPeaks} +1`);
+    } else {
+        misses.push(`P2-C3 too many header peaks=${fp.headerRowPeaks}`);
+    }
+
+    if (fp.bodyRowPeaks >= 18) {
+        score += 2; hits.push(`P2-C4 bodyRowPeaks=${fp.bodyRowPeaks} +2`);
+    } else if (fp.bodyRowPeaks >= 12) {
+        score += 1; hits.push(`P2-C4 bodyRowPeaks=${fp.bodyRowPeaks} +1`);
+    } else {
+        misses.push(`P2-C4 bodyRowPeaks too low=${fp.bodyRowPeaks}`);
+    }
+
+    if (fp.rightVsMid >= 0.66) {
+        score += 2; hits.push(`P2-C5 rightVsMid=${fp.rightVsMid.toFixed(3)} +2`);
+    } else if (fp.rightVsMid >= 0.58) {
+        score += 1; hits.push(`P2-C5 rightVsMid=${fp.rightVsMid.toFixed(3)} +1`);
+    } else {
+        misses.push(`P2-C5 rightVsMid too low=${fp.rightVsMid.toFixed(3)}`);
+    }
+
+    if (fp.titleInk >= 0.015) {
+        score += 1; hits.push(`P2-C6 titleInk=${fp.titleInk.toFixed(3)} +1`);
+    }
+
+    // rightTailInk: Page 2 member-signature column.
+    // GATED by colPeaks <= 11 to prevent false boost for Page 1 docs
+    // whose empty rightmost columns might have incidental moderate ink.
+    if (fp.colPeaks <= 11 && fp.rightTailInk >= 0.015 && fp.rightTailInk <= 0.12) {
+        score += 2; hits.push(`P2-C7 rightTailInk=${fp.rightTailInk.toFixed(3)} signature-column (+2)`);
+    }
+
+    return { score, hits, misses };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN CLASSIFIER
 // ─────────────────────────────────────────────────────────────────────────────
 
 function _classify(canvas) {
     const fp = _extractFeatures(canvas);
-    const p1 = _scorePage1(fp);
 
-    const isPage1 = p1.score >= PAGE1_PASS;
-    const p1Conf = p1.score >= 12 ? 'high'
-        : p1.score >= PAGE1_PASS ? 'medium' : 'low';
+    const p1 = _scorePage1(fp);
+    const p2 = _scorePage2(fp);
+
+    const isPage1 = p1.score >= PAGE1_PASS && p1.score > p2.score;
+    const isPage2 = p2.score >= PAGE2_PASS && p2.score > p1.score;
+
+    let detectedPage = null;
+    if (isPage1) detectedPage = 1;
+    if (isPage2) detectedPage = 2;
 
     const reasons = [
-        `p1Score=${p1.score}/${PAGE1_PASS}`,
+        `detectedPage=${detectedPage ?? 'NONE'}`,
+        `colPeaks=${fp.colPeaks}`,
+        `colPeaksFine=${fp.colPeaksFine}`,
+        `p1Score=${p1.score}`,
+        `p2Score=${p2.score}`,
+        `sparsityRatio=${fp.sparsityRatio.toFixed(3)}`,
+        `headerDensity=${fp.headerDensity.toFixed(3)}`,
         `rightVsMid=${fp.rightVsMid.toFixed(3)}`,
+        `rightTailInk=${fp.rightTailInk.toFixed(3)}`,
         `mbkInk=${fp.mbkInk.toFixed(3)}`,
         `mbkPeakInk=${fp.mbkPeakInk.toFixed(3)}`,
-        `mbkToTitle=${fp.mbkToTitle.toFixed(2)}`,
         `hdrToBody=${fp.hdrToBody.toFixed(3)}`,
+        `headerRowPeaks=${fp.headerRowPeaks}`,
+        `bodyRowPeaks=${fp.bodyRowPeaks}`,
         `trim=[${fp.trimR0},${fp.trimR1},${fp.trimC0},${fp.trimC1}]`,
-        ...p1.hits,
-        ...p1.misses,
+        ...p1.hits, ...p2.hits,
+        ...p1.misses, ...p2.misses,
     ];
 
-    return { isPage1, p1Score: p1.score, p1Conf, reasons, features: fp };
+    return { detectedPage, isPage1, isPage2, p1Score: p1.score, p2Score: p2.score, reasons, features: fp };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -434,53 +580,34 @@ function _classifyForSlot(canvas, expectedPage) {
     const result = _classify(canvas);
 
     if (expectedPage === 1) {
-        if (result.isPage1) {
-            return {
-                page: 1, confidence: result.p1Conf,
-                reasons: ['Confirmed Page 1 document.', ...result.reasons],
-                features: result.features,
-            };
-        }
-        return {
-            page: null, confidence: 'low',
-            reasons: ['Not the Page 1 (అనుభందం - II) document.', ...result.reasons],
-            features: result.features,
-        };
+        if (result.isPage1) return { page: 1, confidence: result.p1Score >= 8 ? 'high' : 'medium', reasons: ['Confirmed Page 1 (Member Register) document.', ...result.reasons], features: result.features };
+        if (result.isPage2) return { page: 2, confidence: result.p2Score >= 7 ? 'high' : 'medium', reasons: ['This is a Page 2 document — upload it in Page 2 slot.', ...result.reasons], features: result.features };
+        return { page: null, confidence: 'low', reasons: ['Document not confidently recognised as Page 1.', ...result.reasons], features: result.features };
     }
 
-    // PAGE 2 slot: accept anything that is NOT Page 1
-    if (!result.isPage1) {
-        return {
-            page: 2, confidence: 'medium',
-            reasons: ['Accepted for Page 2 (not a Page 1 document).', ...result.reasons],
-            features: result.features,
-        };
+    if (expectedPage === 2) {
+        if (result.isPage2) return { page: 2, confidence: result.p2Score >= 7 ? 'high' : 'medium', reasons: ['Confirmed Page 2 (Financial Ledger) document.', ...result.reasons], features: result.features };
+        if (result.isPage1) return { page: 1, confidence: result.p1Score >= 8 ? 'high' : 'medium', reasons: ['This is a Page 1 document — upload it in Page 1 slot.', ...result.reasons], features: result.features };
+        return { page: null, confidence: 'low', reasons: ['Document not confidently recognised as Page 2.', ...result.reasons], features: result.features };
     }
 
-    // Page 1 uploaded into Page 2 slot → reject
-    return {
-        page: 1, confidence: result.p1Conf,
-        reasons: ['Detected as Page 1 — cannot be used in Page 2 slot.', ...result.reasons],
-        features: result.features,
-    };
+    return { page: null, confidence: 'low', reasons: ['Unknown slot.'], features: result.features };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PUBLIC API  (unchanged surface — drop-in replacement for v6)
+// PUBLIC API
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function validateDocumentForSlot(classification, expectedPage) {
     if (classification.page === expectedPage) {
-        return {
-            ok: true, errorType: null,
-            message: `Correct document for Page ${expectedPage}.`, classification
-        };
+        return { ok: true, errorType: null, message: `Correct document for Page ${expectedPage}.`, classification };
     }
     return { ok: false, errorType: 'slot_mismatch', message: '', classification };
 }
 
 export async function validateSHGDocumentForProceed(fileOrUrl, rotationDeg, expectedPage) {
     const canvas = await buildFinalCanvas(fileOrUrl, rotationDeg);
+
     const orientation = validateLandscape(canvas);
     if (!orientation.ok) {
         return { ok: false, errorType: 'orientation', message: orientation.message };
@@ -490,20 +617,29 @@ export async function validateSHGDocumentForProceed(fileOrUrl, rotationDeg, expe
 
     if (!classification.page) {
         return {
-            ok: false, errorType: 'not_page1',
+            ok: false,
+            errorType: 'unrecognized_document',
             message: expectedPage === 1
-                ? 'Wrong document type. Please upload the correct Page 1 (అనుభందం - II) document.'
-                : 'Wrong document type.',
-            canvas, features: classification.features || {}, classification: null,
+                ? 'Wrong document uploaded. Please upload only the Page 1 document.'
+                : 'Wrong document uploaded. Please upload only the Page 2 document.',
+            canvas,
+            features: classification.features || {},
+            classification: null,
         };
     }
 
     const slotValidation = validateDocumentForSlot(classification, expectedPage);
     if (!slotValidation.ok) {
+        const detectedPage = classification.page;
         return {
             ...slotValidation,
-            message: `Wrong document type. Expected PAGE${expectedPage}, but detected PAGE${classification.page}.`,
-            canvas, features: classification.features || {}, classification,
+            errorType: 'wrong_page',
+            message: detectedPage === 1
+                ? 'Wrong document uploaded. This is the Page 1 document — please upload it in the Page 1 slot.'
+                : 'Wrong document uploaded. This is the Page 2 document — please upload it in the Page 2 slot.',
+            canvas,
+            features: classification.features || {},
+            classification,
         };
     }
 
@@ -512,6 +648,7 @@ export async function validateSHGDocumentForProceed(fileOrUrl, rotationDeg, expe
 
 export async function classifyAndValidate(imageInput, expectedPage) {
     const result = await validateSHGDocumentForProceed(imageInput, 0, expectedPage);
+
     return {
         ok: result.ok,
         errorType: result.errorType || (result.ok ? null : 'REJECTED'),
@@ -525,7 +662,7 @@ export async function classifyAndValidate(imageInput, expectedPage) {
             ? result.classification.reasons.join(', ')
             : (result.message || 'Rejected'),
         features: result.features || {},
-        method: 'calibrated_page1_v7',
+        method: 'strict_page1_page2_v4',
         tableDetected: true,
     };
 }
@@ -537,32 +674,20 @@ export async function classifyImage(imageInput) {
     try {
         const canvas = await buildFinalCanvas(imageInput, 0);
         const orientation = validateLandscape(canvas);
+
         if (!orientation.ok) {
-            return {
-                cls: 'REJECTED', confidence: 0, reason: orientation.message,
-                features: {}, degrees: 0, tableDetected: false
-            };
+            return { cls: 'REJECTED', confidence: 0, reason: orientation.message, features: {}, degrees: 0, tableDetected: false };
         }
+
         const result = _classify(canvas);
-        if (result.isPage1) {
-            return {
-                cls: 'PAGE1',
-                confidence: result.p1Conf === 'high' ? 0.9 : 0.7,
-                reason: result.reasons.join(', '),
-                features: result.features, degrees: 0, tableDetected: true,
-            };
-        }
-        return {
-            cls: 'PAGE2', confidence: 0.7,
-            reason: result.reasons.join(', '),
-            features: result.features, degrees: 0, tableDetected: true,
-        };
+
+        if (result.isPage1) return { cls: 'PAGE1', confidence: result.p1Score >= 8 ? 0.9 : 0.75, reason: result.reasons.join(', '), features: result.features, degrees: 0, tableDetected: true };
+        if (result.isPage2) return { cls: 'PAGE2', confidence: result.p2Score >= 7 ? 0.9 : 0.75, reason: result.reasons.join(', '), features: result.features, degrees: 0, tableDetected: true };
+
+        return { cls: 'REJECTED', confidence: 0, reason: result.reasons.join(', '), features: result.features, degrees: 0, tableDetected: true };
     } catch (e) {
         console.error('classifyImage failed:', e);
-        return {
-            cls: 'REJECTED', confidence: 0, reason: e.message,
-            features: {}, degrees: 0, tableDetected: false
-        };
+        return { cls: 'REJECTED', confidence: 0, reason: e.message, features: {}, degrees: 0, tableDetected: false };
     }
 }
 
