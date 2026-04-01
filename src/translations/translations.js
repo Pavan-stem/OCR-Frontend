@@ -134,7 +134,11 @@ export const translations = {
             currentPastOnly: "Current & Past Only",
             locked: "Locked",
             errorHelp: "Please try selecting a different month or year using the dropdowns above.",
-            rejectedUploads: "Rejected Uploads"
+            rejectedUploads: "Rejected Uploads",
+            reuploadPage: "Re-upload Page",
+            rescanPage: "Re-scan Page",
+            reuploadReplacement: "Upload a replacement for this page",
+            viewDocument: "View Document"
         },
 
 
@@ -379,7 +383,11 @@ export const translations = {
             currentPastOnly: "ప్రస్తుత & గత నెలలు మాత్రమే",
             locked: "లాక్ చేయబడింది",
             errorHelp: "దయచేసి పైన ఉన్న డ్రాప్‌డౌన్‌లను ఉపయోగించి మరొక నెల లేదా సంవత్సరాన్ని ఎంచుకోవడానికి ప్రయత్నించండి.",
-            rejectedUploads: "తిరస్కరించబడిన అప్‌లోడ్‌లు"
+            rejectedUploads: "తిరస్కరించబడిన అప్‌లోడ్‌లు",
+            reuploadPage: "మళ్ళీ అప్‌లోడ్ చేయండి",
+            rescanPage: "మళ్ళీ స్కాన్ చేయండి",
+            reuploadReplacement: "ఈ పేజీకి బదులుగా మరొకటి అప్‌లోడ్ చేయండి",
+            viewDocument: "పత్రాన్ని చూడండి"
         },
 
 

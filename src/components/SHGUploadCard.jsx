@@ -79,29 +79,55 @@ const SHGUploadCard = ({
     const p1Rejected = p1Status === 'rejected';
     const p2Rejected = p2Status === 'rejected';
 
-    // Partial upload: one page accepted, one rejected (the reupload scenario)
+    // ── Completion Logic ───────────────────────────────────────────────
     const isPartialUpload = (p1AcceptedOnServer || p2AcceptedOnServer) && (p1Rejected || p2Rejected);
-
-    // Both pages accepted on server = fully completed
     const isFullyAccepted = isPermanentlyUploaded && !p1Rejected && !p2Rejected;
 
-    // Card-level colour:
-    // • Both accepted = strong blue (converted) glow
-    // • One accepted, one rejected = amber warning
-    // • Fully rejected = red
-    // • Ready to submit = blue
+    const canSubmitPartial = isPartialUpload && (
+        (p1Rejected && page1Validated && filesData.page1) ||
+        (p2Rejected && page2Validated && filesData.page2)
+    );
+    const canSubmitFull = !isPartialUpload && page1Validated && page2Validated;
+    
+    // ── Completion States ───────────────────────────────────────────────
     const hasFiles = !!filesData.page1 || !!filesData.page2;
-    const isReadyToSubmit = page1Validated === true && page2Validated === true;
+    const hasAnyAccepted = p1AcceptedOnServer || p2AcceptedOnServer;
+    const isReadyToSubmit = (canSubmitFull || canSubmitPartial);
+
+    const isPending = !hasFiles && !hasAnyAccepted && !p1Rejected && !p2Rejected;
+    const isFullyRejected = (p1Rejected && p2Rejected) && !hasFiles;
+    const isHalfPending = !isReadyToSubmit && !isFullyAccepted && !isPartialUpload && !isFullyRejected && (hasFiles || hasAnyAccepted);
+
+    // ── Visual Theme Configuration ──────────────────────────────────────
+    const headerAccent = isFullyAccepted
+        ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white'
+        : isReadyToSubmit
+            ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white'
+            : isPartialUpload
+                ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white'
+                : isFullyRejected
+                    ? 'bg-gradient-to-r from-rose-500 to-red-600 text-white'
+                    : isHalfPending
+                        ? 'bg-gradient-to-r from-indigo-500 to-violet-600 text-white'
+                        : 'bg-gradient-to-r from-slate-100 to-slate-200 text-slate-700 border-b border-slate-300';
 
     const cardBorderClass = isFullyAccepted
-        ? 'border-blue-400 bg-blue-50/20 shadow-blue-100'
-        : isPartialUpload
-            ? 'border-amber-400 bg-amber-50/10'
-            : (p1Rejected && p2Rejected && !hasFiles)
-                ? 'border-red-300'
-                : isReadyToSubmit
-                    ? 'border-blue-400 shadow-blue-100'
-                    : 'border-gray-200 hover:border-blue-300';
+        ? 'border-blue-300 bg-blue-50/10 shadow-xl shadow-blue-500/5'
+        : isReadyToSubmit
+            ? 'border-emerald-300 bg-emerald-50/10 shadow-xl shadow-emerald-500/5'
+            : isPartialUpload
+                ? 'border-amber-300 bg-amber-50/10 shadow-lg shadow-amber-500/5'
+                : isFullyRejected
+                    ? 'border-rose-300 bg-rose-50/10 shadow-lg shadow-rose-500/5'
+                    : isHalfPending
+                        ? 'border-indigo-300 bg-indigo-50/10 shadow-lg shadow-indigo-500/5'
+                        : 'border-slate-200 hover:border-indigo-300 bg-white';
+
+    const idBadgeClass = isPending
+        ? 'text-slate-600 font-bold bg-slate-100 border border-slate-200'
+        : isHalfPending || isReadyToSubmit || isFullyAccepted || isPartialUpload || isFullyRejected
+            ? 'text-white/80 font-black px-2 py-0.5 rounded-md bg-black/10'
+            : 'text-gray-500 font-mono';
 
     // ── Per-page upload slot ─────────────────────────────────────────────
     const renderDocumentSlot = (pageKey, pageTitle) => {
@@ -121,17 +147,23 @@ const SHGUploadCard = ({
             });
 
             return (
-                <div className="p-3 rounded-xl border-2 border-blue-300 bg-blue-50/40">
-                    <div className="flex items-center justify-between mb-2">
-                        <span className="font-bold text-sm text-blue-800">{pageTitle}</span>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 flex items-center gap-1">
-                            <CheckCircle size={10} /> Accepted
-                        </span>
+                <div className="p-3 rounded-xl border-2 border-blue-300 bg-blue-50/40 flex flex-col h-full shadow-sm">
+                    <div className="flex flex-col gap-2 mb-3">
+                        <div className="flex flex-wrap gap-2">
+                             <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-700 flex items-center gap-1 border border-blue-200">
+                                <CheckCircle size={10} /> {t?.('upload.validated') || 'Accepted'}
+                             </span>
+                        </div>
+                        <span className="font-bold text-sm text-blue-800 leading-tight">{pageTitle}</span>
                     </div>
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-blue-700">
-                            <Lock size={14} />
-                            <span className="text-xs font-semibold">Uploaded &amp; accepted</span>
+
+                    <div className="flex flex-col gap-2 mt-auto pt-2 border-t border-blue-200/50">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-blue-700/70 bg-blue-100/30 px-2 py-1 rounded-md">
+                                <Lock size={12} strokeWidth={2.5} />
+                                <span className="text-[9px] font-bold uppercase tracking-wider">Secure</span>
+                            </div>
+                            <span className="text-[10px] text-blue-600 font-bold">{t?.('upload.documentUploaded') || 'Success'}</span>
                         </div>
                         <button
                             onClick={() => {
@@ -139,12 +171,12 @@ const SHGUploadCard = ({
                                 onViewPermanentlyUploadedFile(shg.shgId, pg);
                             }}
                             disabled={isViewingPermanent}
-                            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-100 text-blue-700 hover:bg-blue-200 rounded-md font-semibold text-xs transition-colors"
+                            className="flex items-center justify-center gap-1.5 w-full px-2 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg font-bold text-xs transition-all shadow-md shadow-blue-500/20 active:scale-95"
                         >
                             {isViewingPermanent
-                                ? <div className="animate-spin rounded-full h-3 w-3 border-2 border-blue-600 border-t-transparent" />
-                                : <Eye size={12} />}
-                            View
+                                ? <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent" />
+                                : <Eye size={14} />}
+                            {t?.('upload.viewDocument') || 'View Document'}
                         </button>
                     </div>
                 </div>
@@ -153,34 +185,42 @@ const SHGUploadCard = ({
 
         // ── REJECTED server page → show re-upload slot ────────────────────
         const rejectionLabel = isRejectedOnServer && !fileData ? (
-            <div className="mb-2 bg-red-50 rounded-lg p-2 border-l-4 border-red-500">
-                <p className="text-[10px] font-bold text-red-700 uppercase tracking-wide mb-0.5">
-                    <AlertTriangle size={10} className="inline mr-1" />Page {pageNum} Rejected
-                </p>
-                <p className="text-xs text-gray-700">
-                    {rejectionInfo?.rejectionReason || 'Please re-upload this page.'}
+            <div className="mb-3 bg-white rounded-lg p-2 border border-rose-100 shadow-sm relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-1 h-full bg-rose-500" />
+                <div className="flex items-center gap-2 mb-1">
+                    <div className="bg-rose-50 p-1 rounded-md">
+                        <AlertCircle size={10} className="text-rose-600" />
+                    </div>
+                    <p className="text-[9px] font-black text-rose-700 uppercase tracking-widest leading-none">
+                        Page {pageNum} Rejected
+                    </p>
+                </div>
+                <p className="text-[10px] text-gray-500 leading-tight pl-1 italic">
+                    "{rejectionInfo?.rejectionReason || 'Document criteria not met.'}"
                 </p>
             </div>
         ) : null;
 
         // ── Normal (pending) or re-upload slot ────────────────────────────
         return (
-            <div className={`p-3 rounded-xl border-2 transition-all ${fileData
-                    ? fileData.validated ? 'border-green-400 bg-green-50/50' : 'border-yellow-400 bg-yellow-50/50'
-                    : isRejectedOnServer ? 'border-red-300 bg-red-50/30' : 'border-dashed border-gray-300 bg-gray-50/50'
+            <div className={`p-3 rounded-xl border-2 transition-all duration-300 flex flex-col h-full ${fileData
+                    ? fileData.validated ? 'border-green-400 bg-green-50/40 shadow-sm shadow-green-100' : 'border-amber-400 bg-amber-50/40 shadow-sm shadow-amber-100'
+                    : isRejectedOnServer ? 'border-rose-200 bg-rose-50/40' : 'border-dashed border-gray-200 bg-gray-50/50 hover:bg-gray-100/50'
                 }`}>
-                <div className="flex items-center justify-between mb-2">
-                    <span className="font-bold text-sm text-gray-700">{pageTitle}</span>
-                    {isRejectedOnServer && !fileData && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700 flex items-center gap-1">
-                            <X size={10} /> Rejected
-                        </span>
-                    )}
-                    {fileData && (
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${fileData.validated ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                            {fileData.validated ? 'Validated' : 'Pending Validation'}
-                        </span>
-                    )}
+                <div className="flex flex-col gap-2 mb-3">
+                    <div className="flex flex-wrap gap-2">
+                        {isRejectedOnServer && !fileData && (
+                            <span className="text-[9px] font-black px-2 py-0.5 rounded-md bg-rose-100 text-rose-700 uppercase tracking-tighter flex items-center gap-1 border border-rose-200">
+                                <X size={10} strokeWidth={3} /> {t?.('upload.reupload') || 'RE-UPLOAD'}
+                            </span>
+                        )}
+                        {fileData && (
+                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-md border ${fileData.validated ? 'bg-green-100 text-green-700 border-green-200' : 'bg-yellow-100 text-yellow-700 border-yellow-200'}`}>
+                                {fileData.validated ? t?.('upload.validated') || 'Validated' : 'Pending'}
+                            </span>
+                        )}
+                    </div>
+                    <span className={`font-bold text-sm leading-tight ${isRejectedOnServer ? 'text-rose-800' : 'text-gray-700'}`}>{pageTitle}</span>
                 </div>
 
                 {rejectionLabel}
@@ -210,17 +250,17 @@ const SHGUploadCard = ({
                                 <span>{t?.('upload.analyzing') || 'Analyzing...'}</span>
                             </button>
                         ) : (
-                            <div className="flex flex-col gap-2">
+                            <div className="mt-auto pt-2 space-y-2">
                                 {isRejectedOnServer && (
-                                    <p className="text-[10px] text-red-600 font-bold flex items-center gap-1 mb-1">
-                                        <RefreshCw size={10} /> Upload a replacement for this page
+                                    <p className="text-[10px] text-rose-600 font-bold flex items-center gap-1 mb-1">
+                                        <RefreshCw size={10} /> {t?.('upload.reuploadReplacement') || 'Upload a replacement'}
                                     </p>
                                 )}
                                 {!isMobileDevice && (
                                     <button
                                         onClick={() => fileInputRefs.current[pageKey]?.click()}
-                                        className={`flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg font-bold cursor-pointer transition-all border shadow-sm text-xs ${isRejectedOnServer
-                                                ? 'bg-red-50 text-red-700 hover:bg-red-100 border-red-200'
+                                        className={`flex items-center justify-center gap-1.5 w-full px-3 py-1.5 rounded-lg font-bold cursor-pointer transition-all border shadow-sm text-xs ${isRejectedOnServer
+                                                ? 'bg-rose-50 text-rose-700 hover:bg-rose-100 border-rose-200'
                                                 : 'bg-white text-gray-700 hover:bg-gray-50 hover:border-blue-300'
                                             }`}
                                     >
@@ -234,8 +274,8 @@ const SHGUploadCard = ({
                                     <button
                                         onClick={() => onOpenCamera(shg.shgId, shg.shgName, pageNum)}
                                         disabled={isUploading}
-                                        className={`flex items-center justify-center gap-1.5 w-full px-3 py-2 rounded-lg font-bold cursor-pointer transition-all text-xs ${isRejectedOnServer
-                                                ? 'bg-red-50 text-red-700 hover:bg-red-100'
+                                        className={`flex items-center justify-center gap-1.5 w-full px-3 py-1.5 rounded-lg font-bold cursor-pointer transition-all text-xs ${isRejectedOnServer
+                                                ? 'bg-rose-50 text-rose-700 hover:bg-rose-100'
                                                 : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
                                             }`}
                                     >
@@ -309,24 +349,10 @@ const SHGUploadCard = ({
         );
     };
 
-    // ── Compute upload button state for partial/full flows ────────────────
-    // In partial reupload mode: only the rejected page needs to be ready
-    const canSubmitPartial = isPartialUpload && (
-        (p1Rejected && page1Validated && filesData.page1) ||
-        (p2Rejected && page2Validated && filesData.page2)
-    );
-    const canSubmitFull = !isPartialUpload && page1Validated && page2Validated;
     const canSubmit = canSubmitFull || canSubmitPartial;
 
-    // ── Card header glow for fully-accepted (blue) ───────────────────────
-    const headerAccent = isFullyAccepted
-        ? 'bg-gradient-to-r from-blue-600 to-indigo-600'
-        : isPartialUpload
-            ? 'bg-gradient-to-r from-amber-500 to-orange-500'
-            : null;
-
     return (
-        <div className={`relative bg-white rounded-xl shadow-md border-2 transition-all ${cardBorderClass}`}>
+        <div className={`relative bg-white rounded-xl shadow-md border-2 transition-all duration-500 ${cardBorderClass}`}>
 
             {/* FULLY ACCEPTED BADGE */}
             {isFullyAccepted && (
@@ -350,22 +376,33 @@ const SHGUploadCard = ({
             )}
 
             {/* CARD HEADER */}
-            <div className={`p-3 sm:p-4 border-b border-gray-100 ${headerAccent ? `${headerAccent} rounded-t-[10px]` : ''}`}>
-                <h3 className={`font-bold text-sm line-clamp-1 truncate ${headerAccent ? 'text-white' : 'text-gray-800'}`}>
-                    {shg.shgName}
-                </h3>
-                <div className="flex items-center gap-2 mt-0.5">
-                    <p className={`text-xs font-mono ${headerAccent ? 'text-white/80' : 'text-gray-500'}`}>{shg.shgId}</p>
-                    {/* Page status chips */}
-                    {(p1AcceptedOnServer || p1Rejected) && (
-                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${p1AcceptedOnServer ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
-                            P1 {p1AcceptedOnServer ? '✓' : '✗'}
-                        </span>
-                    )}
-                    {(p2AcceptedOnServer || p2Rejected) && (
-                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full ${p2AcceptedOnServer ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
-                            P2 {p2AcceptedOnServer ? '✓' : '✗'}
-                        </span>
+            <div className={`p-4 ${headerAccent} rounded-t-[10px] transition-all duration-500`}>
+                <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                        <h3 className="font-extrabold text-sm sm:text-base leading-tight mb-1 truncate">
+                            {shg.shgName}
+                        </h3>
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <p className={`text-xs ${idBadgeClass} font-mono tracking-tighter rounded-md px-1.5 py-0.5`}>
+                                {shg.shgId}
+                            </p>
+                            {/* Page status chips */}
+                            {(p1AcceptedOnServer || p1Rejected) && (
+                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-md shadow-sm flex items-center gap-1 ${p1AcceptedOnServer ? 'bg-blue-700/80 text-white' : 'bg-rose-600/90 text-white'}`}>
+                                    Page 1 {p1AcceptedOnServer ? '✓' : '✗'}
+                                </span>
+                            )}
+                            {(p2AcceptedOnServer || p2Rejected) && (
+                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-md shadow-sm flex items-center gap-1 ${p2AcceptedOnServer ? 'bg-blue-700/80 text-white' : 'bg-rose-600/90 text-white'}`}>
+                                    Page 2 {p2AcceptedOnServer ? '✓' : '✗'}
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                    {(isFullyAccepted || isReadyToSubmit || canSubmitPartial || isFullyRejected) && (
+                        <div className="bg-white/20 backdrop-blur-md rounded-full p-1.5 border border-white/30 hidden sm:block">
+                            {isFullyAccepted ? <CheckCircle size={20} className="text-white" /> : (isFullyRejected ? <X size={20} className="text-white" /> : <Upload size={20} className="text-white" />)}
+                        </div>
                     )}
                 </div>
             </div>

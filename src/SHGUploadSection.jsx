@@ -1538,9 +1538,13 @@ const SHGUploadSection = ({
 
               <button
                 onClick={() => { setShowFailedOnly(!showFailedOnly); if (!showFailedOnly) { setShowUploadedOnly(false); setShowPendingOnly(false); } }}
-                className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl font-semibold transition-all flex items-center justify-center gap-2 text-sm sm:text-base ${showFailedOnly ? 'bg-red-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl font-semibold transition-all flex items-center justify-center gap-2 text-sm sm:text-base ${showFailedOnly
+                  ? 'bg-gradient-to-r from-rose-500 to-rose-600 text-white shadow-lg shadow-rose-100 ring-2 ring-rose-500/20'
+                  : 'bg-white text-gray-700 hover:bg-gray-50 border-2 border-gray-100'
+                  }`}
               >
-                <Filter size={16} className="sm:hidden" /><Filter size={18} className="hidden sm:block" />
+                <AlertTriangle size={16} className="sm:hidden" />
+                <AlertTriangle size={18} className="hidden sm:block" />
                 {t?.('upload.rejected') || 'Rejected'}
               </button>
 
@@ -1579,11 +1583,16 @@ const SHGUploadSection = ({
         <div className="space-y-8">
           {showFailedOnly && failedShgs.length > 0 && (
             <div>
-              <div className="flex items-center gap-2 mb-4 bg-white rounded-xl sm:rounded-2xl shadow-lg p-3 sm:p-4 border-2 border-red-300">
-                <AlertTriangle className="text-red-600" size={24} />
-                <h3 className="text-xl font-bold text-gray-800">
+              <div className="flex items-center gap-3 mb-4 bg-white rounded-xl sm:rounded-2xl shadow-xl shadow-gray-200/50 p-3 sm:p-5 border border-rose-100 overflow-hidden relative">
+                <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-rose-400 to-rose-600" />
+                <div className="bg-rose-50 p-2 rounded-lg">
+                  <AlertTriangle className="text-rose-500" size={24} />
+                </div>
+                <h3 className="text-xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
                   {t?.('upload.rejectedUploads') || 'Rejected Uploads'}
-                  <span className="ml-2 text-sm font-normal text-gray-500">({failedShgs.length})</span>
+                  <span className="ml-2 text-sm font-semibold text-rose-500/80 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-100">
+                    {failedShgs.length}
+                  </span>
                 </h3>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
