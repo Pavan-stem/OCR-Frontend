@@ -34,6 +34,7 @@ const ConversionView = ({ userId, userName, filterProps, onClose }) => {
     const [selectedSHG, setSelectedSHG] = useState(null);
     const [refreshing, setRefreshing] = useState(false);
     const [previewImage, setPreviewImage] = useState(null);
+    const [selectedPages, setSelectedPages] = useState({}); // { [shgID]: pageNum }
 
 
     // Month and Year filtering are now provided via filterProps
@@ -144,6 +145,7 @@ const ConversionView = ({ userId, userName, filterProps, onClose }) => {
 
 
     const handleRetryAll = async () => {
+        if (!window.confirm("Are you sure you want to retry all failed conversions?")) return;
         setRefreshing(true);
         try {
             const token = localStorage.getItem('token');
@@ -162,7 +164,8 @@ const ConversionView = ({ userId, userName, filterProps, onClose }) => {
         }
     };
 
-    const handleRetrySingle = async (queueId) => {
+    const handleRetrySingle = async (shgName, queueId) => {
+        if (!window.confirm(`Are you sure you want to retry conversion for ${shgName}?`)) return;
         try {
             const token = localStorage.getItem('token');
             const res = await fetch(`${API_BASE}/api/conversion/retry/${queueId}`, {
@@ -179,7 +182,7 @@ const ConversionView = ({ userId, userName, filterProps, onClose }) => {
     };
 
     const handleRejectSingle = async (item, folder) => {
-        if (!window.confirm(`Are you sure you want to reject and send back ${item.shgName}?`)) return;
+        if (!window.confirm(`Are you sure you want to reject and send back ${item.shgName} (Page ${item.page || 1})?`)) return;
         try {
             const token = localStorage.getItem('token');
             const payload = {
@@ -187,7 +190,7 @@ const ConversionView = ({ userId, userName, filterProps, onClose }) => {
                 rejectionReason: 'The Conversion has Failed, upload again'
             };
 
-            const res = await fetch(`${API_BASE}/api/admin/uploads/${item.uploadId}/status`, {
+            const res = await fetch(`${API_BASE}/api/admin/uploads/${item.uploadId || item.id}/status`, {
                 method: 'PUT',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -198,18 +201,8 @@ const ConversionView = ({ userId, userName, filterProps, onClose }) => {
 
             const data = await res.json();
             if (data.success) {
-                // Immediately remove from local state for better UX
-                setResults(prev => ({
-                    ...prev,
-                    [folder]: prev[folder].filter(i => i.uploadId !== item.uploadId)
-                }));
-                // Also update summary counts
-                setSummary(prev => ({
-                    ...prev,
-                    [folder === 'success' ? 'completed' : 'failed']: Math.max(0, prev[folder === 'success' ? 'completed' : 'failed'] - 1)
-                }));
-                // Delay refetch to allow backend to process deletion
-                setTimeout(() => fetchStatus(), 1000);
+                // Refetch to ensure grouping state stays correct
+                fetchStatus();
             } else {
                 alert(data.message || 'Failed to reject upload');
             }
@@ -220,6 +213,25 @@ const ConversionView = ({ userId, userName, filterProps, onClose }) => {
     };
 
     const filteredResults = results[activeFolder];
+
+    // Group filtered results by SHG ID
+    const groupResultsBySHG = (items) => {
+        const groups = {};
+        items.forEach((item, index) => {
+            const shgUID = item.shgID || `${item.shgName}_${index}`; // fallback if shgID is missing
+            if (!groups[shgUID]) {
+                groups[shgUID] = {
+                    shgID: item.shgID,
+                    shgName: item.shgName,
+                    pages: {}
+                };
+            }
+            groups[shgUID].pages[item.page || 1] = item;
+        });
+        return Object.values(groups);
+    };
+
+    const groupedResults = groupResultsBySHG(filteredResults);
 
     const getSidebarCount = (folder) => {
         return folder === 'success' ? summary.completed : summary.failed;
@@ -400,7 +412,7 @@ const ConversionView = ({ userId, userName, filterProps, onClose }) => {
                         {/* HEADER */}
                         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-4 sm:p-6 bg-gray-50/50 border-b border-gray-100">
                             <h4 className="text-xs font-black uppercase tracking-widest text-gray-500">
-                                Showing {filteredResults.length} {activeFolder} results
+                                Showing {groupedResults.length} {activeFolder} groups
                             </h4>
 
                             {activeFolder === 'failed' && filteredResults.length > 0 && (
@@ -409,7 +421,7 @@ const ConversionView = ({ userId, userName, filterProps, onClose }) => {
                                     className="w-full sm:w-auto px-4 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 flex items-center justify-center gap-2"
                                 >
                                     <RefreshCw className="w-3 h-3" />
-                                    Retry All Failed
+                                    Retry All Failed Tasks
                                 </button>
                             )}
                         </div>
@@ -448,142 +460,161 @@ const ConversionView = ({ userId, userName, filterProps, onClose }) => {
                             /* LIST */
                         ) : (
                             <div className="divide-y divide-gray-100">
-                                {filteredResults.map((item, idx) => (
-                                    <div
-                                        key={idx}
-                                        className="p-4 sm:p-6 hover:bg-gray-50/50 transition-colors"
-                                    >
-                                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                                {groupedResults.map((group, idx) => {
+                                    const availablePages = Object.keys(group.pages).sort();
+                                    const preferredPage = selectedPages[group.shgID];
+                                    const currentSelectedPage = (preferredPage && group.pages[preferredPage]) ? preferredPage : availablePages[0];
+                                    const item = group.pages[currentSelectedPage];
 
-                                            {/* LEFT */}
-                                            <div className="flex items-start gap-4">
-                                                <div
-                                                    className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl flex items-center justify-center shadow-md ${activeFolder === 'success'
-                                                        ? 'bg-emerald-50 text-emerald-600'
-                                                        : 'bg-red-50 text-red-600'
-                                                        }`}
-                                                >
-                                                    {activeFolder === 'success'
-                                                        ? <CheckCircle className="w-5 h-5 sm:w-6 sm:h-6" />
-                                                        : <AlertCircle className="w-5 h-5 sm:w-6 sm:h-6" />}
-                                                </div>
+                                    if (!item) return null;
 
-                                                <div>
-                                                    <h5 className="text-sm sm:text-base font-black text-gray-900 leading-tight flex items-center gap-2 flex-wrap">
-                                                        <span className="truncate">{item.shgName}</span>
-                                                        {/* Page badge — P1 (indigo) or P2 (violet) */}
-                                                        <span
-                                                            className={`text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest ${
-                                                                (item.page || 1) === 2
-                                                                    ? 'bg-violet-100 text-violet-700'
-                                                                    : 'bg-indigo-100 text-indigo-700'
+                                    return (
+                                        <div
+                                            key={idx}
+                                            className="p-4 sm:p-6 hover:bg-gray-50/50 transition-colors"
+                                        >
+                                            <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4">
+
+                                                {/* LEFT SECTION */}
+                                                <div className="flex items-start gap-4 flex-grow">
+                                                    <div
+                                                        className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl flex items-center justify-center shadow-md shrink-0 ${activeFolder === 'success'
+                                                            ? 'bg-emerald-50 text-emerald-600'
+                                                            : 'bg-red-50 text-red-600'
                                                             }`}
-                                                            title={`Form Page ${item.page || 1}`}
-                                                        >
-                                                            P{item.page || 1}
-                                                        </span>
-                                                        {item.isSynced && (
-                                                            <BookCheck className="w-4 h-4 text-emerald-500 shrink-0" title="Sent to DB" />
-                                                        )}
-                                                    </h5>
+                                                    >
+                                                        {activeFolder === 'success'
+                                                            ? <CheckCircle className="w-5 h-5 sm:w-6 sm:h-6" />
+                                                            : <AlertCircle className="w-5 h-5 sm:w-6 sm:h-6" />}
+                                                    </div>
 
-                                                    <div className="flex flex-wrap items-center gap-2 mt-1 text-[10px] text-gray-400 font-bold uppercase tracking-widest">
-                                                        <span>{item.shgID}</span>
-                                                        <span className="hidden sm:inline w-1 h-1 bg-gray-300 rounded-full" />
-                                                        <span className="normal-case font-medium">
+                                                    <div className="min-w-0">
+                                                        <h5 className="text-sm sm:text-base font-black text-gray-900 leading-tight">
+                                                            {group.shgName}
+                                                        </h5>
+
+                                                        {/* Details and Page Selectors */}
+                                                        <div className="flex flex-wrap items-center gap-3 mt-1.5">
+                                                            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest leading-none">
+                                                                {group.shgID}
+                                                            </span>
+
+                                                            {/* Page Switched Tabs */}
+                                                            <div className="flex items-center gap-1 bg-gray-100/80 p-0.5 rounded-lg border border-gray-200 shadow-inner">
+                                                                {[1, 2].map(pNum => {
+                                                                    const exists = !!group.pages[pNum];
+                                                                    const isActive = Number(currentSelectedPage) === pNum;
+
+                                                                    return (
+                                                                        <button
+                                                                            key={pNum}
+                                                                            disabled={!exists}
+                                                                            onClick={() => setSelectedPages(prev => ({ ...prev, [group.shgID]: pNum }))}
+                                                                            className={`text-[9px] font-black px-2 py-1 rounded-md uppercase tracking-wider transition-all disabled:opacity-30 ${isActive
+                                                                                    ? 'bg-indigo-600 text-white shadow-sm'
+                                                                                    : exists ? 'text-gray-500 hover:text-indigo-600' : 'text-gray-400'
+                                                                                }`}
+                                                                        >
+                                                                            P{pNum}{exists && isActive && '✓'}
+                                                                        </button>
+                                                                    );
+                                                                })}
+                                                            </div>
+
+                                                            {item.isSynced && (
+                                                                <BookCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" title="Sent to DB" />
+                                                            )}
+                                                        </div>
+
+                                                        <p className="text-[10px] text-gray-400 font-medium mt-1">
                                                             {activeFolder === 'success'
                                                                 ? `Converted: ${formatDate(item.convertedAt)}`
                                                                 : `Failed: ${formatDate(item.failedAt)}`}
-                                                        </span>
-                                                    </div>
-
-                                                    {activeFolder === 'failed' && (
-                                                        <p className="text-[10px] text-red-500 font-bold mt-2 bg-red-50 px-2 py-1 rounded-lg inline-block">
-                                                            Error: {item.error}
                                                         </p>
-                                                    )}
+
+                                                        {activeFolder === 'failed' && (
+                                                            <p className="text-[10px] text-red-500 font-bold mt-2 bg-red-50 px-2 py-1 rounded-lg inline-block line-clamp-1 border border-red-100">
+                                                                Error: {item.error}
+                                                            </p>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                            </div>
 
-                                            {/* ACTIONS */}
-                                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                                                {activeFolder === 'success' ? (
-                                                    <>
-                                                        {/* Primary Action */}
-                                                        <button
-                                                            onClick={() => setSelectedSHG(item)}
-                                                            className="px-5 py-3 bg-emerald-600 text-white rounded-xl font-bold text-sm hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
-                                                        >
-                                                            <FileCheck className="w-4 h-4" />
-                                                            View Table
-                                                        </button>
-
-                                                        {/* Secondary Actions */}
-                                                        <div className="flex gap-2">
+                                                {/* ACTIONS SECTION */}
+                                                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                                                    {activeFolder === 'success' ? (
+                                                        <>
                                                             <button
-                                                                onClick={() => setPreviewImage({ url: item.s3Url, name: item.shgName })}
-                                                                className="p-2.5 bg-white border-2 border-gray-200 text-gray-600 rounded-lg hover:border-indigo-500 hover:text-indigo-600 transition-all"
-                                                                title="View original image"
+                                                                onClick={() => setSelectedSHG(item)}
+                                                                className="px-5 py-2.5 bg-emerald-600 text-white rounded-xl font-bold text-xs hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 shadow-md hover:shadow-lg active:scale-95"
                                                             >
-                                                                <Eye className="w-4 h-4" />
+                                                                <FileCheck className="w-4 h-4" />
+                                                                View Table
                                                             </button>
+
+                                                            <div className="flex gap-2">
+                                                                <button
+                                                                    onClick={() => setPreviewImage({ url: item.s3Url, name: `${item.shgName} (P${item.page})` })}
+                                                                    className="p-2.5 bg-white border-2 border-gray-200 text-gray-500 rounded-lg hover:border-indigo-500 hover:text-indigo-600 transition-all active:scale-95 shadow-sm"
+                                                                    title="View original image"
+                                                                >
+                                                                    <Eye className="w-4 h-4" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleRetrySingle(item.shgName, item.id)}
+                                                                    className="p-2.5 bg-white border-2 border-gray-200 text-gray-500 rounded-lg hover:border-amber-500 hover:text-amber-600 transition-all active:scale-95 shadow-sm"
+                                                                    title="Retry conversion"
+                                                                >
+                                                                    <RefreshCw className="w-4 h-4" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleRejectSingle(item, 'success')}
+                                                                    className="p-2.5 bg-white border-2 border-gray-200 text-gray-500 rounded-lg hover:border-red-500 hover:text-red-600 transition-all active:scale-95 shadow-sm"
+                                                                    title="Reject and send back to VO"
+                                                                >
+                                                                    <XCircle className="w-4 h-4" />
+                                                                </button>
+                                                            </div>
+                                                        </>
+                                                    ) : (
+                                                        <>
                                                             <button
-                                                                onClick={() => handleRetrySingle(item.id)}
-                                                                className="p-2.5 bg-white border-2 border-gray-200 text-gray-600 rounded-lg hover:border-amber-500 hover:text-amber-600 transition-all"
-                                                                title="Retry conversion"
+                                                                onClick={() => handleRetrySingle(item.shgName, item.id)}
+                                                                className="px-5 py-2.5 bg-red-600 text-white rounded-xl font-bold text-xs hover:bg-red-700 transition-all flex items-center justify-center gap-2 shadow-md hover:shadow-lg active:scale-95"
                                                             >
                                                                 <RefreshCw className="w-4 h-4" />
+                                                                Retry Conversion
                                                             </button>
-                                                            <button
-                                                                onClick={() => handleRejectSingle(item, 'success')}
-                                                                className="p-2.5 bg-white border-2 border-gray-200 text-gray-600 rounded-lg hover:border-red-500 hover:text-red-600 transition-all"
-                                                                title="Reject and send back to VO"
-                                                            >
-                                                                <XCircle className="w-4 h-4" />
-                                                            </button>
-                                                        </div>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        {/* Primary Action */}
-                                                        <button
-                                                            onClick={() => handleRetrySingle(item.id)}
-                                                            className="px-5 py-3 bg-red-600 text-white rounded-xl font-bold text-sm hover:bg-red-700 transition-all flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
-                                                        >
-                                                            <RefreshCw className="w-4 h-4" />
-                                                            Retry
-                                                        </button>
 
-                                                        {/* Secondary Actions */}
-                                                        <div className="flex gap-2">
-                                                            <button
-                                                                onClick={() => setPreviewImage({ url: item.s3Url, name: item.shgName })}
-                                                                className="p-2.5 bg-white border-2 border-gray-200 text-gray-600 rounded-lg hover:border-indigo-500 hover:text-indigo-600 transition-all"
-                                                                title="View original image"
-                                                            >
-                                                                <Eye className="w-4 h-4" />
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleRejectSingle(item, 'failed')}
-                                                                className="p-2.5 bg-white border-2 border-gray-200 text-gray-600 rounded-lg hover:border-red-500 hover:text-red-600 transition-all"
-                                                                title="Reject and send back to VO"
-                                                            >
-                                                                <XCircle className="w-4 h-4" />
-                                                            </button>
-                                                        </div>
-                                                    </>
-                                                )}
+                                                            <div className="flex gap-2">
+                                                                <button
+                                                                    onClick={() => setPreviewImage({ url: item.s3Url, name: `${item.shgName} (P${item.page})` })}
+                                                                    className="p-2.5 bg-white border-2 border-gray-200 text-gray-500 rounded-lg hover:border-indigo-500 hover:text-indigo-600 transition-all active:scale-95 shadow-sm"
+                                                                    title="View original image"
+                                                                >
+                                                                    <Eye className="w-4 h-4" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleRejectSingle(item, 'failed')}
+                                                                    className="p-2.5 bg-white border-2 border-gray-200 text-gray-500 rounded-lg hover:border-red-500 hover:text-red-600 transition-all active:scale-95 shadow-sm"
+                                                                    title="Reject and send back to VO"
+                                                                >
+                                                                    <XCircle className="w-4 h-4" />
+                                                                </button>
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </div>
+
                                             </div>
-
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
-
                         )}
 
                         {/* PAGINATION CONTROLS */}
-                        {!loading && filteredResults.length > 0 && (
+                        {!loading && groupedResults.length > 0 && (
                             <div className="p-4 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">
                                 <button
                                     onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
