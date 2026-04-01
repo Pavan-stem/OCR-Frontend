@@ -100,15 +100,14 @@ const cvReady = () => !!(window.cv && window.cv.Mat);
  *   Recommended: 3 for text, 5 for fine lines or noisy sources.
  *
  * ─────────────────────────────────────────────────────────────────────────── */
-const ADAPTIVE_BLOCK_SIZE = 11;
 const ADAPTIVE_C = 4;
 const BLUR_KSIZE = 3;
 const OPEN_KSIZE = 1;
-const MIN_BLOB_AREA = 15;
-const BLEND_ALPHA = 0.6;   // how much of the divided image bleeds into result
-const INK_DARKEN = 0.8;     // extra darkening on ink-detected pixels only
-const SHARPEN_AMOUNT = 1.2; // unsharp mask strength — raise for more crispness
-const SHARPEN_BLUR_KSIZE = 7; // unsharp mask internal blur kernel (odd, ≥ 3)
+
+/* Note: These are now used as base values or defaults,
+ * but are overridden by dynamic calculations inside enhanceImage. */
+const BLEND_ALPHA = 0.7;   // increased for clearer ink
+const INK_DARKEN = 0.7;     // lowered for bolder ink
 
 export const enhanceImage = async (
     canvas,
@@ -153,6 +152,14 @@ export const enhanceImage = async (
         const W = gray.cols;
         const minDim = Math.min(H, W);
 
+        /* ── DYNAMIC PARAMETERS ───────────────────────────────
+         * Scale kernels and thresholds based on resolution.
+         */
+        const dynAdaptiveSize = Math.max(3, Math.floor(minDim / 80) * 2 + 1);
+        const dynMinBlobArea = Math.max(4, Math.round((W * H) / 300000));
+        const dynSharpenAmount = 1.2;
+        const dynSharpenBlur = Math.max(3, Math.floor(minDim / 400) * 2 + 1);
+
         /* ── STEP 2 : BACKGROUND MODEL ──────────────────────────
          * Downscale → dilate → upscale.
          * Produces smooth illumination map with no ink detail.
@@ -167,7 +174,11 @@ export const enhanceImage = async (
         small = new cv.Mat();
         cv.resize(gray, small, new cv.Size(sW, sH), 0, 0, cv.INTER_AREA);
 
-        const k = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(25, 25));
+        // Scaled dilation kernel: larger for higher resolution/shadows
+        const dilateSize = Math.max(21, Math.round(30 * scale * (minDim / 1000)));
+        const kSize = Math.max(5, Math.min(41, dilateSize % 2 === 0 ? dilateSize + 1 : dilateSize));
+
+        const k = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(kSize, kSize));
         dilated = new cv.Mat();
         cv.dilate(small, dilated, k);
         k.delete();
@@ -178,26 +189,34 @@ export const enhanceImage = async (
         /* ── STEP 3 : DIVIDE ────────────────────────────────────
          * output = (gray / background) × 255
          * Flattens illumination. Paper → near-white. Ink → relatively darker.
-         * This Mat is KEPT (not deleted) — it is used as the blend source in Step 9.
          */
         onProgress('Whitening paper…');
         await tick();
         divided = new cv.Mat();
         cv.divide(gray, bg, divided, 255, -1);
 
-        /* ── STEP 4 : NORMALIZE + CLAMP ────────────────────────
-         * Produce clean white canvas. This is the BASE that ink will be
-         * blended onto in Step 9 — it should be as white as possible.
+        /* ── STEP 4 : WHITE POINT STRETCHING ──────────────────
+         * Aggressively punch through "oily stains" and shadows.
+         * Maps [0, WHITE_POINT] to [0, 255], effectively clipping
+         * everything above WHITE_POINT to pure white.
          */
-        onProgress('Preparing white canvas…');
+        onProgress('Stretching highlights…');
         await tick();
         result = new cv.Mat();
-        cv.normalize(divided, result, 0, 255, cv.NORM_MINMAX, cv.CV_8U);
-        cv.threshold(result, result, 245, 255, cv.THRESH_TRUNC);
-        cv.normalize(result, result, 0, 255, cv.NORM_MINMAX, cv.CV_8U);
+        const WHITE_POINT = 230; // Anything above 230 becomes pure white
+        
+        // Manual stretch: output = input * (255 / WHITE_POINT)
+        divided.convertTo(result, cv.CV_8U, 255 / WHITE_POINT, 0);
 
-        /* Also normalize divided to 0–255 so blend values are in the right range */
+        /* Pre-clean divided image for Step 9 blend */
         cv.normalize(divided, divided, 0, 255, cv.NORM_MINMAX, cv.CV_8U);
+        const divData = divided.data;
+        for (let i = 0; i < divData.length; i++) {
+            if (divData[i] > 210) {
+                // Smoothly push near-white background to pure white
+                divData[i] = Math.min(255, divData[i] + (255 - divData[i]) * 0.8);
+            }
+        }
 
         /* ── STEP 5 : PRE-BLUR ───────────────────────────────────
          * Gaussian blur on original gray before adaptive threshold.
@@ -221,7 +240,7 @@ export const enhanceImage = async (
             255,
             cv.ADAPTIVE_THRESH_GAUSSIAN_C,
             cv.THRESH_BINARY_INV,
-            ADAPTIVE_BLOCK_SIZE,
+            dynAdaptiveSize,
             ADAPTIVE_C
         );
 
@@ -257,7 +276,7 @@ export const enhanceImage = async (
         keepLabel[0] = 0;
         for (let lbl = 1; lbl < numLabels; lbl++) {
             const area = stats.intAt(lbl, cv.CC_STAT_AREA);
-            keepLabel[lbl] = area >= MIN_BLOB_AREA ? 1 : 0;
+            keepLabel[lbl] = area >= dynMinBlobArea ? 1 : 0;
         }
 
         const labelData = labels.data32S;
@@ -341,7 +360,7 @@ export const enhanceImage = async (
          *   Halo / ringing artefact → lower SHARPEN_AMOUNT or raise SHARPEN_BLUR_KSIZE
          *   Very fine/thin strokes  → keep SHARPEN_BLUR_KSIZE at 3 (tighter kernel)
          */
-        if (SHARPEN_AMOUNT > 0) {
+        if (dynSharpenAmount > 0) {
             onProgress('Sharpening edges…');
             await tick();
 
@@ -349,7 +368,7 @@ export const enhanceImage = async (
             cv.GaussianBlur(
                 result,
                 blurForSharp,
-                new cv.Size(SHARPEN_BLUR_KSIZE, SHARPEN_BLUR_KSIZE),
+                new cv.Size(dynSharpenBlur, dynSharpenBlur),
                 0
             );
 
@@ -358,7 +377,7 @@ export const enhanceImage = async (
                 // edge detail = original − blurred
                 const detail = resultData[i] - blurData[i];
                 // add scaled detail back
-                const sharpened = resultData[i] + SHARPEN_AMOUNT * detail;
+                const sharpened = resultData[i] + dynSharpenAmount * detail;
                 // clamp to valid byte range
                 resultData[i] = Math.min(255, Math.max(0, Math.round(sharpened)));
             }
@@ -368,11 +387,10 @@ export const enhanceImage = async (
         cv.imshow(out, result);
 
         console.log(
-            `[Enhance] v13-blend ✓ soft blend + unsharp mask | ` +
-            `blur=${BLUR_KSIZE} block=${ADAPTIVE_BLOCK_SIZE} C=${ADAPTIVE_C} ` +
-            `open=${OPEN_KSIZE} minBlob=${MIN_BLOB_AREA} ` +
+            `[Enhance] v14-robust ✓ Dynamic scaling + aggressive whitening | ` +
+            `adaptiveSize=${dynAdaptiveSize} minBlob=${dynMinBlobArea} ` +
             `alpha=${BLEND_ALPHA} darken=${INK_DARKEN} ` +
-            `sharpen=${SHARPEN_AMOUNT} sharpBlur=${SHARPEN_BLUR_KSIZE} | src:${source}`
+            `sharpen=${dynSharpenAmount} sharpBlur=${dynSharpenBlur} | src:${source}`
         );
         return out;
 
