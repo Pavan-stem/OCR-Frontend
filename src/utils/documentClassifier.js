@@ -3,7 +3,7 @@
 function safeDelete(obj) {
   try {
     if (obj && typeof obj.delete === 'function') obj.delete();
-  } catch (_) {}
+  } catch (_) { }
 }
 
 function getContourRects(binaryMat) {
@@ -34,30 +34,32 @@ function getContourRects(binaryMat) {
   return rects;
 }
 
-function mergeCloseLines(rects, axis, tolerance, minLength) {
-  const centers = [];
+function mergeCloseLines(rects, axis, tolerance, minTotalLength) {
+  if (rects.length === 0) return 0;
 
-  for (const r of rects) {
-    const length = axis === 'x' ? r.height : r.width;
-    if (length < minLength) continue;
+  // Use x for vertical, y for horizontal
+  const sorted = [...rects].sort((a, b) => a[axis] - b[axis]);
 
-    const center = axis === 'x'
-      ? r.x + r.width / 2
-      : r.y + r.height / 2;
+  let count = 0;
+  let i = 0;
+  while (i < sorted.length) {
+    let j = i + 1;
+    let totalLength = axis === 'x' ? sorted[i].height : sorted[j-1].width; // Wait, typo in my thought, fixing below
+    
+    // Actually axis === 'x' ? height : width
+    totalLength = axis === 'x' ? sorted[i].height : sorted[i].width;
 
-    centers.push(center);
-  }
-
-  centers.sort((a, b) => a - b);
-
-  const merged = [];
-  for (const c of centers) {
-    if (!merged.length || Math.abs(c - merged[merged.length - 1]) > tolerance) {
-      merged.push(c);
+    while (j < sorted.length && (sorted[j][axis] - sorted[j-1][axis]) <= tolerance) {
+      totalLength += (axis === 'x' ? sorted[j].height : sorted[j].width);
+      j++;
     }
-  }
 
-  return merged.length;
+    if (totalLength >= minTotalLength) {
+      count++;
+    }
+    i = j;
+  }
+  return count;
 }
 
 function detectLineMasks(srcMat) {
@@ -122,26 +124,23 @@ function extractLineFeatures(mat) {
     const vRects = getContourRects(vertical);
     const hRects = getContourRects(horizontal);
 
-    const verticalRects = vRects.filter(
-      r => r.height > height * 0.70 && r.width < width * 0.15
-    );
-
-    const horizontalRects = hRects.filter(
-      r => r.width > width * 0.10 && r.height < height * 0.15
-    );
-
+    // Precise Line Detection:
+    // 1. Vertical (Columns): Use a smaller tolerance (4px - 8px) so close columns aren't merged. 
+    //    Each must total at least 35% of image height to be counted.
     const verticalCount = mergeCloseLines(
-      verticalRects,
+      vRects,
       'x',
-      Math.max(8, Math.floor(width * 0.01)),
-      Math.floor(height * 0.70)
+      Math.max(4, Math.floor(width * 0.005)), // ~10px at 2000px, prevents merging adjacent columns
+      Math.floor(height * 0.35)             // Must cover 35% of total height (avoids text noise)
     );
 
+    // 2. Horizontal (Rows): Use ~15-20px tolerance. 
+    //    Each must total at least 30% of image width.
     const horizontalCount = mergeCloseLines(
-      horizontalRects,
+      hRects,
       'y',
-      Math.max(8, Math.floor(height * 0.01)),
-      Math.floor(width * 0.10)
+      Math.max(4, Math.floor(height * 0.008)), // ~12px at 1500px, prevents merging narrow rows
+      Math.floor(width * 0.3)                // Must cover 30% of total width
     );
 
     return {
@@ -285,18 +284,23 @@ export function classifyDocumentByLines(mat) {
       horizontalCount
     });
 
-    // Exact tuned logic from your document structure
-    const isPage1 =
-      verticalCount >= 14 &&
-      verticalCount <= 20 &&
-      horizontalCount >= 18 &&
-      horizontalCount <= 26;
+    console.log('[Classifier] Line counts:', { verticalCount, horizontalCount });
 
+    // Page 1 has a dense column grid (usually 11+ columns -> 12+ lines).
+    // Minimum 10 vertical lines is a safe floor to ensure Page 2 (usually <= 8 lines) is excluded.
+    const isPage1 =
+      verticalCount >= 10 &&
+      verticalCount <= 30 &&
+      horizontalCount >= 8 &&
+      horizontalCount <= 45;
+
+    // Page 2 has fewer columns (usually 4-7 columns -> 5-8 lines).
+    // Maximum 9 vertical lines ensures Page 1 is excluded.
     const isPage2 =
-      verticalCount >= 4 &&
-      verticalCount <= 8 &&
-      horizontalCount >= 24 &&
-      horizontalCount <= 32;
+      verticalCount >= 2 &&
+      verticalCount <= 9 &&
+      horizontalCount >= 4 &&
+      horizontalCount <= 50;
 
     if (isPage1) {
       return {
@@ -316,16 +320,17 @@ export function classifyDocumentByLines(mat) {
       };
     }
 
-    // Fallback based mainly on vertical line count
+    // Fallback logic using the 10-line vertical boundary
     if (verticalCount >= 10) {
       return {
         ok: true,
         type: 'PAGE1',
-        message: 'Detected Page 1 document (fallback)',
+        message: 'Detected Page 1 document (fallback — high vertical count)',
         details: f
       };
     }
 
+    // Lower vertical count (<10) is much more likely to be Page 2
     return {
       ok: true,
       type: 'PAGE2',
