@@ -273,7 +273,6 @@ const detectTableOpenCV = (src) => {
         maxY = Math.max(maxY, r.y + r.height);
         found = true;
     }
-    combined.delete(); bbContours.delete(); bbHier.delete();
 
     const tableWidth = maxX - minX;
     const tableHeight = maxY - minY;
@@ -284,6 +283,20 @@ const detectTableOpenCV = (src) => {
         if (minX <= margin || minY <= margin || maxX >= src.cols - margin || maxY >= src.rows - margin)
             isTableCutOff = true;
     }
+
+    // NEW: Extract table points for tight cropping
+    let tablePoints = null;
+    if (found) {
+        // Use the bounding box for now as it's stable, but convert to 4-point format
+        tablePoints = [
+            { x: minX, y: minY },
+            { x: maxX, y: minY },
+            { x: maxX, y: maxY },
+            { x: minX, y: maxY }
+        ];
+    }
+
+    combined.delete(); bbContours.delete(); bbHier.delete();
 
     // ── 5. Row / col band count ──────────────────────────────────────────────
     const kH = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(Math.round(src.cols / 20), 1));
@@ -312,7 +325,9 @@ const detectTableOpenCV = (src) => {
         isFullFrame,
         rowCount,
         colCount,
-        junctionCount
+        junctionCount,
+        tablePoints,
+        tableBounds: found ? { x: minX, y: minY, width: tableWidth, height: tableHeight } : null
     };
 };
 
@@ -598,7 +613,31 @@ export const scanDocument = async (file) => {
                     let isCutOff = false;
                     let crop = null;
 
-                    if (edges.detected) {
+                    // 5. Table Detection
+                    const tableAnalysis = detectTableOpenCV(src);
+                    const hasTable = tableAnalysis.hasTable;
+
+                    if (hasTable && tableAnalysis.tablePoints) {
+                        const b = tableAnalysis.tableBounds;
+                        // Use table bounds for cropping with a small 2% safety padding
+                        const padX = b.width * 0.02;
+                        const padY = b.height * 0.02;
+
+                        crop = {
+                            x: Math.round(Math.max(0, b.x - padX)),
+                            y: Math.round(Math.max(0, b.y - padY)),
+                            width: Math.round(Math.min(width - Math.max(0, b.x - padX), b.width + padX * 2)),
+                            height: Math.round(Math.min(height - Math.max(0, b.y - padY), b.height + padY * 2)),
+                            contourPoints: [
+                                { x: Math.round(Math.max(0, b.x - padX)), y: Math.round(Math.max(0, b.y - padY)) },
+                                { x: Math.round(Math.min(width, b.x + b.width + padX)), y: Math.round(Math.max(0, b.y - padY)) },
+                                { x: Math.round(Math.min(width, b.x + b.width + padX)), y: Math.round(Math.min(height, b.y + b.height + padY)) },
+                                { x: Math.round(Math.max(0, b.x - padX)), y: Math.round(Math.min(height, b.y + b.height + padY)) }
+                            ],
+                            originalDimensions: { width, height }
+                        };
+                        if (tableAnalysis.isTableCutOff) isCutOff = true;
+                    } else if (edges.detected) {
                         const b = edges.bounds;
                         const margin = 2;
                         if (b.x <= margin || b.y <= margin || (b.x + b.width) >= (width - margin) || (b.y + b.height) >= (height - margin)) {
@@ -615,11 +654,6 @@ export const scanDocument = async (file) => {
                             originalDimensions: { width, height }
                         };
                     }
-
-                    // 5. Table Detection
-                    const tableAnalysis = detectTableOpenCV(src);
-                    const hasTable = tableAnalysis.hasTable;
-                    if (tableAnalysis.isTableCutOff) isCutOff = true;
 
                     // 6. Screenshot / Digital UI
                     const screenshotAnalysis = detectScreenshotOpenCV(src);
@@ -1154,3 +1188,4 @@ export const drawTableOverlay = (canvas, contour, isValid, scaleX, scaleY) => {
         ctx.fill();
     });
 };
+

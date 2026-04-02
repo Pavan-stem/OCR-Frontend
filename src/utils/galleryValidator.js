@@ -855,9 +855,9 @@ function autoCropDocument(cv, src, corners) {
     const maxWidth = Math.max(widthTop, widthBottom);
     const maxHeight = Math.max(heightLeft, heightRight);
 
-    const expandTop = maxHeight * 0.25;
-    const expandSide = maxWidth * 0.22;
-    const expandBottom = maxHeight * 0.18;
+    const expandTop = maxHeight * 0.02;
+    const expandSide = maxWidth * 0.02;
+    const expandBottom = maxHeight * 0.02;
 
     const expanded = [
         { x: ordered[0].x - expandSide, y: ordered[0].y - expandTop },

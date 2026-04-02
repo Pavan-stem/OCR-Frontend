@@ -89,6 +89,7 @@ const SHGUploadSection = ({
   };
 
   const isDeveloper = user?.role?.toLowerCase().includes('developer') || (user?.voID && String(user.voID).length === 4);
+  const isAuthorizedVO = user?.role?.toLowerCase() === 'vo' || user?.role?.toLowerCase().includes('developer') || user?.role?.toLowerCase().startsWith('vo-');
   const isTestMode = window.location.pathname.startsWith('/SMD');
   const hasAIFeatures = isTestMode && isDeveloper;
 
@@ -1028,7 +1029,7 @@ const SHGUploadSection = ({
     }
 
     // Role & Period Restrictions (Submission Guard)
-    const isVO = user?.role?.toLowerCase() === 'vo';
+    const isVO = isAuthorizedVO;
     const m = parseInt(selectedMonth);
     const y = parseInt(selectedYear);
 
@@ -1122,7 +1123,7 @@ const SHGUploadSection = ({
     }
 
     // Role & Period Restrictions (Submission Guard)
-    const isVO = user?.role?.toLowerCase() === 'vo';
+    const isVO = isAuthorizedVO;
     const m = parseInt(selectedMonth);
     const y = parseInt(selectedYear);
 
@@ -1302,7 +1303,7 @@ const SHGUploadSection = ({
           <div className="flex-1 min-w-[140px] sm:min-w-[180px]">
             <label className="block text-xs sm:text-sm font-bold text-white/90 mb-2">
               {t?.('upload.month') || 'Month'} <span className="text-yellow-300">*</span>
-              {user?.role?.toLowerCase() === 'vo' && (
+              {isAuthorizedVO && (
                 <span className="ml-2 text-[10px] bg-white/20 px-2 py-0.5 rounded-full">{t?.('upload.currentPastOnly') || 'Current & Past Only'}</span>
               )}
             </label>
@@ -1316,7 +1317,7 @@ const SHGUploadSection = ({
                 const selectedY = parseInt(selectedYear);
 
                 // Role & Period Restrictions (March/April/May 2026 Enforcement)
-                const isVO = user?.role?.toLowerCase() === 'vo';
+                const isVO = isAuthorizedVO;
                 if (!isVO) return; // Only VOs can select ANY month for upload
 
                 // Block April & May 2026 for everyone (even VOs/Developers)
@@ -1349,7 +1350,7 @@ const SHGUploadSection = ({
                 const mVal = parseInt(m.val);
 
                 // NEW RESTRICTIONS:
-                const isVO = user?.role?.toLowerCase() === 'vo';
+                const isVO = isAuthorizedVO;
                 const isAprilMay2026 = selectedY === 2026 && (mVal === 4 || mVal === 5);
                 const isPostMarch2026 = selectedY > 2026 || (selectedY === 2026 && mVal > 3);
 
@@ -1378,7 +1379,7 @@ const SHGUploadSection = ({
               <option value="">{t?.('upload.selectYear') || 'Select Year'}</option>
               {Array.from({ length: 5 }, (_, i) => {
                 const y = new Date().getFullYear() - 1 + i;
-                const isVO = user?.role?.toLowerCase() === 'vo';
+                const isVO = isAuthorizedVO;
                 const isFutureYear = y > 2026;
                 const disabled = !isVO || isFutureYear;
                 let statusLabel = '';

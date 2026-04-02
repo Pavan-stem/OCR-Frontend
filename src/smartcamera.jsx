@@ -474,15 +474,15 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
                             // Interpolate for smoothness
                             // LOWER amt = Smoother/Slower movement (0.2 is ideal for stabilization)
                             const lerp = (start, end, amt) => start + (end - start) * amt;
-                            
+
                             // Dead-zone check: Only update if total corner movement is significant (> 1.5 pixels)
                             // This prevents microscopic sensor jitter from causing visual flickering.
-                            const totalMove = rawPoints.reduce((sum, p, i) => 
+                            const totalMove = rawPoints.reduce((sum, p, i) =>
                                 sum + Math.abs(p.x - pointsTracker.current[i].x) + Math.abs(p.y - pointsTracker.current[i].y), 0);
 
                             if (totalMove > 1.5) {
                                 pointsTracker.current = pointsTracker.current.map((p, i) => ({
-                                    x: lerp(p.x, rawPoints[i].x, 0.2), 
+                                    x: lerp(p.x, rawPoints[i].x, 0.2),
                                     y: lerp(p.y, rawPoints[i].y, 0.2)
                                 }));
                             }
@@ -501,7 +501,7 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
                         color = "text-white";
                         maxBlurVarRef.current = 0; // Reset sampling
                     } else {
-                        // 6. Tilt Detection (Anti-Squeeze)
+                        // 6. Dynamic Stability Logic (Distance-Aware)
                         const topWidth = Math.hypot(rawPoints[1].x - rawPoints[0].x, rawPoints[1].y - rawPoints[0].y);
                         const bottomWidth = Math.hypot(rawPoints[2].x - rawPoints[3].x, rawPoints[2].y - rawPoints[3].y);
                         const leftHeight = Math.hypot(rawPoints[3].x - rawPoints[0].x, rawPoints[3].y - rawPoints[0].y);
@@ -509,7 +509,13 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
 
                         const widthRatio = Math.max(topWidth, bottomWidth) / Math.min(topWidth, bottomWidth);
                         const heightRatio = Math.max(leftHeight, rightHeight) / Math.min(leftHeight, rightHeight);
-                        const isTooTilted = widthRatio > 1.15 || heightRatio > 1.15;
+
+                        const areaRatio = detectedArea / (canvas.width * canvas.height);
+
+                        // Relax tilt requirement for small, distant documents
+                        // 1.15 (15% diff) for large, 1.25 (25% diff) for small
+                        const tiltThreshold = areaRatio < 0.10 ? 1.25 : 1.15;
+                        const isTooTilted = widthRatio > tiltThreshold || heightRatio > tiltThreshold;
 
                         if (isCutOff) {
                             isValid = false; msg = "Center the Document"; color = "text-orange-500";
@@ -534,8 +540,9 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
                             steadyCount.current = 0;
                             setCaptureProgress(0);
                         } else {
-                            // Auto-capture: 10 stable frames (~0.6s at 60ms/frame) — fast lock
-                            const STABLE_FRAMES_NEEDED = 10;
+                            // Auto-capture Speed (Distance-Aware)
+                            // Distant (small) documents get a faster lock (7 frames vs 10)
+                            const STABLE_FRAMES_NEEDED = areaRatio < 0.10 ? 7 : 10;
                             steadyCount.current += 1;
                             const progress = Math.min(100, (steadyCount.current / STABLE_FRAMES_NEEDED) * 100);
                             setCaptureProgress(progress);
@@ -558,7 +565,7 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
 
                     // Stability Latch (De-flicker): Keep the box visible if we have a recent lock
                     const isUiStable = isValid || steadyCount.current > 0;
-                    
+
                     setLiveStatus({
                         isValid: isUiStable,
                         message: isUiStable ? msg : "Searching for document...",
@@ -689,6 +696,10 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
             }
         } catch (e) {
             console.error("Capture Error:", e);
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                videoRef.current.srcObject = null;
+            }
             setIsProcessing(false);
             setIsEnhancing(false);
         }

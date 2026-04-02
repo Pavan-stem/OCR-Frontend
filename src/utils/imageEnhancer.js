@@ -102,7 +102,7 @@ const cvReady = () => !!(window.cv && window.cv.Mat);
  * ─────────────────────────────────────────────────────────────────────────── */
 const ADAPTIVE_C = 4;
 const BLUR_KSIZE = 3;
-const OPEN_KSIZE = 1;
+const OPEN_KSIZE = 3; // Increased to 3 to prune single-pixel noise spikes
 
 /* Note: These are now used as base values or defaults,
  * but are overridden by dynamic calculations inside enhanceImage. */
@@ -156,9 +156,11 @@ export const enhanceImage = async (
          * Scale kernels and thresholds based on resolution.
          */
         const dynAdaptiveSize = Math.max(3, Math.floor(minDim / 80) * 2 + 1);
-        const dynMinBlobArea = Math.max(4, Math.round((W * H) / 300000));
+        // More aggressive blob filtering (divisor 200k vs 300k)
+        const dynMinBlobArea = Math.max(5, Math.round((W * H) / 200000));
         const dynSharpenAmount = 1.2;
         const dynSharpenBlur = Math.max(3, Math.floor(minDim / 400) * 2 + 1);
+        const SHARPEN_THRESHOLD = 4; // Ignore subtle grain/texture
 
         /* ── STEP 2 : BACKGROUND MODEL ──────────────────────────
          * Downscale → dilate → upscale.
@@ -376,10 +378,14 @@ export const enhanceImage = async (
             for (let i = 0; i < len; i++) {
                 // edge detail = original − blurred
                 const detail = resultData[i] - blurData[i];
-                // add scaled detail back
-                const sharpened = resultData[i] + dynSharpenAmount * detail;
-                // clamp to valid byte range
-                resultData[i] = Math.min(255, Math.max(0, Math.round(sharpened)));
+                
+                // Noise deadzone: only sharpen if detail exceeds threshold
+                if (Math.abs(detail) > SHARPEN_THRESHOLD) {
+                    // add scaled detail back
+                    const sharpened = resultData[i] + dynSharpenAmount * detail;
+                    // clamp to valid byte range
+                    resultData[i] = Math.min(255, Math.max(0, Math.round(sharpened)));
+                }
             }
         }
 
