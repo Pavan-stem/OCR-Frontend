@@ -54,7 +54,7 @@ const SHGUploadSection = ({
   const [showSmartCamera, setShowSmartCamera] = useState(false);
   const [cameraTarget, setCameraTarget] = useState({ id: null, name: null });
   const [permanentlyUploadedFiles, setPermanentlyUploadedFiles] = useState([]);
-  const [isViewingPermanent, setIsViewingPermanent] = useState(false);
+  const [currentlyViewingId, setCurrentlyViewingId] = useState(null);
 
   // Detect if device is mobile/tablet
   useEffect(() => {
@@ -177,9 +177,10 @@ const SHGUploadSection = ({
     }
   }, [selectedMonth, selectedYear, user?.voID, serverProgress?.uploadedShgIds]);
 
-  const handleViewPermanentlyUploadedFile = async (shgId, page = null) => {
-    if (isViewingPermanent) return;
-    setIsViewingPermanent(true);
+  const handleViewPermanentlyUploadedFile = async (shgId, page = 1) => {
+    const viewId = `${shgId}-${page}`;
+    if (currentlyViewingId) return;
+    setCurrentlyViewingId(viewId);
 
     const targetId = shgId?.toString().toLowerCase();
 
@@ -191,20 +192,26 @@ const SHGUploadSection = ({
       if (shgMatches.length === 0) return null;
 
       const matches = shgMatches.filter(u => {
+        // Page match (strict)
         if (page !== null) {
           const uPage = u.page || u.metadata?.page || 1;
           if (parseInt(uPage) !== parseInt(page)) return false;
         }
-        const rawDate = u.date || u.uploadTimestamp || u.metadata?.uploadTimestamp;
-        let sanitizedDate = rawDate;
-        if (typeof rawDate === 'string' && rawDate.includes('T') && !rawDate.endsWith('Z') && !rawDate.includes('+')) {
-          sanitizedDate = rawDate + 'Z';
+
+        // Date match (consistent with renderSHGCard)
+        const uM = String(u.month || u.metadata?.month || '').padStart(2, '0');
+        const uY = String(u.year || u.metadata?.year || '');
+        const timestamp = u.uploadTimestamp || u.metadata?.uploadTimestamp;
+        
+        let dateMatch = uM === selectedMonth && uY === selectedYear;
+        if (!dateMatch && timestamp) {
+          const uploadDate = new Date(timestamp);
+          if (!isNaN(uploadDate.getTime())) {
+            dateMatch = String(uploadDate.getMonth() + 1).padStart(2, '0') === selectedMonth &&
+                        String(uploadDate.getFullYear()) === selectedYear;
+          }
         }
-        const uploadDate = new Date(sanitizedDate);
-        if (isNaN(uploadDate.getTime())) return false;
-        const uploadMonth = String(uploadDate.getMonth() + 1).padStart(2, '0');
-        const uploadYear = String(uploadDate.getFullYear());
-        return uploadMonth === selectedMonth && uploadYear === selectedYear;
+        return dateMatch;
       });
 
       return matches.length > 0 ? matches[0] : null;
@@ -229,7 +236,7 @@ const SHGUploadSection = ({
 
     if (!upload) {
       alert(t?.('upload.fileNotFound') || 'Upload information not found for this SHG');
-      setIsViewingPermanent(false);
+      setCurrentlyViewingId(null);
       return;
     }
 
@@ -247,7 +254,7 @@ const SHGUploadSection = ({
 
     if (!url) {
       alert(t?.('upload.viewError') || 'Could not retrieve image URL');
-      setIsViewingPermanent(false);
+      setCurrentlyViewingId(null);
       return;
     }
 
@@ -260,7 +267,7 @@ const SHGUploadSection = ({
       fromServer: true
     });
     setPreviewRotation(0);
-    setIsViewingPermanent(false);
+    setCurrentlyViewingId(null);
   };
 
   useEffect(() => {
@@ -1267,7 +1274,7 @@ const SHGUploadSection = ({
         historyUploads={matchedHistoryUploads}
         rejectionInfo={rejectionInfo}
         analyzingState={shgAnalyzingState}
-        isViewingPermanent={isViewingPermanent}
+        currentlyViewingId={currentlyViewingId}
         isMobileDevice={isMobileDevice}
         isUploading={isUploading}
         t={t}

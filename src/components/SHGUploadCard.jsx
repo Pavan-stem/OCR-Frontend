@@ -10,7 +10,7 @@ const SHGUploadCard = ({
     isPermanentlyUploaded,
     rejectionInfo,
     analyzingState = {}, // { page1: bool, page2: bool }
-    isViewingPermanent,
+    currentlyViewingId,
     isMobileDevice,
     isUploading,
     t,
@@ -252,10 +252,10 @@ const SHGUploadCard = ({
                                         const pageToView = doc?.page || doc?.metadata?.page || 1;
                                         onViewPermanentlyUploadedFile(shg.shgId, pageToView);
                                     }}
-                                    disabled={isViewingPermanent}
+                                    disabled={!!currentlyViewingId}
                                     className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md font-semibold text-xs transition-colors"
                                 >
-                                    {isViewingPermanent ? (
+                                    {currentlyViewingId === `${shg.shgId}-${historyUploads[currentHistoryIndex]?.page || historyUploads[currentHistoryIndex]?.metadata?.page || 1}` ? (
                                         <div className="animate-spin rounded-full h-3 w-3 border-2 border-blue-600 border-t-transparent" />
                                     ) : (
                                         <Eye size={12} />
