@@ -4,7 +4,7 @@
 // SHGUploadSection.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Upload, CheckCircle, X, FileText, Search, AlertCircle, Eye, Filter, RotateCw, RotateCcw, Camera, AlertTriangle, Activity, ScanLine } from 'lucide-react';
+import { Upload, CheckCircle, X, FileText, Search, AlertCircle, Eye, Filter, RotateCw, RotateCcw, Camera, AlertTriangle, Activity, ScanLine, ChevronLeft, ChevronRight } from 'lucide-react';
 import { API_BASE } from './utils/apiConfig';
 import { analyzeImage } from './utils/imageQualityCheck';
 import SmartCamera from './smartcamera';
@@ -258,13 +258,15 @@ const SHGUploadSection = ({
       return;
     }
 
+    const pageNum = parseInt(page);
     setPreviewFile({
       fileName: upload.filename || upload.originalFilename || 'Uploaded Document',
       previewUrl: url,
       id: shgId,
       shgId: shgId,
       shgName: upload.shgName || upload.metadata?.shgName || 'Unknown SHG',
-      fromServer: true
+      fromServer: true,
+      page: pageNum
     });
     setPreviewRotation(0);
     setCurrentlyViewingId(null);
@@ -1652,8 +1654,57 @@ const SHGUploadSection = ({
             </div>
 
             {previewFile.fromServer ? (
-              <div className="flex-1 overflow-auto bg-slate-50 p-4">
-                <img src={previewFile.previewUrl} alt="Document" className="max-w-full mx-auto border rounded shadow" />
+              <div className="flex-1 overflow-hidden bg-slate-50 relative group flex flex-col">
+                {/* Page indicators - Sticky at top of the image area, not overlapping content */}
+                <div className="bg-slate-100/80 backdrop-blur-sm border-b px-6 py-2 flex items-center justify-between z-20">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Document Review</span>
+                  <div className="bg-blue-600 text-white px-4 py-1.5 rounded-full text-xs font-black shadow-lg ring-4 ring-blue-100">
+                    Showing: Page {previewFile.page}
+                  </div>
+                </div>
+
+                {/* Page navigation - Transparent/Glass style to allow edge checking */}
+                <div className="absolute left-1.5 top-1/2 -translate-y-1/2 z-30">
+                  <button
+                    onClick={() => handleViewPermanentlyUploadedFile(previewFile.shgId, 1)}
+                    className={`h-9 w-9 rounded-full shadow-xl backdrop-blur-md transition-all duration-300 transform hover:scale-110 flex items-center justify-center border ${previewFile.page === 1 
+                      ? 'bg-blue-600/30 text-white border-blue-400' 
+                      : 'bg-white/10 text-gray-700 border-white/30 hover:bg-white/30'}`}
+                    title="Page 1"
+                  >
+                    <ChevronLeft size={20} className={previewFile.page === 1 ? 'text-white' : 'text-slate-600'} />
+                  </button>
+                </div>
+                <div className="absolute right-1.5 top-1/2 -translate-y-1/2 z-30">
+                  <button
+                    onClick={() => handleViewPermanentlyUploadedFile(previewFile.shgId, 2)}
+                    className={`h-9 w-9 rounded-full shadow-xl backdrop-blur-md transition-all duration-300 transform hover:scale-110 flex items-center justify-center border ${previewFile.page === 2 
+                      ? 'bg-blue-600/30 text-white border-blue-400' 
+                      : 'bg-white/10 text-gray-700 border-white/30 hover:bg-white/30'}`}
+                    title="Page 2"
+                  >
+                    <ChevronRight size={20} className={previewFile.page === 2 ? 'text-white' : 'text-slate-600'} />
+                  </button>
+                </div>
+
+                <div className="flex-1 w-full overflow-auto p-4 flex items-center justify-center relative">
+                  {currentlyViewingId && (
+                    <div className="absolute inset-0 z-40 bg-slate-900/10 backdrop-blur-[1px] flex items-center justify-center animate-in fade-in duration-200">
+                      <div className="bg-white/95 p-6 rounded-3xl shadow-2xl flex flex-col items-center gap-4">
+                        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="relative">
+                    <img 
+                      src={previewFile.previewUrl} 
+                      alt={`Document Page ${previewFile.page}`} 
+                      className={`max-w-full h-auto mx-auto border-2 border-white rounded-md shadow-2xl transition-all duration-500 ${currentlyViewingId ? 'opacity-50 scale-95' : 'animate-in fade-in zoom-in-95'}`} 
+                      key={`${previewFile.shgId}-${previewFile.page}`}
+                    />
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="flex-1 overflow-auto bg-gray-100 flex flex-col relative p-2 sm:p-4 min-h-[300px]">
