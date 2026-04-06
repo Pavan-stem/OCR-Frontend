@@ -72,7 +72,7 @@ const CONFIG = {
     MIN_TABLE_AREA_RATIO: 0.04,
     MAX_TABLE_AREA_RATIO: 0.99,
     APPROX_POLY_EPSILON_RATIO: 0.02,
-    OUTPUT_MAX_DIM: 1024,
+    OUTPUT_MAX_DIM: 2048,
 
     // Obstruction
     OBSTRUCTION_AREA_THRESHOLD: 0.040,
@@ -717,13 +717,13 @@ function validateStructure(cv, src) {
         if (fallbackLargestC) fallbackLargestC.delete();
 
         // Outward padding
-        const padFracX = 0.08 * src.cols;
-        const padFracY = 0.08 * src.rows;
+        // Outward padding (Consistent 5% expansion)
         const cx = corners.reduce((s, p) => s + p.x, 0) / corners.length;
         const cy = corners.reduce((s, p) => s + p.y, 0) / corners.length;
+        const PAD_RATIO = 0.05; 
         const paddedCorners = corners.map(p => ({
-            x: Math.max(0, Math.min(src.cols - 1, p.x + Math.sign(p.x - cx) * padFracX)),
-            y: Math.max(0, Math.min(src.rows - 1, p.y + Math.sign(p.y - cy) * padFracY)),
+            x: Math.max(0, Math.min(src.cols - 1, p.x + (p.x - cx) * PAD_RATIO)),
+            y: Math.max(0, Math.min(src.rows - 1, p.y + (p.y - cy) * PAD_RATIO)),
         }));
 
         const ordered = orderCorners(paddedCorners);
@@ -855,9 +855,9 @@ function autoCropDocument(cv, src, corners) {
     const maxWidth = Math.max(widthTop, widthBottom);
     const maxHeight = Math.max(heightLeft, heightRight);
 
-    const expandTop = maxHeight * 0.25;
-    const expandSide = maxWidth * 0.22;
-    const expandBottom = maxHeight * 0.18;
+    const expandTop = maxHeight * 0.02;
+    const expandSide = maxWidth * 0.02;
+    const expandBottom = maxHeight * 0.02;
 
     const expanded = [
         { x: ordered[0].x - expandSide, y: ordered[0].y - expandTop },
@@ -1008,36 +1008,7 @@ export async function validateGalleryImage(file) {
         };
     }
 
-    /* ────────────────────────────────────────────────────────
-     *  STEP 5 — Auto crop + perspective correction
-     * ────────────────────────────────────────────────────────*/
-    let cropped;
-    try {
-        cropped = autoCropDocument(cv, src, struct.corners);
-    } catch (err) {
-        console.error("Crop failed:", err);
-        src.delete();
-        return { isValid: false, message: "Auto crop failed. Try another image." };
-    }
-
     src.delete();
-
-    /* ── Convert Mat → canvas ─────────────────────────────── */
-    const croppedCanvas = document.createElement("canvas");
-    cv.imshow(croppedCanvas, cropped);
-    cropped.delete();
-
-    /* ── STEP 6 — Enhance the cropped canvas ─────────────────
-     *  Previously MISSING — this is why gallery looked different
-     *  from camera captures. enhanceImage with source='gallery'
-     *  forces the full 10-step pipeline (skips light path).
-     * ────────────────────────────────────────────────────────*/
-    let enhancedCanvas = croppedCanvas; // fallback if enhance crashes
-    try {
-        enhancedCanvas = await enhanceImage(croppedCanvas, () => { }, 'gallery');
-    } catch (err) {
-        console.warn('[GalleryValidator] Enhancement failed, using cropped canvas:', err);
-    }
 
     /* ── Build success message ────────────────────────────── */
     let message = "Image accepted";
@@ -1050,7 +1021,8 @@ export async function validateGalleryImage(file) {
     return {
         isValid: true,
         message,
-        canvas: enhancedCanvas,        // ← was croppedCanvas, now enhancedCanvas
+        fullCanvas: canvas,            // scaled but un-cropped original
+        canvas: canvas,                // for backward compatibility
         corners: struct.corners,
         metrics: struct.metrics,
         warnings: [

@@ -61,6 +61,12 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
     const [selectedPageInternal, setSelectedPageInternal] = useState(1);
     const currentSessionId = useRef(Date.now());
 
+    // Manual Crop State
+    const [showManualCrop, setShowManualCrop] = useState(false);
+    const [rawCaptureCanvas, setRawCaptureCanvas] = useState(null);
+    const [manualCropPoints, setManualCropPoints] = useState(null);
+    const [autoCropPoints, setAutoCropPoints] = useState(null);
+
     useEffect(() => {
         const handleRotation = () => {
             const angle = window.orientation || (window.screen?.orientation?.angle) || 0;
@@ -248,14 +254,14 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
 
                     // 2. Hybrid Detection Logic (Paper Boundary Focused)
                     blurred = new cv.Mat();
-                    cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
-                    // Removed medianBlur as it might be washing out the paper edges on low-res frames
+                    // Balanced blur for document silhouette (not too aggressive)
+                    cv.GaussianBlur(gray, blurred, new cv.Size(7, 7), 0);
 
                     edges = new cv.Mat();
-                    // Lower thresholds to catch weaker edges of the paper on light surfaces
-                    cv.Canny(blurred, edges, 30, 100);
+                    // More sensitive thresholds to catch paper boundaries on light surfaces
+                    cv.Canny(blurred, edges, 20, 80);
 
-                    // Dilate slightly to bridge gaps in the paper outline
+                    // Dilate and close to solidify the paper perimeter
                     const kernelSize = new cv.Size(3, 3);
                     const kernel = cv.getStructuringElement(cv.MORPH_RECT, kernelSize);
                     cv.dilate(edges, edges, kernel);
@@ -426,14 +432,11 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
                         const centerX = rawPoints.reduce((sum, p) => sum + p.x, 0) / 4;
                         const centerY = rawPoints.reduce((sum, p) => sum + p.y, 0) / 4;
 
-                        paddedPoints = rawPoints.map(p => {
-                            let newX = p.x + (p.x - centerX) * padSide;
-                            let newY = p.y + (p.y - centerY) * padTopBot;
-                            return {
-                                x: Math.max(0, Math.min(newX, video.videoWidth)),
-                                y: Math.max(0, Math.min(newY, video.videoHeight))
-                            };
-                        });
+                        const PAD_RATIO = 0.05; // 5% outward padding on all sides
+                        paddedPoints = rawPoints.map(p => ({
+                            x: Math.max(0, Math.min(video.videoWidth, p.x + (p.x - centerX) * PAD_RATIO)),
+                            y: Math.max(0, Math.min(video.videoHeight, p.y + (p.y - centerY) * PAD_RATIO)),
+                        }));
 
                         // UI Visual Feedback: Dots snap to REAL corners (unpadded)
                         rawPointsRef.current = rawPoints;
@@ -474,15 +477,15 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
                             // Interpolate for smoothness
                             // LOWER amt = Smoother/Slower movement (0.2 is ideal for stabilization)
                             const lerp = (start, end, amt) => start + (end - start) * amt;
-                            
+
                             // Dead-zone check: Only update if total corner movement is significant (> 1.5 pixels)
                             // This prevents microscopic sensor jitter from causing visual flickering.
-                            const totalMove = rawPoints.reduce((sum, p, i) => 
+                            const totalMove = rawPoints.reduce((sum, p, i) =>
                                 sum + Math.abs(p.x - pointsTracker.current[i].x) + Math.abs(p.y - pointsTracker.current[i].y), 0);
 
                             if (totalMove > 1.5) {
                                 pointsTracker.current = pointsTracker.current.map((p, i) => ({
-                                    x: lerp(p.x, rawPoints[i].x, 0.2), 
+                                    x: lerp(p.x, rawPoints[i].x, 0.2),
                                     y: lerp(p.y, rawPoints[i].y, 0.2)
                                 }));
                             }
@@ -501,7 +504,7 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
                         color = "text-white";
                         maxBlurVarRef.current = 0; // Reset sampling
                     } else {
-                        // 6. Tilt Detection (Anti-Squeeze)
+                        // 6. Dynamic Stability Logic (Distance-Aware)
                         const topWidth = Math.hypot(rawPoints[1].x - rawPoints[0].x, rawPoints[1].y - rawPoints[0].y);
                         const bottomWidth = Math.hypot(rawPoints[2].x - rawPoints[3].x, rawPoints[2].y - rawPoints[3].y);
                         const leftHeight = Math.hypot(rawPoints[3].x - rawPoints[0].x, rawPoints[3].y - rawPoints[0].y);
@@ -509,7 +512,13 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
 
                         const widthRatio = Math.max(topWidth, bottomWidth) / Math.min(topWidth, bottomWidth);
                         const heightRatio = Math.max(leftHeight, rightHeight) / Math.min(leftHeight, rightHeight);
-                        const isTooTilted = widthRatio > 1.15 || heightRatio > 1.15;
+
+                        const areaRatio = detectedArea / (canvas.width * canvas.height);
+
+                        // Relax tilt requirement for small, distant documents
+                        // 1.15 (15% diff) for large, 1.25 (25% diff) for small
+                        const tiltThreshold = areaRatio < 0.10 ? 1.25 : 1.15;
+                        const isTooTilted = widthRatio > tiltThreshold || heightRatio > tiltThreshold;
 
                         if (isCutOff) {
                             isValid = false; msg = "Center the Document"; color = "text-orange-500";
@@ -534,8 +543,9 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
                             steadyCount.current = 0;
                             setCaptureProgress(0);
                         } else {
-                            // Auto-capture: 10 stable frames (~0.6s at 60ms/frame) — fast lock
-                            const STABLE_FRAMES_NEEDED = 10;
+                            // Auto-capture Speed (Distance-Aware)
+                            // Distant (small) documents get a faster lock (7 frames vs 10)
+                            const STABLE_FRAMES_NEEDED = areaRatio < 0.10 ? 7 : 10;
                             steadyCount.current += 1;
                             const progress = Math.min(100, (steadyCount.current / STABLE_FRAMES_NEEDED) * 100);
                             setCaptureProgress(progress);
@@ -558,7 +568,7 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
 
                     // Stability Latch (De-flicker): Keep the box visible if we have a recent lock
                     const isUiStable = isValid || steadyCount.current > 0;
-                    
+
                     setLiveStatus({
                         isValid: isUiStable,
                         message: isUiStable ? msg : "Searching for document...",
@@ -654,39 +664,15 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
                 resultCanvas = rotateCanvas(resultCanvas, -deviceRotation);
             }
 
-            // SHOW RAW CROP IMMEDIATELY (UX: Open review screen instantly)
-            setCapturedImageData(resultCanvas.toDataURL("image/jpeg", 0.95));
-            setIsProcessing(false);
-            setIsEnhancing(true);
+            // [NEW] STORE RAW DATA AND SHOW MANUAL CROP IMMEDIATELY
+            setRawCaptureCanvas(canvas);
+            setManualCropPoints(JSON.parse(JSON.stringify(finalContour)));
+            setAutoCropPoints(JSON.parse(JSON.stringify(finalContour)));
+            setShowManualCrop(true); // Go straight to manual adjustment
 
+            // Clear live loop refs
             if (processingTimeoutId.current) clearTimeout(processingTimeoutId.current);
             if (uiAnimationFrameId.current) cancelAnimationFrame(uiAnimationFrameId.current);
-
-            // 2. APPLY FILTERS IN BACKGROUND
-            setTimeout(async () => {
-                try {
-                    if (cvReady()) {
-                        setEnhancementStatus("Analyzing...");
-                        const finalCanvas = await enhanceImage(resultCanvas, (msg) => {
-                            setEnhancementStatus(msg);
-                        }, 'camera');
-                        if (finalCanvas) {
-                            setCapturedImageData(finalCanvas.toDataURL("image/jpeg", 0.95));
-                        }
-                    }
-                    setIsEnhancing(false);
-                    setEnhancementStatus("");
-                } catch (err) {
-                    console.error("Enhancement failed:", err);
-                    setIsEnhancing(false);
-                    setEnhancementStatus("");
-                }
-            }, 50);
-
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-                videoRef.current.srcObject = null;
-            }
         } catch (e) {
             console.error("Capture Error:", e);
             setIsProcessing(false);
@@ -894,63 +880,20 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
             }
 
             // ── Validation passed ── use the pre-decoded safe canvas
-            const sourceCanvas = result.canvas;
+            const sourceCanvas = result.fullCanvas;
             isFromGalleryRef.current = true; // Mark as gallery source
-
-            // ── New: Auto-crop and Enhance Gallery Image (Mirroring handleCapture) ──
-            setIsProcessing(true);
-            setProcessingMessage('Cropping document...');
-
-            // ── Auto-crop: use corners from validator (already padded 2%) ──
-            let resultCanvas = sourceCanvas;
             const finalContour = result.corners;
-            if (finalContour && finalContour.length === 4 && cvReady()) {
 
-                try {
-                    // Warp directly with validated corners (already padded 5% in validateStructure)
-                    resultCanvas = warpPerspective(sourceCanvas, finalContour);
-                } catch (warpErr) {
-                    console.warn('[Gallery] Warp failed, using original canvas:', warpErr);
-                    resultCanvas = sourceCanvas;
-                }
-            } else {
-                // No corners: try to detect document boundary from the raw image
-                const detected = detectDocument(sourceCanvas);
-                if (detected && detected.length === 4) {
-                    resultCanvas = warpPerspective(sourceCanvas, detected);
-                } else {
-                    // Nothing detected — use full image as-is
-                    resultCanvas = sourceCanvas;
-                }
-            }
+            // [NEW] STORE RAW DATA AND SHOW MANUAL CROP IMMEDIATELY
+            setRawCaptureCanvas(sourceCanvas);
+            setManualCropPoints(JSON.parse(JSON.stringify(finalContour || [])));
+            setAutoCropPoints(JSON.parse(JSON.stringify(finalContour || [])));
+            setShowManualCrop(true);
 
-
-            // SHOW RAW CROP IMMEDIATELY
-            setCapturedImageData(resultCanvas.toDataURL('image/jpeg', 0.95));
+            // Skip immediate background enhancement for now, let manual crop handle it
             setIsProcessing(false);
             setProcessingMessage('');
-            setIsEnhancing(true);
-
-            // 2. APPLY FILTERS IN BACKGROUND
-            setTimeout(async () => {
-                try {
-                    if (cvReady()) {
-                        setEnhancementStatus("Analyzing...");
-                        const finalCanvas = await enhanceImage(resultCanvas, (msg) => {
-                            setEnhancementStatus(msg);
-                        }, 'gallery');
-                        if (finalCanvas) {
-                            setCapturedImageData(finalCanvas.toDataURL("image/jpeg", 0.95));
-                        }
-                    }
-                    setIsEnhancing(false);
-                    setEnhancementStatus("");
-                } catch (err) {
-                    console.error("Gallery enhancement failed:", err);
-                    setIsEnhancing(false);
-                    setEnhancementStatus("");
-                }
-            }, 50);
+            setIsEnhancing(false);
 
         } catch (err) {
             setGalleryError(err.message || 'Failed to process image.');
@@ -1020,46 +963,100 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
         steadyCount.current = 0;
         setCaptureProgress(0);
         captureTriggeredRef.current = false;
-        setCameraEnabled(true);
+
+        // Ensure camera re-mounts if it was stopped
+        setCameraEnabled(false);
+        setTimeout(() => setCameraEnabled(true), 10);
+
+        setShowManualCrop(false);
+        setRawCaptureCanvas(null);
+        setManualCropPoints(null);
+        setAutoCropPoints(null);
     };
 
     if (!open) return null;
 
     return createPortal(
         <div className="fixed inset-0 bg-black z-[10000] flex flex-col font-sans overflow-hidden">
+            {showManualCrop && rawCaptureCanvas && (
+                <ManualCropper
+                    canvas={rawCaptureCanvas}
+                    initialPoints={manualCropPoints}
+                    onCancel={() => resetCaptureState()}
+                    onApply={async (newPoints) => {
+                        setShowManualCrop(false);
+                        setIsProcessing(true);
+                        setIsEnhancing(true);
+                        try {
+                            setManualCropPoints(newPoints);
+                            const warped = warpPerspective(rawCaptureCanvas, newPoints);
+
+                            setEnhancementStatus("Enhancing adjusted crop...");
+                            const finalCanvas = await enhanceImage(warped, (msg) => {
+                                setEnhancementStatus(msg);
+                            }, isFromGalleryRef.current ? 'gallery' : 'camera');
+
+                            if (finalCanvas) {
+                                setCapturedImageData(finalCanvas.toDataURL("image/jpeg", 0.95));
+                            }
+                        } catch (err) {
+                            console.error("Manual crop application failed:", err);
+                        } finally {
+                            setIsProcessing(false);
+                            setIsEnhancing(false);
+                            setEnhancementStatus("");
+                        }
+                    }}
+                />
+            )}
             {/* Header - Fixed Height & Solid Background */}
-            <div className="h-16 flex justify-between items-center px-6 bg-black border-b border-white/10 text-white z-[20000] shrink-0">
-                <div className="flex items-center gap-4">
-                    <div className="flex flex-col">
-                        <span className="font-bold text-sm text-gray-400 capitalize -mb-1">{shgName || "Document Scan"}</span>
-                        <span className="font-bold text-lg tracking-tight">{shgId || "Smart Scanner"}</span>
+            <div className="h-16 flex justify-between items-center px-6 bg-black border-b border-white/10 text-white z-[20000] shrink-0 relative">
+                <div className="flex items-center gap-4 min-w-0">
+                    <div className="flex flex-col min-w-0">
+                        <span className="font-bold text-[9px] text-gray-400 uppercase tracking-wider truncate max-w-[150px]">{shgName || "Document Scan"}</span>
+                        <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-xs tracking-tighter truncate max-w-[120px] sm:max-w-none">{shgId || "Smart Scanner"}</span>
+                            <div className="bg-white text-black px-1.5 py-0.5 rounded text-[9px] font-black uppercase shadow-lg shrink-0">
+                                Page{page}
+                            </div>
+                        </div>
                     </div>
+                </div>
+
+                <div className="flex items-center gap-2">
                     {capturedImageData && (
-                        <div className="flex items-center gap-2 ml-4">
+                        <div className="flex items-center gap-1 sm:gap-2 mr-2">
+                            <button
+                                onClick={() => setShowManualCrop(true)}
+                                className="p-2 hover:bg-white/10 rounded-full transition-colors border border-white/10"
+                                title="Adjust Crop"
+                            >
+                                <Crop size={18} />
+                            </button>
                             <button
                                 onClick={() => handleRotate('left')}
-                                className="p-2.5 hover:bg-white/10 rounded-full transition-colors border border-white/10"
+                                className="p-2 hover:bg-white/10 rounded-full transition-colors border border-white/10"
                                 title="Rotate Left"
                             >
-                                <RotateCw className="scale-x-[-1]" size={20} />
+                                <RotateCw className="scale-x-[-1]" size={18} />
                             </button>
                             <button
                                 onClick={() => handleRotate('right')}
-                                className="p-2.5 hover:bg-white/10 rounded-full transition-colors border border-white/10"
+                                className="p-2 hover:bg-white/10 rounded-full transition-colors border border-white/10"
                                 title="Rotate Right"
                             >
-                                <RotateCw size={20} />
+                                <RotateCw size={18} />
                             </button>
                         </div>
                     )}
+                    <button
+                        onClick={onClose}
+                        disabled={isUploading}
+                        className={`p-2 hover:bg-white/10 rounded-full transition-colors ${isUploading ? 'opacity-30 cursor-not-allowed' : ''}`}
+                    >
+                        <X size={24} />
+                    </button>
                 </div>
-                <button
-                    onClick={onClose}
-                    disabled={isUploading}
-                    className={`p-2 hover:bg-white/10 rounded-full transition-colors ${isUploading ? 'opacity-30 cursor-not-allowed' : ''}`}
-                >
-                    <X size={24} />
-                </button>
             </div>
 
             {/* Main Content Area */}
@@ -1252,6 +1249,373 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
             )}
         </div>,
         document.body
+    );
+};
+
+const ManualCropper = ({ canvas, initialPoints, onApply, onCancel }) => {
+    const containerRef = useRef(null);
+    const handlesRef = useRef([]);
+    const polygonRef = useRef(null);
+    const crosshairVRef = useRef(null);
+    const crosshairHRef = useRef(null);
+    const activeTouchId = useRef(null);
+
+    // Core 4 corners state
+    const pointsRef = useRef(initialPoints && initialPoints.length === 4 ? initialPoints : [
+        { x: canvas.width * 0.1, y: canvas.height * 0.1 },
+        { x: canvas.width * 0.9, y: canvas.height * 0.1 },
+        { x: canvas.width * 0.9, y: canvas.height * 0.9 },
+        { x: canvas.width * 0.1, y: canvas.height * 0.9 }
+    ]);
+    const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+    const draggingIdx = useRef(null);
+
+    // Initial state setup for UI sync
+    const [hasInteraction, setHasInteraction] = useState(false);
+
+    useEffect(() => {
+        const updateSize = () => {
+            if (containerRef.current) {
+                const rect = containerRef.current.getBoundingClientRect();
+                setContainerSize({ width: rect.width, height: rect.height });
+            }
+        };
+        updateSize();
+        window.addEventListener('resize', updateSize);
+        setTimeout(updateSize, 100);
+        return () => window.removeEventListener('resize', updateSize);
+    }, []);
+
+    const imgScale = Math.min(
+        containerSize.width / canvas.width,
+        containerSize.height / canvas.height
+    ) || 0;
+
+    const offsetX = (containerSize.width - canvas.width * imgScale) / 2;
+    const offsetY = (containerSize.height - canvas.height * imgScale) / 2;
+
+    const toScreen = (p) => ({
+        x: p.x * imgScale + offsetX,
+        y: p.y * imgScale + offsetY
+    });
+
+    const fromScreen = (x, y) => ({
+        x: (x - offsetX) / imgScale,
+        y: (y - offsetY) / imgScale
+    });
+
+    // Helper to get edge midpoints
+    const getMidpoint = (p1, p2) => ({
+        x: (p1.x + p2.x) / 2,
+        y: (p1.y + p2.y) / 2
+    });
+
+    const magnifierRef = useRef(null);
+    const [isDragging, setIsDragging] = useState(false);
+    const [magnifierSide, setMagnifierSide] = useState("top"); // "top" or "bottom"
+
+    const updateUI = () => {
+        if (!containerSize.width || !containerSize.height) return;
+
+        const corners = pointsRef.current;
+        // 4 corners + 4 midpoints
+        const midpoints = [
+            getMidpoint(corners[0], corners[1]), // top
+            getMidpoint(corners[1], corners[2]), // right
+            getMidpoint(corners[2], corners[3]), // bottom
+            getMidpoint(corners[3], corners[0])  // left
+        ];
+        const allHandles = [...corners, ...midpoints];
+
+        // Update Polygon
+        if (polygonRef.current) {
+            const screenPoints = corners.map(toScreen);
+            const ptsAttr = screenPoints.map(p => `${p.x},${p.y}`).join(' ');
+            polygonRef.current.setAttribute('points', ptsAttr);
+        }
+
+        // Update 8 Handles and Crosshairs
+        allHandles.forEach((p, i) => {
+            const s = toScreen(p);
+            if (handlesRef.current[i]) {
+                handlesRef.current[i].style.transform = `translate3d(${s.x}px, ${s.y}px, 0)`;
+            }
+
+            if (i === draggingIdx.current) {
+                if (crosshairVRef.current) {
+                    crosshairVRef.current.setAttribute('x1', s.x);
+                    crosshairVRef.current.setAttribute('x2', s.x);
+                    crosshairVRef.current.style.display = 'block';
+                }
+                if (crosshairHRef.current) {
+                    crosshairHRef.current.setAttribute('y1', s.y);
+                    crosshairHRef.current.setAttribute('y2', s.y);
+                    crosshairHRef.current.style.display = 'block';
+                }
+
+                // Update Magnifier Canvas
+                if (magnifierRef.current) {
+                    const ctx = magnifierRef.current.getContext('2d');
+                    const size = 120;
+                    const zoom = 2.5;
+                    magnifierRef.current.width = size;
+                    magnifierRef.current.height = size;
+
+                    ctx.fillStyle = "#000";
+                    ctx.fillRect(0, 0, size, size);
+
+                    // Source rect from original canvas
+                    const sw = size / zoom;
+                    const sh = size / zoom;
+                    const sx = p.x - sw / 2;
+                    const sy = p.y - sh / 2;
+
+                    ctx.filter = 'brightness(1.1) contrast(1.05)';
+                    ctx.drawImage(canvas, sx, sy, sw, sh, 0, 0, size, size);
+                    ctx.filter = 'none';
+
+                    // Crosshair in magnifier
+                    ctx.strokeStyle = '#2563eb';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(size / 2, 0); ctx.lineTo(size / 2, size);
+                    ctx.moveTo(0, size / 2); ctx.lineTo(size, size / 2);
+                    ctx.stroke();
+                }
+
+                // Smart Position: Move magnifier to bottom if handle is in top 40%
+                const containerHeight = containerSize.height;
+                if (s.y < containerHeight * 0.4 && magnifierSide !== "bottom") {
+                    setMagnifierSide("bottom");
+                } else if (s.y > containerHeight * 0.5 && magnifierSide !== "top") {
+                    setMagnifierSide("top");
+                }
+            }
+        });
+    };
+
+    // Initial positioning
+    useEffect(() => {
+        if (containerSize.width) updateUI();
+    }, [containerSize]);
+
+    const handleStart = (idx, e) => {
+        // Prevent multi-touch drag jump: only allow one finger drag at a time
+        if (activeTouchId.current !== null) return;
+
+        if (e.touches && e.touches.length > 0) {
+            activeTouchId.current = e.touches[0].identifier;
+        }
+
+        e.preventDefault();
+        draggingIdx.current = idx;
+        setIsDragging(true);
+        setHasInteraction(true);
+        updateUI();
+    };
+
+    const handleMove = (e) => {
+        if (draggingIdx.current === null) return;
+
+        let touch;
+        if (e.touches) {
+            // Find the touch that matches our active identifier
+            touch = Array.from(e.touches).find(t => t.identifier === activeTouchId.current);
+            if (!touch) return;
+        } else {
+            touch = e;
+        }
+
+        const rect = containerRef.current.getBoundingClientRect();
+        const screenPos = { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+        const { x, y } = fromScreen(screenPos.x, screenPos.y);
+
+        const currentPoints = pointsRef.current;
+        const idx = draggingIdx.current;
+
+        if (idx < 4) {
+            // Corner handles (Single point movement)
+            currentPoints[idx] = {
+                x: Math.max(0, Math.min(canvas.width, x)),
+                y: Math.max(0, Math.min(canvas.height, y))
+            };
+        } else {
+            // Midpoint handles (Move the entire edge)
+            const corners = currentPoints;
+            const prevPoints = [...corners];
+
+            // Calculate midpoint before movement to get current delta
+            const mid = idx === 4 ? getMidpoint(corners[0], corners[1]) :
+                idx === 5 ? getMidpoint(corners[1], corners[2]) :
+                    idx === 6 ? getMidpoint(corners[2], corners[3]) :
+                        getMidpoint(corners[3], corners[0]);
+
+            const dx = x - mid.x;
+            const dy = y - mid.y;
+
+            if (idx === 4) { // Top edge
+                corners[0].x = Math.max(0, Math.min(canvas.width, corners[0].x + dx));
+                corners[0].y = Math.max(0, Math.min(canvas.height, corners[0].y + dy));
+                corners[1].x = Math.max(0, Math.min(canvas.width, corners[1].x + dx));
+                corners[1].y = Math.max(0, Math.min(canvas.height, corners[1].y + dy));
+            } else if (idx === 5) { // Right edge
+                corners[1].x = Math.max(0, Math.min(canvas.width, corners[1].x + dx));
+                corners[1].y = Math.max(0, Math.min(canvas.height, corners[1].y + dy));
+                corners[2].x = Math.max(0, Math.min(canvas.width, corners[2].x + dx));
+                corners[2].y = Math.max(0, Math.min(canvas.height, corners[2].y + dy));
+            } else if (idx === 6) { // Bottom edge
+                corners[2].x = Math.max(0, Math.min(canvas.width, corners[2].x + dx));
+                corners[2].y = Math.max(0, Math.min(canvas.height, corners[2].y + dy));
+                corners[3].x = Math.max(0, Math.min(canvas.width, corners[3].x + dx));
+                corners[3].y = Math.max(0, Math.min(canvas.height, corners[3].y + dy));
+            } else if (idx === 7) { // Left edge
+                corners[3].x = Math.max(0, Math.min(canvas.width, corners[3].x + dx));
+                corners[3].y = Math.max(0, Math.min(canvas.height, corners[3].y + dy));
+                corners[0].x = Math.max(0, Math.min(canvas.width, corners[0].x + dx));
+                corners[0].y = Math.max(0, Math.min(canvas.height, corners[0].y + dy));
+            }
+        }
+
+        requestAnimationFrame(updateUI);
+    };
+
+    const handleEnd = (e) => {
+        if (e && e.touches && activeTouchId.current !== null) {
+            const stillActive = Array.from(e.touches).some(t => t.identifier === activeTouchId.current);
+            if (stillActive) return; // Keep dragging if the primary finger is still down
+        }
+
+        draggingIdx.current = null;
+        activeTouchId.current = null;
+        if (crosshairVRef.current) crosshairVRef.current.style.display = 'none';
+        if (crosshairHRef.current) crosshairHRef.current.style.display = 'none';
+        setIsDragging(false);
+        setMagnifierSide("top"); // Reset for next use
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black/98 z-[25000] flex flex-col pt-safe px-4 pb-4">
+            {/* Action Bar */}
+            <div className="h-16 flex justify-between items-center z-[200]">
+                <button
+                    onClick={onCancel}
+                    className="px-6 py-2.5 bg-blue-600 text-white font-bold rounded-full hover:bg-blue-500 transition-colors flex items-center gap-2 shadow-lg active:scale-95"
+                >
+                    <X size={20} />
+                    <span>Cancel</span>
+                </button>
+                <button
+                    onClick={() => onApply(pointsRef.current)}
+                    className="px-6 py-2.5 bg-green-600 text-white font-bold rounded-full shadow-[0_0_20px_rgba(34,197,94,0.4)] hover:bg-green-500 active:scale-95 transition-all flex items-center gap-2"
+                >
+                    <CheckCircle size={20} />
+                    <span>Done</span>
+                </button>
+            </div>
+
+            {/* Instruction Overlay (Temporary) */}
+            {!hasInteraction && (
+                <div className="absolute top-24 left-0 right-0 z-[150] flex justify-center animate-bounce">
+                    <div className="bg-blue-600/90 text-white px-4 py-2 rounded-full font-bold text-sm shadow-xl backdrop-blur-md">
+                        Drag corners or edges to fit
+                    </div>
+                </div>
+            )}
+
+            <div
+                ref={containerRef}
+                className="flex-1 relative overflow-hidden touch-none select-none"
+                onMouseMove={handleMove}
+                onMouseUp={handleEnd}
+                onMouseLeave={handleEnd}
+                onTouchMove={handleMove}
+                onTouchEnd={handleEnd}
+            >
+                {/* Source Image */}
+                <img
+                    src={canvas.toDataURL('image/jpeg')}
+                    className="absolute pointer-events-none rounded shadow-2xl"
+                    style={{
+                        width: canvas.width * imgScale,
+                        height: canvas.height * imgScale,
+                        left: offsetX,
+                        top: offsetY,
+                        maxWidth: 'none',
+                        imageRendering: 'crisp-edges',
+                        filter: 'brightness(1.1) contrast(1.05)'
+                    }}
+                    alt="Source"
+                />
+
+                {/* SVG Overlay */}
+                <svg
+                    className="absolute inset-0 pointer-events-none"
+                    width={containerSize.width}
+                    height={containerSize.height}
+                    style={{ opacity: imgScale > 0 ? 1 : 0 }}
+                >
+                    <defs>
+                        <mask id="cropMask">
+                            <rect width="100%" height="100%" fill="white" />
+                            <polygon ref={polygonRef} fill="black" />
+                        </mask>
+                    </defs>
+                    <rect width="100%" height="100%" fill="rgba(0,0,0,0.1)" mask="url(#cropMask)" />
+
+                    <polygon
+                        ref={polygonRef}
+                        fill="transparent"
+                        stroke="rgba(37, 99, 235, 1)"
+                        strokeWidth="2.5"
+                    />
+
+                    {/* Alignment Crosshairs */}
+                    <line
+                        ref={crosshairVRef}
+                        x1="0" y1="0" x2="0" y2={containerSize.height}
+                        stroke="rgba(255,255,255,0.5)"
+                        strokeWidth="1"
+                        style={{ display: 'none' }}
+                    />
+                    <line
+                        ref={crosshairHRef}
+                        x1="0" y1="0" x2={containerSize.width} y2="0"
+                        stroke="rgba(255,255,255,0.5)"
+                        strokeWidth="1"
+                        style={{ display: 'none' }}
+                    />
+                </svg>
+
+                {/* Dragging Magnifier (Smart Position) */}
+                {isDragging && (
+                    <div className={`absolute right-4 z-[400] w-32 h-32 rounded-lg border-2 border-white shadow-2xl bg-black overflow-hidden pointer-events-none animate-in zoom-in duration-200 ${magnifierSide === "top" ? "top-4" : "bottom-20"}`}>
+                        <canvas ref={magnifierRef} className="w-full h-full" />
+                        <div className="absolute top-1 left-2 text-[10px] text-white/70 font-bold tracking-widest uppercase bg-black/40 px-1 rounded">Zoom</div>
+                    </div>
+                )}
+
+                {/* 8 Handles (4 Corners + 4 Midpoints) */}
+                {[0, 1, 2, 3, 4, 5, 6, 7].map(idx => (
+                    <div
+                        key={idx}
+                        ref={el => handlesRef.current[idx] = el}
+                        onMouseDown={(e) => handleStart(idx, e)}
+                        onTouchStart={(e) => handleStart(idx, e)}
+                        className="absolute w-12 h-12 -ml-6 -mt-6 flex items-center justify-center cursor-move z-[300]"
+                        style={{ willChange: 'transform' }}
+                    >
+                        {/* Target Circle (Smaller, No Scale) */}
+                        <div className={`rounded-full border border-white shadow-lg flex items-center justify-center ${idx < 4 ? 'w-5 h-5 bg-blue-600' : 'w-4 h-4 bg-white/40 backdrop-blur-sm'}`}>
+                            {idx < 4 && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            <div className="h-12 flex items-center justify-center text-white/50 text-xs font-medium tracking-widest uppercase mt-2">
+                Drag corners to align boundaries
+            </div>
+        </div>
     );
 };
 

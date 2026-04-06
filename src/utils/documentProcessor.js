@@ -1,173 +1,144 @@
-/**
- * documentProcessor.js
- *
- * Central pipeline for document validation before upload.
- * Uses classifyAndValidate() as the single source of truth for page correctness.
- *
- * Flow:
- *   canvas + expectedPage
- *       → orientation check                        [portrait → reject immediately]
- *       → (optional) quick table structure check   [OpenCV — non-blocking]
- *       → classifyAndValidate()                    [Claude vision API]
- *       → { ok, message, classification, details }
- */
+// src/utils/documentProcessor.js
 
-import { classifyAndValidate } from './documentClassifier';
-import { validateSHGTableStructure } from './documentScanner';
+import { classifyDocumentByLines } from './documentClassifier';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CANVAS HELPER
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Loads a File/Blob/dataURL into an HTMLCanvasElement.
- * Returns null on failure (caller should treat as "can't validate, let AI decide").
- */
-async function _fileToCanvas(file) {
-    try {
-        const url = file instanceof File || file instanceof Blob
-            ? URL.createObjectURL(file)
-            : file; // assume dataURL string
-
-        return await new Promise((resolve, reject) => {
-            const img = new Image();
-            img.onload = () => {
-                if (file instanceof File || file instanceof Blob) URL.revokeObjectURL(url);
-                const c = document.createElement('canvas');
-                c.width = img.naturalWidth || img.width;
-                c.height = img.naturalHeight || img.height;
-                c.getContext('2d').drawImage(img, 0, 0);
-                resolve(c);
-            };
-            img.onerror = () => {
-                if (file instanceof File || file instanceof Blob) URL.revokeObjectURL(url);
-                reject(new Error('Image load failed'));
-            };
-            img.src = url;
-        });
-    } catch (err) {
-        console.error('[DocumentProcessor] _fileToCanvas error:', err);
-        return null;
-    }
+function safeDelete(obj) {
+  try {
+    if (obj && typeof obj.delete === 'function') obj.delete();
+  } catch (_) {}
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// MAIN ENTRY POINT
-// ─────────────────────────────────────────────────────────────────────────────
+function imageToCanvas(imageSource) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth || img.width;
+      canvas.height = img.naturalHeight || img.height;
+
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+
+      resolve(canvas);
+    };
+
+    img.onerror = reject;
+
+    if (typeof imageSource === 'string') {
+      img.src = imageSource;
+    } else if (imageSource instanceof File || imageSource instanceof Blob) {
+      img.src = URL.createObjectURL(imageSource);
+    } else if (imageSource instanceof HTMLCanvasElement) {
+      resolve(imageSource);
+    } else {
+      reject(new Error('Unsupported image source'));
+    }
+  });
+}
+
+function canvasToMat(canvas) {
+  return cv.imread(canvas);
+}
+
+export async function classifyAndValidate(imageSource, expectedPage) {
+  let mat = null;
+
+  try {
+    const canvas = await imageToCanvas(imageSource);
+    mat = canvasToMat(canvas);
+
+    const result = classifyDocumentByLines(mat);
+
+    if (!result.ok) {
+      if (result.type === 'PORTRAIT') {
+        return {
+          ok: false,
+          classification: 'PORTRAIT',
+          message: 'Portrait images are not allowed. Please rotate or capture in landscape mode.',
+          details: result.details || null
+        };
+      }
+
+      return {
+        ok: false,
+        classification: 'UNKNOWN',
+        message: result.message || 'Unable to classify the document.',
+        details: result.details || null
+      };
+    }
+
+    const detectedType = result.type;
+    const expected = String(expectedPage || '').toLowerCase();
+
+    if (expected === 'page1' || expected === '1') {
+      if (detectedType !== 'PAGE1') {
+        return {
+          ok: false,
+          classification: detectedType,
+          message: 'Wrong document type. Please upload only Page 1 in the Page 1 slot.',
+          details: result.details || null
+        };
+      }
+
+      return {
+        ok: true,
+        classification: 'PAGE1',
+        message: 'Valid Page 1 document.',
+        details: result.details || null
+      };
+    }
+
+    if (expected === 'page2' || expected === '2') {
+      if (detectedType !== 'PAGE2') {
+        return {
+          ok: false,
+          classification: detectedType,
+          message: 'Wrong document type. Please upload only Page 2 in the Page 2 slot.',
+          details: result.details || null
+        };
+      }
+
+      return {
+        ok: true,
+        classification: 'PAGE2',
+        message: 'Valid Page 2 document.',
+        details: result.details || null
+      };
+    }
+
+    return {
+      ok: false,
+      classification: detectedType,
+      message: 'Invalid expected page. Use page1 or page2.',
+      details: result.details || null
+    };
+  } catch (err) {
+    console.error('classifyAndValidate error:', err);
+
+    return {
+      ok: false,
+      classification: 'UNKNOWN',
+      message: 'Document validation failed.'
+    };
+  } finally {
+    safeDelete(mat);
+  }
+}
 
 /**
  * processDocumentAndValidate(canvasOrFile, expectedPage)
- *
- * Validates that the provided image belongs to the expected page slot.
- *
- * @param {HTMLCanvasElement | File | string} canvasOrFile
- *   - HTMLCanvasElement: from SmartCamera or inline capture
- *   - File / Blob:        from gallery picker
- *   - string (dataURL):   from any base64 source
- * @param {1 | 2} expectedPage  - The page slot being filled (1 = Member Register, 2 = Financial Ledger)
- *
- * @returns {Promise<{
- *   ok: boolean,
- *   message: string,
- *   classification: 'PAGE1' | 'PAGE2' | 'REJECTED',
- *   details: object
- * }>}
+ * Wrapper for classifyAndValidate to maintain compatibility with SHGUploadSection.jsx
  */
-export const processDocumentAndValidate = async (canvasOrFile, expectedPage) => {
-    const tag = `[DocumentProcessor] Page${expectedPage}`;
-    const expectedCls = expectedPage === 1 ? 'PAGE1' : 'PAGE2';
-
-    try {
-        console.log(`${tag} — Starting classification-first validation...`);
-
-        let canvas;
-        if (canvasOrFile instanceof HTMLCanvasElement) {
-            canvas = canvasOrFile;
-        } else {
-            canvas = await _fileToCanvas(canvasOrFile);
-            if (!canvas) {
-                return {
-                    ok: false,
-                    errorType: 'file_read_error',
-                    message: 'Failed to read the image file. Please try again.',
-                    classification: 'REJECTED',
-                    details: {}
-                };
-            }
-        }
-
-        if (canvas.height > canvas.width) {
-            console.warn(`${tag} — REJECTED: Portrait orientation (${canvas.width}x${canvas.height})`);
-            return {
-                ok: false,
-                errorType: 'orientation',
-                message: 'Please rotate your phone to Landscape and try again.',
-                classification: 'REJECTED',
-                details: {}
-            };
-        }
-
-        const aiResult = await classifyAndValidate(canvas, expectedPage);
-        console.log(`${tag} — Final Prediction: ${aiResult?.classification} (via ${aiResult?.method})`);
-
-        if (!aiResult || !aiResult.classification) {
-            return {
-                ok: false,
-                errorType: 'classification_failed',
-                classification: 'REJECTED',
-                message: expectedPage === 1
-                    ? 'Unable to confirm this as Page 1. Please upload only the Page 1 document.'
-                    : 'Unable to confirm this as Page 2. Please upload only the Page 2 document.',
-                details: { aiResult, tableDetected: aiResult?.tableDetected }
-            };
-        }
-
-        if (aiResult.classification !== expectedCls) {
-            return {
-                ok: false,
-                errorType: 'wrong_page',
-                classification: aiResult.classification || 'REJECTED',
-                message: aiResult.message || (
-                    expectedPage === 1
-                        ? 'Wrong document uploaded. Please upload the Page 1 document.'
-                        : 'Wrong document uploaded. Please upload the Page 2 document.'
-                ),
-                details: { aiResult, tableDetected: aiResult?.tableDetected }
-            };
-        }
-
-        return {
-            ok: true,
-            classification: expectedCls,
-            message: 'Document uploaded successfully.',
-            details: { aiResult, tableDetected: aiResult?.tableDetected }
-        };
-
-    } catch (error) {
-        console.error(`${tag} — Pipeline fatal error:`, error);
-        return {
-            ok: false,
-            errorType: 'pipeline_error',
-            classification: 'REJECTED',
-            message: 'Wrong document type. Please upload the correct page.',
-            details: { error: error.message }
-        };
-    }
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// IMAGE STITCHING
-// ─────────────────────────────────────────────────────────────────────────────
+export async function processDocumentAndValidate(canvasOrFile, expectedPage) {
+    return await classifyAndValidate(canvasOrFile, expectedPage);
+}
 
 /**
  * stitchImages(file1, file2)
  *
  * Combines Page 1 and Page 2 images vertically into a single JPEG File.
  * The narrower image is scaled up to match the wider one's width.
- *
- * @param {File} file1 - Page 1 image
- * @param {File} file2 - Page 2 image
- * @returns {Promise<File>} Combined JPEG file
  */
 export const stitchImages = async (file1, file2) => {
     const loadImg = (f) => new Promise((resolve, reject) => {

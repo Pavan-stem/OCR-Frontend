@@ -53,7 +53,7 @@ const SHGUploadSection = ({
   const [showSmartCamera, setShowSmartCamera] = useState(false);
   const [cameraTarget, setCameraTarget] = useState({ id: null, name: null });
   const [permanentlyUploadedFiles, setPermanentlyUploadedFiles] = useState([]);
-  const [isViewingPermanent, setIsViewingPermanent] = useState(false);
+  const [currentlyViewingId, setCurrentlyViewingId] = useState(null);
 
   // Detect if device is mobile/tablet
   useEffect(() => {
@@ -88,6 +88,7 @@ const SHGUploadSection = ({
   };
 
   const isDeveloper = user?.role?.toLowerCase().includes('developer') || (user?.voID && String(user.voID).length === 4);
+  const isAuthorizedVO = user?.role?.toLowerCase() === 'vo' || user?.role?.toLowerCase().includes('developer') || user?.role?.toLowerCase().startsWith('vo-');
   const isTestMode = window.location.pathname.startsWith('/Test');
   const hasAIFeatures = isTestMode && isDeveloper;
 
@@ -165,9 +166,10 @@ const SHGUploadSection = ({
     }
   }, [selectedMonth, selectedYear, user?.voID, serverProgress?.uploadedShgIds]);
 
-  const handleViewPermanentlyUploadedFile = async (shgId, page = null) => {
-    if (isViewingPermanent) return;
-    setIsViewingPermanent(true);
+  const handleViewPermanentlyUploadedFile = async (shgId, page = 1) => {
+    const viewId = `${shgId}-${page}`;
+    if (currentlyViewingId) return;
+    setCurrentlyViewingId(viewId);
 
     const targetId = shgId?.toString().toLowerCase();
 
@@ -179,20 +181,26 @@ const SHGUploadSection = ({
       if (shgMatches.length === 0) return null;
 
       const matches = shgMatches.filter(u => {
+        // Page match (strict)
         if (page !== null) {
           const uPage = u.page || u.metadata?.page || 1;
           if (parseInt(uPage) !== parseInt(page)) return false;
         }
-        const rawDate = u.date || u.uploadTimestamp || u.metadata?.uploadTimestamp;
-        let sanitizedDate = rawDate;
-        if (typeof rawDate === 'string' && rawDate.includes('T') && !rawDate.endsWith('Z') && !rawDate.includes('+')) {
-          sanitizedDate = rawDate + 'Z';
+
+        // Date match (consistent with renderSHGCard)
+        const uM = String(u.month || u.metadata?.month || '').padStart(2, '0');
+        const uY = String(u.year || u.metadata?.year || '');
+        const timestamp = u.uploadTimestamp || u.metadata?.uploadTimestamp;
+
+        let dateMatch = uM === selectedMonth && uY === selectedYear;
+        if (!dateMatch && timestamp) {
+          const uploadDate = new Date(timestamp);
+          if (!isNaN(uploadDate.getTime())) {
+            dateMatch = String(uploadDate.getMonth() + 1).padStart(2, '0') === selectedMonth &&
+              String(uploadDate.getFullYear()) === selectedYear;
+          }
         }
-        const uploadDate = new Date(sanitizedDate);
-        if (isNaN(uploadDate.getTime())) return false;
-        const uploadMonth = String(uploadDate.getMonth() + 1).padStart(2, '0');
-        const uploadYear = String(uploadDate.getFullYear());
-        return uploadMonth === selectedMonth && uploadYear === selectedYear;
+        return dateMatch;
       });
 
       return matches.length > 0 ? matches[0] : null;
@@ -217,7 +225,7 @@ const SHGUploadSection = ({
 
     if (!upload) {
       alert(t?.('upload.fileNotFound') || 'Upload information not found for this SHG');
-      setIsViewingPermanent(false);
+      setCurrentlyViewingId(null);
       return;
     }
 
@@ -235,7 +243,7 @@ const SHGUploadSection = ({
 
     if (!url) {
       alert(t?.('upload.viewError') || 'Could not retrieve image URL');
-      setIsViewingPermanent(false);
+      setCurrentlyViewingId(null);
       return;
     }
 
@@ -248,7 +256,7 @@ const SHGUploadSection = ({
       fromServer: true
     });
     setPreviewRotation(0);
-    setIsViewingPermanent(false);
+    setCurrentlyViewingId(null);
   };
 
   useEffect(() => {
@@ -983,7 +991,7 @@ const SHGUploadSection = ({
     try {
       if (page1) results.push(await uploadPage(page1, 1));
       if (page2) results.push(await uploadPage(page2, 2));
-      
+
       return {
         success: results.every(r => r.success),
         results: results,
@@ -1025,27 +1033,27 @@ const SHGUploadSection = ({
     const validatedFiles = Object.keys(uploadedFiles)
       .filter(shgId => {
         if (uploadStatus[shgId]?.uploaded) return false;
-        
+
         const p1 = uploadedFiles[shgId].page1;
         const p2 = uploadedFiles[shgId].page2;
 
         // Check server status for partial flows
         const targetId = shgId?.toString().toLowerCase();
         const serverPages = permanentlyUploadedFiles.filter(u => {
-            const uId = (u.shgID || u.shgId || u.metadata?.shgID || u.metadata?.shgId || '').toString().toLowerCase();
-            return uId === targetId || uId.includes(targetId) || targetId.includes(uId);
+          const uId = (u.shgID || u.shgId || u.metadata?.shgID || u.metadata?.shgId || '').toString().toLowerCase();
+          return uId === targetId || uId.includes(targetId) || targetId.includes(uId);
         });
         const serverPageNums = serverPages
-            .filter(u => !['rejected'].includes((u.status || '').toLowerCase()))
-            .map(u => parseInt(u.page || u.metadata?.page || 0))
-            .filter(Boolean);
+          .filter(u => !['rejected'].includes((u.status || '').toLowerCase()))
+          .map(u => parseInt(u.page || u.metadata?.page || 0))
+          .filter(Boolean);
 
         const p1OnServer = serverPageNums.includes(1);
         const p2OnServer = serverPageNums.includes(2);
 
         // Case 1: Both local pages exist and are validated
         if (p1 && p2) return p1.validated && p2.validated;
-        
+
         // Case 2: One on server, the other local and validated
         if (p1OnServer && p2) return p2.validated;
         if (p2OnServer && p1) return p1.validated;
@@ -1315,7 +1323,7 @@ const SHGUploadSection = ({
         historyUploads={matchedHistoryUploads}
         rejectionInfo={rejectionInfo}
         analyzingState={shgAnalyzingState}
-        isViewingPermanent={isViewingPermanent}
+        currentlyViewingId={currentlyViewingId}
         isMobileDevice={isMobileDevice}
         isUploading={isUploading}
         t={t}
@@ -1351,7 +1359,7 @@ const SHGUploadSection = ({
           <div className="flex-1 min-w-[140px] sm:min-w-[180px]">
             <label className="block text-xs sm:text-sm font-bold text-white/90 mb-2">
               {t?.('upload.month') || 'Month'} <span className="text-yellow-300">*</span>
-              {user?.role?.toLowerCase() === 'vo' && (
+              {isAuthorizedVO && (
                 <span className="ml-2 text-[10px] bg-white/20 px-2 py-0.5 rounded-full">{t?.('upload.currentPastOnly') || 'Current & Past Only'}</span>
               )}
             </label>

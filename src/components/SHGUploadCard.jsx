@@ -43,8 +43,8 @@ const SHGUploadCard = ({
     filesData = {},
     isPermanentlyUploaded,
     rejectionInfo,
-    analyzingState = {},
-    isViewingPermanent,
+    analyzingState = {}, // { page1: bool, page2: bool }
+    currentlyViewingId,
     isMobileDevice,
     isUploading,
     t,
@@ -88,7 +88,7 @@ const SHGUploadCard = ({
         (p2Rejected && page2Validated && filesData.page2)
     );
     const canSubmitFull = !isPartialUpload && page1Validated && page2Validated;
-    
+
     // ── Completion States ───────────────────────────────────────────────
     const hasFiles = !!filesData.page1 || !!filesData.page2;
     const hasAnyAccepted = p1AcceptedOnServer || p2AcceptedOnServer;
@@ -150,9 +150,9 @@ const SHGUploadCard = ({
                 <div className="p-3 rounded-xl border-2 border-blue-300 bg-blue-50/40 flex flex-col h-full shadow-sm">
                     <div className="flex flex-col gap-2 mb-3">
                         <div className="flex flex-wrap gap-2">
-                             <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-700 flex items-center gap-1 border border-blue-200">
+                            <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-700 flex items-center gap-1 border border-blue-200">
                                 <CheckCircle size={10} /> {t?.('upload.validated') || 'Accepted'}
-                             </span>
+                            </span>
                         </div>
                         <span className="font-bold text-sm text-blue-800 leading-tight">{pageTitle}</span>
                     </div>
@@ -204,8 +204,8 @@ const SHGUploadCard = ({
         // ── Normal (pending) or re-upload slot ────────────────────────────
         return (
             <div className={`p-3 rounded-xl border-2 transition-all duration-300 flex flex-col h-full ${fileData
-                    ? fileData.validated ? 'border-green-400 bg-green-50/40 shadow-sm shadow-green-100' : 'border-amber-400 bg-amber-50/40 shadow-sm shadow-amber-100'
-                    : isRejectedOnServer ? 'border-rose-200 bg-rose-50/40' : 'border-dashed border-gray-200 bg-gray-50/50 hover:bg-gray-100/50'
+                ? fileData.validated ? 'border-green-400 bg-green-50/40 shadow-sm shadow-green-100' : 'border-amber-400 bg-amber-50/40 shadow-sm shadow-amber-100'
+                : isRejectedOnServer ? 'border-rose-200 bg-rose-50/40' : 'border-dashed border-gray-200 bg-gray-50/50 hover:bg-gray-100/50'
                 }`}>
                 <div className="flex flex-col gap-2 mb-3">
                     <div className="flex flex-wrap gap-2">
@@ -260,8 +260,8 @@ const SHGUploadCard = ({
                                     <button
                                         onClick={() => fileInputRefs.current[pageKey]?.click()}
                                         className={`flex items-center justify-center gap-1.5 w-full px-3 py-1.5 rounded-lg font-bold cursor-pointer transition-all border shadow-sm text-xs ${isRejectedOnServer
-                                                ? 'bg-rose-50 text-rose-700 hover:bg-rose-100 border-rose-200'
-                                                : 'bg-white text-gray-700 hover:bg-gray-50 hover:border-blue-300'
+                                            ? 'bg-rose-50 text-rose-700 hover:bg-rose-100 border-rose-200'
+                                            : 'bg-white text-gray-700 hover:bg-gray-50 hover:border-blue-300'
                                             }`}
                                     >
                                         <Upload size={14} />
@@ -275,8 +275,8 @@ const SHGUploadCard = ({
                                         onClick={() => onOpenCamera(shg.shgId, shg.shgName, pageNum)}
                                         disabled={isUploading}
                                         className={`flex items-center justify-center gap-1.5 w-full px-3 py-1.5 rounded-lg font-bold cursor-pointer transition-all text-xs ${isRejectedOnServer
-                                                ? 'bg-rose-50 text-rose-700 hover:bg-rose-100'
-                                                : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                                            ? 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+                                            : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
                                             }`}
                                     >
                                         <ScanLine size={14} />
@@ -450,12 +450,14 @@ const SHGUploadCard = ({
                                         const pageToView = doc?.page || doc?.metadata?.page || 1;
                                         onViewPermanentlyUploadedFile(shg.shgId, pageToView);
                                     }}
-                                    disabled={isViewingPermanent}
+                                    disabled={!!currentlyViewingId}
                                     className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-md font-semibold text-xs transition-colors"
                                 >
-                                    {isViewingPermanent
-                                        ? <div className="animate-spin rounded-full h-3 w-3 border-2 border-blue-600 border-t-transparent" />
-                                        : <Eye size={12} />}
+                                    {currentlyViewingId === `${shg.shgId}-${historyUploads[currentHistoryIndex]?.page || historyUploads[currentHistoryIndex]?.metadata?.page || 1}` ? (
+                                        <div className="animate-spin rounded-full h-3 w-3 border-2 border-blue-600 border-t-transparent" />
+                                    ) : (
+                                        <Eye size={12} />
+                                    )}
                                     {t?.('common.view') || 'View'}
                                 </button>
                             </div>
@@ -515,8 +517,8 @@ const SHGUploadCard = ({
                                     onClick={() => onUploadSingleShg(shg.shgId)}
                                     disabled={!canSubmit || isUploading || isPermanentlyUploaded}
                                     className={`w-full py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-3 transition-all shadow-md group ${canSubmit && !isUploading && !isPermanentlyUploaded
-                                            ? 'bg-blue-600 hover:bg-blue-700 text-white transform active:scale-95'
-                                            : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                                        ? 'bg-blue-600 hover:bg-blue-700 text-white transform active:scale-95'
+                                        : 'bg-gray-200 text-gray-500 cursor-not-allowed'
                                         }`}
                                 >
                                     <Upload size={20} className={canSubmit ? 'animate-bounce group-hover:animate-none' : ''} />
