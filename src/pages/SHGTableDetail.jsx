@@ -130,31 +130,33 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
     const handleSave = async () => {
         setSaving(true);
         try {
+            const currentTotals = calculateColumnTotals();
             const updatedTableData = (() => {
                 const updated = JSON.parse(JSON.stringify(data.table_data));
-                
+
                 // Skip totals logic for Page 2 (Financial Ledger)
                 if (updated.page === 2) return updated;
 
-                // For v2.0 or when totals are explicitly editable/present
-                if (updated.schema_version === "2.0" || (updated.totals_row && updated.totals_row.cells)) {
-                    // Totals are already updated by handleTotalChange
-                } else if (!updated.totals_row || !updated.totals_row.cells || updated.totals_row.cells.length === 0) {
-                    // For old versions where totals are missing, inject calculated ones
-                    const totalsCells = [];
-                    for (let i = 0; i < 14; i++) {
-                        const frontendIdx = i + 2;
-                        const val = calculatedTotals[frontendIdx] || 0;
-                        totalsCells.push({
-                            col_index: i,
-                            text: val > 0 ? val.toFixed(2) : '',
-                            confidence: 1.0
-                        });
-                    }
-                    updated.totals_row = { cells: totalsCells };
+                // Always re-calculate and save the current totals for Page 1
+                // This ensures "what is displaying" is what is saved
+                const totalsCells = [];
+                for (let i = 0; i < 14; i++) {
+                    const frontendIdx = i + 2;
+                    const val = currentTotals[frontendIdx] || 0;
+                    totalsCells.push({
+                        col_index: i,
+                        text: val > 0 ? val.toFixed(2) : '',
+                        confidence: 1.0
+                    });
                 }
+                updated.totals_row = { cells: totalsCells };
+                
                 return updated;
             })();
+
+            // SHG ID is usually found in table_data.shg_mbk_id if it was edited
+            // fallback to data.shgID if not changed or present in table_data
+            const shgIDToSave = updatedTableData.shg_mbk_id || data.shgID;
 
             const token = localStorage.getItem('token');
             const res = await fetch(`${API_BASE}/api/conversion/detail/${uploadId}`, {
@@ -165,13 +167,18 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                 },
                 body: JSON.stringify({
                     table_data: updatedTableData,
-                    shgID: data.shgID
+                    shgID: shgIDToSave
                 })
             });
             const result = await res.json();
             if (result.success) {
                 // Update local state with the same data we sent to server
-                const newData = { ...data, table_data: updatedTableData, isSynced: true };
+                const newData = { 
+                    ...data, 
+                    table_data: updatedTableData, 
+                    shgID: shgIDToSave, // Update primary record ID if changed
+                    isSynced: true 
+                };
                 setData(newData);
                 setOriginalData(JSON.parse(JSON.stringify(newData)));
                 setIsEditing(false);
@@ -408,16 +415,13 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
     const convertedSHGID = tableData.shg_mbk_id || tableData.shg_id || "";
     const actualSHGID = data.shgID || "";
 
-    // Check if SHG ID matches using padded versions to avoid false mismatches (e.g. leading zeros)
-    const isSHGIDMismatch = convertedSHGID && actualSHGID && padSHGId(convertedSHGID) !== padSHGId(actualSHGID);
-
     // V2.0: Build header rows with dynamic SHG ID injection
     let headerRows;
     if (schemaVersion === "2.0") {
         headerRows = JSON.parse(JSON.stringify(BASE_SHG_HEADER_ROWS_V2)); // Deep copy
-        // Inject dynamic SHG ID into row 2, cell 2
-        headerRows[1][1].label = convertedSHGID || actualSHGID;
-        headerRows[1][1].text = convertedSHGID || actualSHGID;
+        // Inject dynamic SHG ID into row 2, cell 2 - match the top-level ID for consistency
+        headerRows[1][1].label = actualSHGID;
+        headerRows[1][1].text = actualSHGID;
     } else {
         headerRows = tableData.header_rows || [];
     }
@@ -598,13 +602,12 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                         <button
                             onClick={handleSyncToPayments}
                             disabled={isSyncing || isEditing || data?.isSynced}
-                            className={`px-5 sm:px-8 py-3 sm:py-4 rounded-xl sm:rounded-2xl transition-all font-black shadow-lg flex items-center gap-2 sm:gap-3 ${
-                                data?.isSynced 
-                                    ? 'bg-emerald-500 text-white cursor-default border-emerald-400' 
-                                    : isPage2 
-                                        ? 'bg-violet-500 text-white hover:bg-violet-600 border-violet-400' 
-                                        : 'bg-emerald-500 text-white hover:bg-emerald-600 border-emerald-400'
-                            }`}
+                            className={`px-5 sm:px-8 py-3 sm:py-4 rounded-xl sm:rounded-2xl transition-all font-black shadow-lg flex items-center gap-2 sm:gap-3 ${data?.isSynced
+                                ? 'bg-emerald-500 text-white cursor-default border-emerald-400'
+                                : isPage2
+                                    ? 'bg-violet-500 text-white hover:bg-violet-600 border-violet-400'
+                                    : 'bg-emerald-500 text-white hover:bg-emerald-600 border-emerald-400'
+                                }`}
                         >
                             {isSyncing ? (
                                 <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
@@ -681,14 +684,14 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                                                             key={cIdx}
                                                             colSpan={cell.col_span || 1}
                                                             rowSpan={cell.row_span || 1}
-                                                            className={`bg-indigo-50/50 border-b border-r border-indigo-100/50 px-6 py-4 text-[11px] font-black transition-colors uppercase tracking-wider ${isLastLevel ? 'bg-indigo-100/30' : ''} ${isSHGIDHeader ? 'text-left' : 'text-center'} ${isSHGIDHeader && isSHGIDMismatch ? 'text-red-600 bg-red-50/50' : 'text-indigo-900'}`}
+                                                            className={`bg-indigo-50/50 border-b border-r border-indigo-100/50 px-6 py-4 text-[11px] font-black transition-colors uppercase tracking-wider ${isLastLevel ? 'bg-indigo-100/30' : ''} ${isSHGIDHeader ? 'text-left' : 'text-center'}`}
                                                         >
                                                             {isSHGIDHeader && isEditing ? (
                                                                 <input
                                                                     type="text"
                                                                     value={tableData.shg_mbk_id || cell.label}
                                                                     onChange={(e) => handleSHGIDChange(e.target.value)}
-                                                                    className={`w-full bg-white border border-black/30 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-bold ${isSHGIDMismatch ? 'text-red-600' : 'text-indigo-900'}`}
+                                                                    className={`w-full bg-white border border-black/30 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-bold`}
                                                                 />
                                                             ) : (
                                                                 cell.label
@@ -745,20 +748,11 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                                                         return null;
                                                     } else {
                                                         const columnTotal = calculatedTotals[cellIdx] || 0;
-                                                        const expectedColIndex = cellIdx - 2;
-                                                        const extractedTotalCell = schemaVersion === "2.0"
-                                                            ? extractedTotals[expectedColIndex]
-                                                            : extractedTotals.find(t => t.col_index === expectedColIndex);
-                                                        const extractedText = extractedTotalCell?.text || '';
-                                                        const extractedValue = extractedText ? parseFloat(extractedText.replace(/[^0-9.-]/g, '')) : null;
-                                                        const hasExtractedTotal = !!extractedText;
-                                                        const displayText = hasExtractedTotal ? extractedText : (columnTotal > 0 ? columnTotal.toFixed(2) : '-');
-                                                        const hasMismatch = hasExtractedTotal && extractedValue !== null && Math.abs(extractedValue - columnTotal) > 0.01;
+                                                        const displayText = columnTotal > 0 ? columnTotal.toFixed(2) : '-';
                                                         return (
                                                             <td
                                                                 key={cellIdx}
-                                                                className={`px-6 py-4 text-sm font-black border-r border-gray-100/50 text-center ${hasMismatch ? 'text-orange-600 bg-orange-50/50' : !hasExtractedTotal ? 'text-gray-500' : 'text-indigo-900'}`}
-                                                                title={hasMismatch ? `OCR: ${extractedText} | Calculated: ${columnTotal.toFixed(2)}` : !hasExtractedTotal ? 'Calculated Total (OCR missing)' : ''}
+                                                                className="px-6 py-4 text-sm font-black border-r border-gray-100/50 text-center text-indigo-900"
                                                             >
                                                                 {isEditing ? (
                                                                     <input
