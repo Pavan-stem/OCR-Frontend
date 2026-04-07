@@ -87,27 +87,36 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
     }, [uploadId]);
 
     const handleDownloadExcel = async () => {
-        // ... (existing code remains but use current 'data')
         try {
             if (!data || !data.table_data) return;
 
+            const isPage2 = data.table_data.page === 2;
+            const endpoint = isPage2 ? `${API_BASE}/api/export-finance-to-excel` : `${API_BASE}/api/export-to-excel`;
+            
+            const payload = isPage2 ? {
+                table_data: data.table_data,
+                shg_mbk_id: padSHGId(data.shgID) || 'Unknown',
+                filename: `SHG_Finance_${shgName}_${padSHGId(data.shgID)}`
+            } : {
+                table_data: {
+                    ...data.table_data,
+                    header_rows: headerRows,
+                    column_headers: headers
+                },
+                shg_mbk_id: padSHGId(data.shgID) || 'Unknown',
+                month: new Date(data.convertedAt).getMonth() + 1,
+                year: new Date(data.convertedAt).getFullYear(),
+                filename: `SHG_Data_${shgName}_${padSHGId(data.shgID)}`
+            };
+
             const token = localStorage.getItem('token');
-            const res = await fetch(`${API_BASE}/api/export-to-excel`, {
+            const res = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    table_data: {
-                        ...data.table_data,
-                        header_rows: headerRows,
-                        column_headers: headers
-                    },
-                    shg_mbk_id: padSHGId(data.shgID) || 'Unknown',
-                    month: new Date(data.convertedAt).getMonth() + 1,
-                    year: new Date(data.convertedAt).getFullYear()
-                })
+                body: JSON.stringify(payload)
             });
 
             if (res.ok) {
@@ -115,7 +124,9 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `SHG_Data_${shgName}_${padSHGId(data.shgID)}.xlsx`;
+                a.download = isPage2 
+                    ? `SHG_Finance_${shgName}_${padSHGId(data.shgID)}.xlsx`
+                    : `SHG_Data_${shgName}_${padSHGId(data.shgID)}.xlsx`;
                 document.body.appendChild(a);
                 a.click();
                 a.remove();
