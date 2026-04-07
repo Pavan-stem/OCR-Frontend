@@ -135,7 +135,19 @@ export const translations = {
             reuploadPage: "Re-upload Page",
             rescanPage: "Re-scan Page",
             reuploadReplacement: "Upload a replacement for this page",
-            viewDocument: "View Document"
+            viewDocument: "View Document",
+            selectMonthYearFirst: "Please select both month and year first.",
+            sessionExpired: "Session expired. Please log in again.",
+            validationFailedClear: "Validation failed. Please ensure the image is clear and try again.",
+            alreadyUploadedSynced: "All files have already been uploaded. Your session state has been updated.",
+            validatePage1First: "Please validate Page 1 before uploading.",
+            validatePage2First: "Please validate Page 2 before uploading.",
+            accessLocked: "Upload Access Locked",
+            accessLockedMessage: "Your coordinator has locked your upload period to",
+            currentPastOnly: "Current & Past Only",
+            locked: "Locked",
+            noFilesSelected: "No files selected.",
+            invalidShgIdRefresing: "The SHG ID is not valid. Refreshing the list...",
         },
 
 
@@ -381,7 +393,19 @@ export const translations = {
             reuploadPage: "మళ్ళీ అప్‌లోడ్ చేయండి",
             rescanPage: "మళ్ళీ స్కాన్ చేయండి",
             reuploadReplacement: "ఈ పేజీకి బదులుగా మరొకటి అప్‌లోడ్ చేయండి",
-            viewDocument: "పత్రాన్ని చూడండి"
+            viewDocument: "పత్రాన్ని చూడండి",
+            selectMonthYearFirst: "దయచేసి నెల మరియు సంవత్సరం రెండూ ఎంచుకోండి.",
+            sessionExpired: "సెషన్ ముగిసింది. దయచేసి మళ్లీ లాగిన్ అవ్వండి.",
+            validationFailedClear: "ధృవీకరణ విఫలమైంది. దయచేసి చిత్రం స్పష్టంగా ఉందని నిర్ధారించుకొని మళ్లీ ప్రయత్నించండి.",
+            alreadyUploadedSynced: "అన్ని ఫైల్స్ ఇప్పటికే అప్‌లోడ్ చేయబడ్డాయి. మీ సెషన్ స్థితి నవీకరించబడింది.",
+            validatePage1First: "అప్‌లోడ్ చేసే ముందు పేజీ 1 ని ధృవీకరించండి.",
+            validatePage2First: "అప్‌లోడ్ చేసే ముందు పేజీ 2 ని ధృవీకరించండి.",
+            accessLocked: "అప్‌లోడ్ యాక్సెస్ లాక్ చేయబడింది",
+            accessLockedMessage: "మీ కోఆర్డినేటర్ మీ అప్‌లోడ్ కాలాన్ని లాక్ చేసారు",
+            currentPastOnly: "ప్రస్తుత మరియు గత నెలలు మాత్రమే",
+            locked: "లాక్ చేయబడింది",
+            noFilesSelected: "ఫైల్స్ ఏదీ ఎంపిక చేయలేదు.",
+            invalidShgIdRefresing: "SHG ID చెల్లదు. జాబితా రీఫ్రెష్ అవుతోంది...",
         },
 
 

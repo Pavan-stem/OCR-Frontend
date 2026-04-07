@@ -532,7 +532,7 @@ const SHGUploadSection = ({
     setError('');
 
     if (!selectedMonth || !selectedYear) {
-      setError('Please select both month and year first.');
+      setError(t?.('upload.selectMonthYearFirst') || 'Please select both month and year first.');
       setLoading(false);
       return;
     }
@@ -540,7 +540,7 @@ const SHGUploadSection = ({
     try {
       const token = localStorage.getItem('token');
       if (!token) {
-        setError('Session expired. Please log in again.');
+        setError(t?.('upload.sessionExpired') || 'Session expired. Please log in again.');
         setLoading(false);
         window.location.href = '#/login';
         return;
@@ -561,7 +561,7 @@ const SHGUploadSection = ({
       if (response.status === 401) {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
-        setError('Session expired. Please log in again.');
+        setError(t?.('upload.sessionExpired') || 'Session expired. Please log in again.');
         setLoading(false);
         window.location.href = '#/login';
         return;
@@ -861,7 +861,7 @@ const SHGUploadSection = ({
       }
     } catch (err) {
       console.error("Manual validation error:", err);
-      alert("Validation failed. Please ensure the image is clear and try again.");
+      alert(t?.('upload.validationFailedClear') || 'Validation failed. Please ensure the image is clear and try again.');
     } finally {
       setAnalyzingMap(prev => ({ ...prev, [shgId]: { ...(prev[shgId] || {}), [pageKey]: false } }));
     }
@@ -1386,14 +1386,14 @@ const SHGUploadSection = ({
       {/* Restriction Banner */}
       {restriction?.mode === 'restricted' && (
         <div className="animate-in slide-in-from-top duration-700">
-          <div className="bg-gradient-to-r from-orange-600 to-amber-600 p-4 sm:p-5 rounded-2xl shadow-xl border border-white/30 flex items-center gap-4 text-white">
+          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-4 sm:p-5 rounded-2xl shadow-xl border border-white/30 flex items-center gap-4 text-white">
             <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center shadow-inner shrink-0 scale-110">
               <Lock size={24} className="text-white" />
             </div>
             <div>
-              <h4 className="text-xs sm:text-sm font-black uppercase tracking-widest leading-none mb-1">Upload Access Locked</h4>
+              <h4 className="text-xs sm:text-sm font-black uppercase tracking-widest leading-none mb-1">{t?.('upload.accessLocked') || 'Upload Access Locked'}</h4>
               <p className="text-sm font-bold opacity-90 uppercase tracking-tighter">
-                Your coordinator has locked your upload period to <span className="underline decoration-2 underline-offset-4">{new Date(2025, parseInt(restriction.month) - 1).toLocaleString('default', { month: 'long' })} {restriction.year}</span>
+                {t?.('upload.accessLockedMessage') || 'Your coordinator has locked your upload period to'} <span className="underline decoration-2 underline-offset-4">{new Date(2025, parseInt(restriction.month) - 1).toLocaleString('default', { month: 'long' })} {restriction.year}</span>
               </p>
             </div>
           </div>
