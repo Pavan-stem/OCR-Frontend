@@ -720,7 +720,7 @@ function validateStructure(cv, src) {
         // Outward padding (Consistent 5% expansion)
         const cx = corners.reduce((s, p) => s + p.x, 0) / corners.length;
         const cy = corners.reduce((s, p) => s + p.y, 0) / corners.length;
-        const PAD_RATIO = 0.05; 
+        const PAD_RATIO = 0.05;
         const paddedCorners = corners.map(p => ({
             x: Math.max(0, Math.min(src.cols - 1, p.x + (p.x - cx) * PAD_RATIO)),
             y: Math.max(0, Math.min(src.rows - 1, p.y + (p.y - cy) * PAD_RATIO)),

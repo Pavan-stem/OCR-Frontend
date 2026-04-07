@@ -117,7 +117,7 @@ const SHGUploadSection = ({
         if (previewFile.rotation && previewFile.rotation % 360 !== 0) {
           const processedFile = await processFileRotation(previewFile, { quality: 0.9 });
           const url = URL.createObjectURL(processedFile);
-          
+
           if (previewSessionUrlRef.current) URL.revokeObjectURL(previewSessionUrlRef.current);
           previewSessionUrlRef.current = url;
           setSmartPreviewUrl(url);
@@ -202,13 +202,13 @@ const SHGUploadSection = ({
         const uM = String(u.month || u.metadata?.month || '').padStart(2, '0');
         const uY = String(u.year || u.metadata?.year || '');
         const timestamp = u.uploadTimestamp || u.metadata?.uploadTimestamp;
-        
+
         let dateMatch = uM === selectedMonth && uY === selectedYear;
         if (!dateMatch && timestamp) {
           const uploadDate = new Date(timestamp);
           if (!isNaN(uploadDate.getTime())) {
             dateMatch = String(uploadDate.getMonth() + 1).padStart(2, '0') === selectedMonth &&
-                        String(uploadDate.getFullYear()) === selectedYear;
+              String(uploadDate.getFullYear()) === selectedYear;
           }
         }
         return dateMatch;
@@ -1667,8 +1667,8 @@ const SHGUploadSection = ({
                 <div className="absolute left-1.5 top-1/2 -translate-y-1/2 z-30">
                   <button
                     onClick={() => handleViewPermanentlyUploadedFile(previewFile.shgId, 1)}
-                    className={`h-9 w-9 rounded-full shadow-xl backdrop-blur-md transition-all duration-300 transform hover:scale-110 flex items-center justify-center border ${previewFile.page === 1 
-                      ? 'bg-blue-600/30 text-white border-blue-400' 
+                    className={`h-9 w-9 rounded-full shadow-xl backdrop-blur-md transition-all duration-300 transform hover:scale-110 flex items-center justify-center border ${previewFile.page === 1
+                      ? 'bg-blue-600/30 text-white border-blue-400'
                       : 'bg-white/10 text-gray-700 border-white/30 hover:bg-white/30'}`}
                     title="Page 1"
                   >
@@ -1678,8 +1678,8 @@ const SHGUploadSection = ({
                 <div className="absolute right-1.5 top-1/2 -translate-y-1/2 z-30">
                   <button
                     onClick={() => handleViewPermanentlyUploadedFile(previewFile.shgId, 2)}
-                    className={`h-9 w-9 rounded-full shadow-xl backdrop-blur-md transition-all duration-300 transform hover:scale-110 flex items-center justify-center border ${previewFile.page === 2 
-                      ? 'bg-blue-600/30 text-white border-blue-400' 
+                    className={`h-9 w-9 rounded-full shadow-xl backdrop-blur-md transition-all duration-300 transform hover:scale-110 flex items-center justify-center border ${previewFile.page === 2
+                      ? 'bg-blue-600/30 text-white border-blue-400'
                       : 'bg-white/10 text-gray-700 border-white/30 hover:bg-white/30'}`}
                     title="Page 2"
                   >
@@ -1695,12 +1695,12 @@ const SHGUploadSection = ({
                       </div>
                     </div>
                   )}
-                  
+
                   <div className="relative">
-                    <img 
-                      src={previewFile.previewUrl} 
-                      alt={`Document Page ${previewFile.page}`} 
-                      className={`max-w-full h-auto mx-auto border-2 border-white rounded-md shadow-2xl transition-all duration-500 ${currentlyViewingId ? 'opacity-50 scale-95' : 'animate-in fade-in zoom-in-95'}`} 
+                    <img
+                      src={previewFile.previewUrl}
+                      alt={`Document Page ${previewFile.page}`}
+                      className={`max-w-full h-auto mx-auto border-2 border-white rounded-md shadow-2xl transition-all duration-500 ${currentlyViewingId ? 'opacity-50 scale-95' : 'animate-in fade-in zoom-in-95'}`}
                       key={`${previewFile.shgId}-${previewFile.page}`}
                     />
                   </div>

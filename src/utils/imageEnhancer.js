@@ -100,14 +100,14 @@ const cvReady = () => !!(window.cv && window.cv.Mat);
  *   Recommended: 3 for text, 5 for fine lines or noisy sources.
  *
  * ─────────────────────────────────────────────────────────────────────────── */
-const ADAPTIVE_C = 4;
+const ADAPTIVE_C = 4; // Back to standard sensitivity
 const BLUR_KSIZE = 3;
-const OPEN_KSIZE = 3; // Increased to 3 to prune single-pixel noise spikes
+const OPEN_KSIZE = 1; // RESET TO 1 TO PREVENT ERASURE OF THIN LINES
 
 /* Note: These are now used as base values or defaults,
  * but are overridden by dynamic calculations inside enhanceImage. */
-const BLEND_ALPHA = 0.7;   // increased for clearer ink
-const INK_DARKEN = 0.7;     // lowered for bolder ink
+const BLEND_ALPHA = 0.8;    // Balanced
+const INK_DARKEN = 0.5;      // Slightly bolder
 
 export const enhanceImage = async (
     canvas,
@@ -155,12 +155,12 @@ export const enhanceImage = async (
         /* ── DYNAMIC PARAMETERS ───────────────────────────────
          * Scale kernels and thresholds based on resolution.
          */
-        const dynAdaptiveSize = Math.max(3, Math.floor(minDim / 80) * 2 + 1);
-        // More aggressive blob filtering (divisor 200k vs 300k)
-        const dynMinBlobArea = Math.max(5, Math.round((W * H) / 200000));
-        const dynSharpenAmount = 1.2;
+        const dynAdaptiveSize = Math.max(3, Math.floor(minDim / 100) * 2 + 1);
+        // Extremely conservative blob filtering
+        const dynMinBlobArea = Math.max(3, Math.round((W * H) / 400000));
+        const dynSharpenAmount = 1.6; // High crispness without artifacts
         const dynSharpenBlur = Math.max(3, Math.floor(minDim / 400) * 2 + 1);
-        const SHARPEN_THRESHOLD = 4; // Ignore subtle grain/texture
+        const SHARPEN_THRESHOLD = 2; // Capture even fine detail
 
         /* ── STEP 2 : BACKGROUND MODEL ──────────────────────────
          * Downscale → dilate → upscale.
@@ -205,8 +205,8 @@ export const enhanceImage = async (
         onProgress('Stretching highlights…');
         await tick();
         result = new cv.Mat();
-        const WHITE_POINT = 230; // Anything above 230 becomes pure white
-        
+        const WHITE_POINT = 225; // Safer whitening point (less erasure)
+
         // Manual stretch: output = input * (255 / WHITE_POINT)
         divided.convertTo(result, cv.CV_8U, 255 / WHITE_POINT, 0);
 
@@ -214,9 +214,9 @@ export const enhanceImage = async (
         cv.normalize(divided, divided, 0, 255, cv.NORM_MINMAX, cv.CV_8U);
         const divData = divided.data;
         for (let i = 0; i < divData.length; i++) {
-            if (divData[i] > 210) {
-                // Smoothly push near-white background to pure white
-                divData[i] = Math.min(255, divData[i] + (255 - divData[i]) * 0.8);
+            if (divData[i] > 220) {
+                // Only push very light pixels to pure white
+                divData[i] = Math.min(255, divData[i] + (255 - divData[i]) * 0.7);
             }
         }
 
@@ -378,7 +378,7 @@ export const enhanceImage = async (
             for (let i = 0; i < len; i++) {
                 // edge detail = original − blurred
                 const detail = resultData[i] - blurData[i];
-                
+
                 // Noise deadzone: only sharpen if detail exceeds threshold
                 if (Math.abs(detail) > SHARPEN_THRESHOLD) {
                     // add scaled detail back
