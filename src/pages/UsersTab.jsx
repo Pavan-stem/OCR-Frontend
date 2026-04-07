@@ -670,7 +670,7 @@ const UsersTab = ({ filterProps }) => {
   const groupedUserUploads = React.useMemo(() => {
     // 1. Group all uploads by shgID regardless of status
     const shgGroups = {};
-    
+
     userUploads.forEach(u => {
       if (!shgGroups[u.shgID]) {
         shgGroups[u.shgID] = {
@@ -692,7 +692,7 @@ const UsersTab = ({ filterProps }) => {
     Object.values(shgGroups).forEach(group => {
       const pageUploads = Object.values(group.pages);
       const statuses = pageUploads.map(p => p.status || 'pending');
-      
+
       if (statuses.includes('pending')) {
         sections.pending.push(group);
       } else if (statuses.includes('rejected')) {
@@ -753,14 +753,22 @@ const UsersTab = ({ filterProps }) => {
     clusterID: '',
     clusterName: '',
     userID: '',
-    userName: ''
+    userName: '',
+    assignedCC: '',   // CC clusterID to assign this VO to
+    shgList: []       // [{shgID, shgName}] for shg_master_data
   });
+
+  // CC dropdown list state (auto-loaded when district+mandal change for VO role)
+  const [ccList, setCcList] = useState([]);
+  const [ccListLoading, setCcListLoading] = useState(false);
 
   // Modal-specific location states to avoid overriding global filters
   const [modalMandals, setModalMandals] = useState([]);
   const [modalVillages, setModalVillages] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [shgListLoading, setShgListLoading] = useState(false);
+  const [deletedShgIds, setDeletedShgIds] = useState([]);
 
   const [maintenanceStatus, setMaintenanceStatus] = useState({ is_active: false, message: 'Server is under maintenance', end_time: null });
   const [lastSynced, setLastSynced] = useState(new Date());
@@ -808,6 +816,35 @@ const UsersTab = ({ filterProps }) => {
     return null;
   };
 
+  const fetchNodeBranch = async (userId, userRole) => {
+    setLoadingNodes(prev => new Set(prev).add(userId));
+    try {
+      const token = localStorage.getItem('token');
+      const params = new URLSearchParams();
+      params.append('parentId', userId);
+      params.append('parentRole', userRole);
+      if (filterMonth) params.append('month', filterMonth);
+      if (filterYear) params.append('year', filterYear);
+      if (debouncedSearchTerm) params.append('search', debouncedSearchTerm);
+
+      const res = await fetch(`${API_BASE}/api/users?${params.toString()}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success && data.users) {
+        updateTreeWithChildren(userId, data.users);
+      }
+    } catch (err) {
+      console.error("Fetch Branch Error:", err);
+    } finally {
+      setLoadingNodes(prev => {
+        const next = new Set(prev);
+        next.delete(userId);
+        return next;
+      });
+    }
+  };
+
   const toggleRow = async (user) => {
     const userId = typeof user === 'string' ? user : user._id;
     const isExpanding = !expandedRows.has(userId);
@@ -816,32 +853,7 @@ const UsersTab = ({ filterProps }) => {
       const hasChildren = (user.ccs && user.ccs.length > 0) || (user.vos && user.vos.length > 0);
 
       if (!hasChildren) {
-        setLoadingNodes(prev => new Set(prev).add(userId));
-        try {
-          const token = localStorage.getItem('token');
-          const params = new URLSearchParams();
-          params.append('parentId', userId);
-          params.append('parentRole', user.role);
-          if (filterMonth) params.append('month', filterMonth);
-          if (filterYear) params.append('year', filterYear);
-          if (debouncedSearchTerm) params.append('search', debouncedSearchTerm);
-
-          const res = await fetch(`${API_BASE}/api/users?${params.toString()}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-          });
-          const data = await res.json();
-          if (data.success && data.users) {
-            updateTreeWithChildren(userId, data.users);
-          }
-        } catch (err) {
-          console.error("Lazy Load Error:", err);
-        } finally {
-          setLoadingNodes(prev => {
-            const next = new Set(prev);
-            next.delete(userId);
-            return next;
-          });
-        }
+        await fetchNodeBranch(userId, user.role);
       }
     }
 
@@ -954,6 +966,34 @@ const UsersTab = ({ filterProps }) => {
       setModalVillages([]);
     }
   }, [formData.district, formData.mandal]);
+
+  // Load CC list when district+mandal change (for VO assignment)
+  useEffect(() => {
+    if (formData.role === 'VO' && formData.district && formData.mandal) {
+      const fetchCCList = async () => {
+        setCcListLoading(true);
+        try {
+          const token = localStorage.getItem('token');
+          const params = new URLSearchParams();
+          params.append('district', formData.district);
+          params.append('mandal', formData.mandal);
+          const res = await fetch(`${API_BASE}/api/cc-list?${params.toString()}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await res.json();
+          if (data.success) setCcList(data.ccs || []);
+          else setCcList([]);
+        } catch {
+          setCcList([]);
+        } finally {
+          setCcListLoading(false);
+        }
+      };
+      fetchCCList();
+    } else {
+      setCcList([]);
+    }
+  }, [formData.district, formData.mandal, formData.role]);
 
   useEffect(() => {
     localStorage.setItem(PAGE_KEY, page);
@@ -1631,7 +1671,7 @@ const UsersTab = ({ filterProps }) => {
 
       // Construct final role
       const finalRole = formData.isDeveloper ? `${formData.role} - Developer` : formData.role;
-      const { isDeveloper, ...submitData } = { ...formData, role: finalRole };
+      const { isDeveloper, assignedCC, shgList, ...submitData } = { ...formData, role: finalRole };
 
       const res = await fetch(`${API_BASE}/api/users`, {
         method: 'POST',
@@ -1643,15 +1683,82 @@ const UsersTab = ({ filterProps }) => {
       });
       const data = await res.json();
       if (data.success) {
+        // --- Post-creation: CC-VO mapping ---
+        if (formData.role === 'VO' && assignedCC && formData.voID) {
+          try {
+            await fetch(`${API_BASE}/api/cc-vo-mapping`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              body: JSON.stringify({ ccID: assignedCC, voID: formData.voID })
+            });
+          } catch (mappingErr) {
+            console.warn('CC-VO mapping failed (non-critical):', mappingErr);
+          }
+        }
+
+        // --- Post-creation: SHG master data ---
+        if (formData.role === 'VO' && shgList && shgList.length > 0) {
+          try {
+            const shgsPayload = shgList
+              .filter(s => s.shgID && s.shgName)
+              .map(s => ({
+                shgID: s.shgID,
+                shgName: s.shgName,
+                voID: formData.voID,
+                voName: formData.voName,
+                district: formData.district,
+                mandal: formData.mandal,
+                village: formData.village,
+                month: 1,
+                year: 2025
+              }));
+            if (shgsPayload.length > 0) {
+              await fetch(`${API_BASE}/api/shg-master`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ shgs: shgsPayload })
+              });
+            }
+          } catch (shgErr) {
+            console.warn('SHG master data failed (non-critical):', shgErr);
+          }
+        }
+
         setShowAddModal(false);
         setFormData({
           voName: '', phone: '', password: '', role: 'VO', isDeveloper: false,
           district: '', mandal: '', village: '',
           voID: '', voaName: '',
           clusterID: '', clusterName: '',
-          userID: '', userName: ''
+          userID: '', userName: '',
+          assignedCC: '', shgList: []
         });
-        fetchUsers();
+        setCcList([]);
+        
+        // 🔄 Optimized Refersh: Find parent and refresh only that branch
+        let refreshedBranch = false;
+        if (formData.role === 'VO' && formData.assignedCC) {
+          // Find the CC node in the tree to refresh its branch
+          const findAndRefresh = (list) => {
+            if (!list) return false;
+            for (const node of list) {
+              if (node.clusterID === formData.assignedCC || node.voID === formData.assignedCC) {
+                fetchNodeBranch(node._id, node.role);
+                return true;
+              }
+              const children = node.ccs || node.vos;
+              if (children && findAndRefresh(children)) return true;
+            }
+            return false;
+          };
+          refreshedBranch = findAndRefresh(users);
+        }
+
+        if (!refreshedBranch) {
+          fetchUsers(); // Fallback to full refresh
+        }
+        
+        fetchUserCounts();
       } else {
         alert(data.error || 'Failed to create user');
       }
@@ -1670,7 +1777,7 @@ const UsersTab = ({ filterProps }) => {
 
       // Construct final role
       const finalRole = formData.isDeveloper ? `${formData.role} - Developer` : formData.role;
-      const { isDeveloper, ...submitData } = { ...formData, role: finalRole };
+      const { isDeveloper, shgList, ...submitData } = { ...formData, role: finalRole };
 
       const res = await fetch(`${API_BASE}/api/users/${currentUser._id}`, {
         method: 'PUT',
@@ -1682,6 +1789,68 @@ const UsersTab = ({ filterProps }) => {
       });
       const data = await res.json();
       if (data.success) {
+        // --- Sync SHG Master Data ---
+        if (formData.role === 'VO') {
+          // 1. Handle Deletions
+          for (const shgId of deletedShgIds) {
+            try {
+              await fetch(`${API_BASE}/api/shg-master/${shgId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+              });
+            } catch (err) { console.warn(`Failed to delete SHG ${shgId}:`, err); }
+          }
+
+          // 2. Handle Updates & New Entries
+          const newShgs = [];
+          for (const shg of formData.shgList) {
+            if (shg._id) {
+              // Existing SHG -> Update
+              try {
+                await fetch(`${API_BASE}/api/shg-master/${shg._id}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                  body: JSON.stringify({
+                    'SHG Name': shg['SHG Name'] || shg.shgName,
+                    'endMonth': shg.endMonth,
+                    'endYear': shg.endYear
+                  })
+                });
+              } catch (err) { console.warn(`Failed to update SHG ${shg._id}:`, err); }
+            } else {
+              // New SHG -> Queue for batch create
+              newShgs.push(shg);
+            }
+          }
+
+          if (newShgs.length > 0) {
+            try {
+              const shgsPayload = newShgs
+                .filter(s => s.shgID && s.shgName)
+                .map(s => ({
+                  shgID: s.shgID,
+                  shgName: s.shgName,
+                  voID: formData.voID,
+                  voName: formData.voName,
+                  district: formData.district,
+                  mandal: formData.mandal,
+                  village: formData.village,
+                  month: 1,
+                  year: 2025,
+                  endMonth: s.endMonth || null,
+                  endYear: s.endYear || null
+                }));
+              if (shgsPayload.length > 0) {
+                await fetch(`${API_BASE}/api/shg-master`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                  body: JSON.stringify({ shgs: shgsPayload })
+                });
+              }
+            } catch (err) { console.warn('Failed to add new SHGs:', err); }
+          }
+        }
+
         setShowEditModal(false);
         fetchUsers();
       } else {
@@ -1704,11 +1873,93 @@ const UsersTab = ({ filterProps }) => {
       });
       const data = await res.json();
       if (data.success) {
-        fetchUsers();
+        // --- OPTIMIZED FRONTEND REMOVAL ---
+        
+        let deletedUser = null;
+        let parentId = null;
+
+        // 🔍 Step 1: Find user and parent before removing
+        const findAndTrace = (list, pid = null) => {
+          if (!list) return false;
+          for (const u of list) {
+            if (u._id === userId) {
+              deletedUser = u;
+              parentId = pid;
+              return true;
+            }
+            const children = u.ccs || u.vos;
+            if (children && findAndTrace(children, u._id)) return true;
+          }
+          return false;
+        };
+        
+        findAndTrace(users);
+        if (!deletedUser) {
+          deletedUser = staffUsers.find(u => u._id === userId);
+          // Note: Staff users are root level in this context
+        }
+
+        if (!deletedUser) {
+          // Fallback if local lookup fails
+          fetchUsers();
+          return;
+        }
+
+        // Determine role for count decrement
+        const rawRole = (deletedUser.role || '').toLowerCase();
+        let roleKey = 'vo';
+        if (rawRole.includes('apm')) roleKey = 'apm';
+        else if (rawRole.includes('cc')) roleKey = 'cc';
+
+        // 🔄 Step 2: Recursive remove and stats decrement
+        const removeFromTree = (list) => {
+          if (!list) return [];
+          return list
+            .filter(u => u._id !== userId)
+            .map(u => {
+              const updatedNode = { ...u };
+              
+              // Recurse into children
+              if (u.ccs) updatedNode.ccs = removeFromTree(u.ccs);
+              if (u.vos) updatedNode.vos = removeFromTree(u.vos);
+
+              // 📊 Subtract stats from parent node
+              if (u._id === parentId && (deletedUser.totalFiles || deletedUser.uploadedFiles)) {
+                // Main display fields
+                updatedNode.totalFiles = Math.max(0, (u.totalFiles || 0) - (deletedUser.totalFiles || 0));
+                updatedNode.uploadedFiles = Math.max(0, (u.uploadedFiles || 0) - (deletedUser.uploadedFiles || 0));
+                updatedNode.pendingFiles = Math.max(0, (u.pendingFiles || 0) - (deletedUser.pendingFiles || 0));
+                
+                // Deep stats object
+                if (u.stats) {
+                  updatedNode.stats = {
+                    ...u.stats,
+                    total: Math.max(0, (u.stats.total || 0) - (deletedUser.totalFiles || 0)),
+                    uploaded: Math.max(0, (u.stats.uploaded || 0) - (deletedUser.uploadedFiles || 0)),
+                    pending: Math.max(0, (u.stats.pending || 0) - (deletedUser.pendingFiles || 0))
+                  };
+                }
+              }
+              
+              return updatedNode;
+            });
+        };
+
+        // 🚀 Step 3: Apply State Updates
+        setUsers(prev => removeFromTree(prev));
+        setStaffUsers(prev => prev.filter(u => u._id !== userId));
+        setTotalUsers(prev => Math.max(0, prev - 1));
+        setUserCounts(prev => ({
+          ...prev,
+          [roleKey]: Math.max(0, (prev[roleKey] || 0) - 1)
+        }));
+        fetchUserCounts(); // 🔄 Also refresh from server to ensure filter consistency
+
       } else {
         alert(data.error || 'Failed to delete user');
       }
     } catch (err) {
+      console.error('Delete User error:', err);
       alert('Error deleting user');
     }
   };
@@ -1740,10 +1991,36 @@ const UsersTab = ({ filterProps }) => {
       clusterID: user.clusterID || '',
       clusterName: user.clusterName || '',
       userID: user.userID || '',
-      userName: user.userName || user.voName || ''
+      userName: user.userName || user.voName || '',
+      assignedCC: '',
+      shgList: []
     });
+    setDeletedShgIds([]);
     setShowPassword(false);
+    setCcList([]);
     setShowEditModal(true);
+
+    // Fetch SHGs if it's a VO
+    if (baseRole === 'VO' && user.voID) {
+      const fetchVOShgs = async () => {
+        setShgListLoading(true);
+        try {
+          const token = localStorage.getItem('token');
+          const res = await fetch(`${API_BASE}/api/shg-master/vo/${user.voID}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await res.json();
+          if (data.success) {
+            setFormData(prev => ({ ...prev, shgList: data.shgs || [] }));
+          }
+        } catch (err) {
+          console.error('Failed to fetch SHGs:', err);
+        } finally {
+          setShgListLoading(false);
+        }
+      };
+      fetchVOShgs();
+    }
   };
 
   const openAddModal = () => {
@@ -1775,9 +2052,12 @@ const UsersTab = ({ filterProps }) => {
       clusterID: '',
       clusterName: '',
       userID: '',
-      userName: ''
+      userName: '',
+      assignedCC: '',
+      shgList: []
     });
     setShowPassword(false);
+    setCcList([]);
     setShowAddModal(true);
   };
 
@@ -1909,7 +2189,7 @@ const UsersTab = ({ filterProps }) => {
     setUploading(true);
     try {
       const token = localStorage.getItem('token');
-      
+
       let url;
       let method;
       let bodyData;
@@ -3063,12 +3343,14 @@ const UsersTab = ({ filterProps }) => {
                               />
                             </div>
 
-                            {formData.role === 'Admin' && (
+                            {(formData.role === 'Admin' || (formData.role === 'VO' && formData.isDeveloper)) && (
                               <div className="space-y-2">
-                                <label className="text-[10px] font-black text-gray-400 ml-1 uppercase">Primary Contact / Login</label>
+                                <label className="text-[10px] font-black text-gray-400 ml-1 uppercase">
+                                  {formData.role === 'VO' ? 'Phone (for login)' : 'Primary Contact / Login'}
+                                </label>
                                 <input
                                   type="text"
-                                  required
+                                  required={formData.role === 'Admin'}
                                   value={formData.phone}
                                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                                   className="w-full bg-gray-50/50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
@@ -3226,30 +3508,220 @@ const UsersTab = ({ filterProps }) => {
                                 <h4 className="text-sm font-black text-gray-900 uppercase tracking-tight">Role Specific Identification</h4>
                               </div>
 
-                              {formData.role === 'VO' && (
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                  <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-gray-400 ml-1 uppercase">Official VO ID (15 Digits)</label>
-                                    <input
-                                      type="text" required maxLength={15} minLength={15}
-                                      value={formData.voID}
-                                      onChange={(e) => setFormData({ ...formData, voID: e.target.value.replace(/\D/g, '') })}
-                                      className="w-full bg-gray-50/50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
-                                      placeholder="15-digit ID"
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-gray-400 ml-1 uppercase">Representative VOA Name</label>
-                                    <input
-                                      type="text" required
-                                      value={formData.voaName}
-                                      onChange={(e) => setFormData({ ...formData, voaName: e.target.value })}
-                                      className="w-full bg-gray-50/50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
-                                      placeholder="VOA Full Name"
-                                    />
-                                  </div>
-                                </div>
-                              )}
+                              {formData.role === 'VO' && (() => {
+                                // Developer: 4-digit VO ID; normal: 15-digit
+                                const devMode = isDeveloperUser && formData.isDeveloper;
+                                const voIdMin = devMode ? 4 : 15;
+                                const voIdMax = devMode ? 4 : 15;
+                                const voIdLabel = devMode ? 'VO ID (4 Digits – Dev)' : 'Official VO ID (15 Digits)';
+                                const voIdPlaceholder = devMode ? '4-digit test ID' : '15-digit ID';
+                                // SHG IDs: developer = 9 digits, normal = 18 digits
+                                const shgIdLen = devMode ? 9 : 18;
+                                return (
+                                  <>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                      <div className="space-y-2">
+                                        <label className="text-[10px] font-black text-gray-400 ml-1 uppercase">{voIdLabel}</label>
+                                        <input
+                                          type="text"
+                                          required
+                                          maxLength={voIdMax}
+                                          minLength={voIdMin}
+                                          disabled={showEditModal} // Don't allow changing VO ID for existing VO
+                                          value={formData.voID}
+                                          onChange={(e) => setFormData({ ...formData, voID: e.target.value.replace(/\D/g, '') })}
+                                          className="w-full bg-gray-50/50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all disabled:opacity-60"
+                                          placeholder={voIdPlaceholder}
+                                        />
+                                      </div>
+                                      <div className="space-y-2">
+                                        <label className="text-[10px] font-black text-gray-400 ml-1 uppercase">Representative VOA Name</label>
+                                        <input
+                                          type="text" required
+                                          value={formData.voaName}
+                                          onChange={(e) => setFormData({ ...formData, voaName: e.target.value })}
+                                          className="w-full bg-gray-50/50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
+                                          placeholder="VOA Full Name"
+                                        />
+                                      </div>
+                                    </div>
+
+                                    {/* CC Assignment Dropdown */}
+                                    {showAddModal && (
+                                      <div className="space-y-2 mt-4">
+                                        <label className="text-[10px] font-black text-gray-400 ml-1 uppercase flex items-center gap-2">
+                                          Assign to CC
+                                          {ccListLoading && <span className="text-indigo-400 animate-pulse">Loading...</span>}
+                                        </label>
+                                        <div className="relative">
+                                          <select
+                                            value={formData.assignedCC}
+                                            onChange={(e) => setFormData({ ...formData, assignedCC: e.target.value })}
+                                            className="w-full appearance-none bg-gray-50/50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
+                                            disabled={ccListLoading || !formData.mandal}
+                                          >
+                                            <option value="">{formData.mandal ? (ccList.length === 0 && !ccListLoading ? 'No CCs in this mandal' : 'Select CC (optional)') : 'Select mandal first'}</option>
+                                            {ccList.map(cc => (
+                                              <option key={cc._id} value={cc.clusterID}>
+                                                {cc.voName}{cc.clusterID ? ` (${cc.clusterID})` : ''}
+                                              </option>
+                                            ))}
+                                          </select>
+                                          <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* SHG List Entry & Management */}
+                                    <div className="mt-6 pt-6 border-t border-gray-100 space-y-3">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                          <div className="w-7 h-7 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-600">
+                                            <User className="w-4 h-4" />
+                                          </div>
+                                          <div className="flex flex-col">
+                                            <h4 className="text-sm font-black text-gray-900 uppercase tracking-tight">
+                                              SHG Management
+                                            </h4>
+                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">
+                                              {showEditModal ? 'Edit existing and add new SHGs' : 'Add initial SHG list (optional)'}
+                                            </span>
+                                          </div>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => setFormData(prev => ({ ...prev, shgList: [...prev.shgList, { shgID: '', shgName: '', endMonth: null, endYear: null }] }))}
+                                          className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 text-white text-xs font-black rounded-xl hover:bg-emerald-700 transition-all shadow-sm"
+                                        >
+                                          <Plus className="w-3.5 h-3.5" /> Add SHG
+                                        </button>
+                                      </div>
+
+                                      {shgListLoading ? (
+                                        <div className="flex flex-col items-center py-8 bg-gray-50 rounded-2xl border border-dashed border-gray-200 gap-2">
+                                          <Loader2 className="w-6 h-6 text-indigo-500 animate-spin" />
+                                          <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">Loading associated SHGs...</p>
+                                        </div>
+                                      ) : formData.shgList.length === 0 ? (
+                                        <p className="text-[11px] text-gray-400 font-bold text-center py-6 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
+                                          No SHGs associated yet. Click "Add SHG" to begin.
+                                        </p>
+                                      ) : (
+                                        <div className="space-y-3">
+                                          {formData.shgList.map((shg, idx) => (
+                                            <div key={shg._id || idx} className="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm space-y-4 animate-in fade-in slide-in-from-top-1 duration-200">
+                                              <div className="flex items-center justify-between gap-3">
+                                                <div className="flex items-center gap-3 flex-1 min-w-0">
+                                                  <div className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 text-[10px] font-black shrink-0">
+                                                    {idx + 1}
+                                                  </div>
+                                                  <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2">
+                                                      <span className="text-[8px] font-black text-gray-400 uppercase tracking-tighter">SHG ID:</span>
+                                                      <span className="text-[10px] font-black text-indigo-600 truncate">
+                                                        {shg.shgID || shg['SHG ID'] || 'NEW'}
+                                                      </span>
+                                                    </div>
+                                                    <input
+                                                      type="text"
+                                                      placeholder="SHG Name"
+                                                      value={shg.shgName || shg['SHG Name'] || ''}
+                                                      onChange={(e) => {
+                                                        const updated = [...formData.shgList];
+                                                        updated[idx] = { ...updated[idx], shgName: e.target.value, 'SHG Name': e.target.value };
+                                                        setFormData(prev => ({ ...prev, shgList: updated }));
+                                                      }}
+                                                      className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 focus:outline-none transition-all mt-1"
+                                                    />
+                                                  </div>
+                                                </div>
+
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    const warnMsg = shg._id ? 'WARNING: This will permanently delete this SHG from the master list. Are you sure?' : 'Remove this SHG from the list?';
+                                                    if (!window.confirm(warnMsg)) return;
+
+                                                    if (shg._id) {
+                                                      setDeletedShgIds(prev => [...prev, shg._id]);
+                                                    }
+                                                    const updated = formData.shgList.filter((_, i) => i !== idx);
+                                                    setFormData(prev => ({ ...prev, shgList: updated }));
+                                                  }}
+                                                  className="p-2 bg-red-50 text-red-400 hover:text-red-600 hover:bg-red-100 rounded-2xl transition-all shrink-0"
+                                                  title="Remove SHG"
+                                                >
+                                                  <Trash2 className="w-4 h-4" />
+                                                </button>
+                                              </div>
+
+                                              {/* Time Controls: End Month/Year */}
+                                              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-gray-50">
+                                                <div className="space-y-1">
+                                                  <label className="text-[8px] font-black text-gray-400 uppercase ml-1">Process Ends (Month)</label>
+                                                  <select
+                                                    value={shg.endMonth || ''}
+                                                    onChange={(e) => {
+                                                      const val = e.target.value ? parseInt(e.target.value) : null;
+                                                      const updated = [...formData.shgList];
+                                                      updated[idx] = { ...updated[idx], endMonth: val };
+                                                      setFormData(prev => ({ ...prev, shgList: updated }));
+                                                    }}
+                                                    className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl px-2 py-1.5 text-[10px] font-bold focus:border-emerald-500 outline-none transition-all"
+                                                  >
+                                                    <option value="">No End Month</option>
+                                                    {Array.from({ length: 12 }, (_, i) => (
+                                                      <option key={i + 1} value={i + 1}>{new Date(0, i).toLocaleString('default', { month: 'long' })}</option>
+                                                    ))}
+                                                  </select>
+                                                </div>
+                                                <div className="space-y-1">
+                                                  <label className="text-[8px] font-black text-gray-400 uppercase ml-1">Process Ends (Year)</label>
+                                                  <select
+                                                    value={shg.endYear || ''}
+                                                    onChange={(e) => {
+                                                      const val = e.target.value ? parseInt(e.target.value) : null;
+                                                      const updated = [...formData.shgList];
+                                                      updated[idx] = { ...updated[idx], endYear: val };
+                                                      setFormData(prev => ({ ...prev, shgList: updated }));
+                                                    }}
+                                                    className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl px-2 py-1.5 text-[10px] font-bold focus:border-emerald-500 outline-none transition-all"
+                                                  >
+                                                    <option value="">No End Year</option>
+                                                    {[2024, 2025, 2026, 2027, 2028, 2029, 2030].map(y => (
+                                                      <option key={y} value={y}>{y}</option>
+                                                    ))}
+                                                  </select>
+                                                </div>
+                                              </div>
+
+                                              {/* New Entry ID field (if not existing) */}
+                                              {!shg._id && (
+                                                <div className="space-y-1 bg-indigo-50/50 p-2 rounded-2xl border border-indigo-100">
+                                                  <label className="text-[9px] font-black text-indigo-600 uppercase ml-1">New SHG ID ({devMode ? 9 : 18} Digits)</label>
+                                                  <input
+                                                    type="text"
+                                                    placeholder="Enter numerical ID"
+                                                    maxLength={devMode ? 9 : 18}
+                                                    value={shg.shgID || ''}
+                                                    onChange={(e) => {
+                                                      const val = e.target.value.replace(/\D/g, '');
+                                                      const updated = [...formData.shgList];
+                                                      updated[idx] = { ...updated[idx], shgID: val };
+                                                      setFormData(prev => ({ ...prev, shgList: updated }));
+                                                    }}
+                                                    className="w-full bg-white border-2 border-indigo-100 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-500 focus:outline-none transition-all"
+                                                  />
+                                                </div>
+                                              )}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </>
+                                );
+                              })()}
 
                               {formData.role === 'Admin - CC' && (
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -3632,17 +4104,17 @@ const UsersTab = ({ filterProps }) => {
                     </div>
                     <div className="flex-1 overflow-auto bg-gray-50/50 custom-scrollbar flex items-start justify-center p-0 relative">
                       <img src={viewerImages[currentViewerIndex]?.url} alt={viewerImages[currentViewerIndex]?.title} className="w-auto h-auto shadow-2xl" />
-                      
+
                       {/* Navigation Arrows */}
                       {viewerImages.length > 1 && (
                         <div className="absolute inset-0 flex items-center justify-between p-4 pointer-events-none">
-                          <button 
+                          <button
                             onClick={(e) => { e.stopPropagation(); setCurrentViewerIndex(prev => (prev > 0 ? prev - 1 : viewerImages.length - 1)); }}
                             className="p-3 bg-black/50 text-white rounded-full hover:bg-black/70 transition-all pointer-events-auto shadow-lg"
                           >
                             <ChevronLeft className="w-8 h-8" />
                           </button>
-                          <button 
+                          <button
                             onClick={(e) => { e.stopPropagation(); setCurrentViewerIndex(prev => (prev < viewerImages.length - 1 ? prev + 1 : 0)); }}
                             className="p-3 bg-black/50 text-white rounded-full hover:bg-black/70 transition-all pointer-events-auto shadow-lg"
                           >
