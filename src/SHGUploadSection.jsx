@@ -4,7 +4,7 @@
 // SHGUploadSection.jsx
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Upload, CheckCircle, X, FileText, Search, AlertCircle, Eye, Filter, RotateCw, RotateCcw, Camera, AlertTriangle, Activity, ScanLine } from 'lucide-react';
+import { Upload, CheckCircle, X, FileText, Search, AlertCircle, Eye, Filter, RotateCw, RotateCcw, Camera, AlertTriangle, Activity, ScanLine, Lock, Unlock } from 'lucide-react';
 import { API_BASE } from './utils/apiConfig';
 import { analyzeImage } from './utils/imageQualityCheck';
 import SmartCamera from './smartcamera';
@@ -55,6 +55,10 @@ const SHGUploadSection = ({
   const [permanentlyUploadedFiles, setPermanentlyUploadedFiles] = useState([]);
   const [currentlyViewingId, setCurrentlyViewingId] = useState(null);
 
+  // VO Upload Access Restriction States
+  const [restriction, setRestriction] = useState(null); // { mode: 'restricted', month: '02', year: '2025' }
+  const [isRestrictionLoading, setIsRestrictionLoading] = useState(true);
+
   // Detect if device is mobile/tablet
   useEffect(() => {
     const checkIfMobileDevice = () => {
@@ -74,6 +78,33 @@ const SHGUploadSection = ({
     window.addEventListener('resize', checkIfMobileDevice);
     return () => window.removeEventListener('resize', checkIfMobileDevice);
   }, []);
+
+  // Fetch VO Upload Access Restriction
+  useEffect(() => {
+    const fetchRestriction = async () => {
+      if (!user?._id) return;
+      try {
+        const token = localStorage.getItem('token');
+        const res = await fetch(`${API_BASE}/api/vo/upload-access-status`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (data.success && data.mode === 'restricted') {
+          setRestriction(data);
+          // Sync parent state with restriction
+          if (onMonthChange) onMonthChange(data.month);
+          if (onYearChange) onYearChange(data.year);
+        } else {
+          setRestriction(null);
+        }
+      } catch (err) {
+        console.error('Failed to fetch upload restriction:', err);
+      } finally {
+        setIsRestrictionLoading(false);
+      }
+    };
+    fetchRestriction();
+  }, [user?._id]);
 
   const handleMaintenanceResponse = (data) => {
     if (setMaintenance) {
@@ -1352,12 +1383,34 @@ const SHGUploadSection = ({
 
   return (
     <div className="space-y-4 sm:space-y-6">
+      {/* Restriction Banner */}
+      {restriction?.mode === 'restricted' && (
+        <div className="animate-in slide-in-from-top duration-700">
+          <div className="bg-gradient-to-r from-orange-600 to-amber-600 p-4 sm:p-5 rounded-2xl shadow-xl border border-white/30 flex items-center gap-4 text-white">
+            <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center shadow-inner shrink-0 scale-110">
+              <Lock size={24} className="text-white" />
+            </div>
+            <div>
+              <h4 className="text-xs sm:text-sm font-black uppercase tracking-widest leading-none mb-1">Upload Access Locked</h4>
+              <p className="text-sm font-bold opacity-90 uppercase tracking-tighter">
+                Your coordinator has locked your upload period to <span className="underline decoration-2 underline-offset-4">{new Date(2025, parseInt(restriction.month) - 1).toLocaleString('default', { month: 'long' })} {restriction.year}</span>
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Month, Year & Statistics Bar */}
       <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-xl sm:rounded-2xl shadow-xl border border-white/30 p-4 sm:p-6">
         <div className="flex items-center justify-between gap-3 sm:gap-4 flex-wrap">
           {/* Month Dropdown */}
           <div className="flex-1 min-w-[140px] sm:min-w-[180px]">
-            <label className="block text-xs sm:text-sm font-bold text-white/90 mb-2">
+            <label className="flex items-center gap-2 text-xs sm:text-sm font-bold text-white/90 mb-2">
+              {restriction?.mode === 'restricted' ? (
+                <Lock size={14} className="text-amber-300 drop-shadow-sm" />
+              ) : (
+                <Unlock size={14} className="text-emerald-300 drop-shadow-sm" />
+              )}
               {t?.('upload.month') || 'Month'} <span className="text-yellow-300">*</span>
               {isAuthorizedVO && (
                 <span className="ml-2 text-[10px] bg-white/20 px-2 py-0.5 rounded-full">{t?.('upload.currentPastOnly') || 'Current & Past Only'}</span>
@@ -1367,17 +1420,20 @@ const SHGUploadSection = ({
               value={selectedMonth}
               onChange={(e) => {
                 const now = new Date();
-                const currentMonth = now.getMonth() + 1;
+                const currentMonth = now.getUTCMonth() + 1;
+                // Default mode only allows current month and below. If restricted, respect the restricted month.
+                const maxMonth = restriction?.mode === 'restricted' ? parseInt(restriction.month) : currentMonth;
                 const currentYear = now.getFullYear();
                 const selectedM = parseInt(e.target.value);
                 const selectedY = parseInt(selectedYear);
 
                 if (user?.role?.toLowerCase() === 'vo') {
-                  if (selectedY > currentYear || (selectedY === currentYear && selectedM > currentMonth)) return;
+                  if (selectedY > currentYear || (selectedY === currentYear && selectedM > maxMonth)) return;
                 }
                 onMonthChange?.(e.target.value);
               }}
-              className="w-full px-3 sm:px-4 py-2 sm:py-3 border-2 border-white/30 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-white bg-white/95 appearance-none cursor-pointer font-semibold text-sm sm:text-base"
+              disabled={restriction?.mode === 'restricted'}
+              className={`w-full px-3 sm:px-4 py-2 sm:py-3 border-2 border-white/30 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-white bg-white/95 appearance-none cursor-pointer font-semibold text-sm sm:text-base ${restriction?.mode === 'restricted' ? 'opacity-60 cursor-not-allowed' : ''}`}
             >
               <option value="">{t?.('upload.selectMonth') || 'Select Month'}</option>
               {[
@@ -1395,8 +1451,10 @@ const SHGUploadSection = ({
                 { val: "12", label: t?.('months.december') || 'December' }
               ].map(m => {
                 const now = new Date();
+                const currentMonth = now.getUTCMonth() + 1;
+                const maxMonth = restriction?.mode === 'restricted' ? parseInt(restriction.month) : currentMonth;
                 const isFuture = parseInt(selectedYear) > now.getFullYear() ||
-                  (parseInt(selectedYear) === now.getFullYear() && parseInt(m.val) > (now.getMonth() + 1));
+                  (parseInt(selectedYear) === now.getFullYear() && parseInt(m.val) > maxMonth);
                 const disabled = user?.role?.toLowerCase() === 'vo' && isFuture;
                 return <option key={m.val} value={m.val} disabled={disabled}>{m.label} {disabled ? `(${t?.('upload.locked') || 'Locked'})` : ''}</option>;
               })}
@@ -1405,13 +1463,19 @@ const SHGUploadSection = ({
 
           {/* Year Dropdown */}
           <div className="flex-1 min-w-[140px] sm:min-w-[180px]">
-            <label className="block text-xs sm:text-sm font-bold text-white/90 mb-2">
+            <label className="flex items-center gap-2 text-xs sm:text-sm font-bold text-white/90 mb-2">
+              {restriction?.mode === 'restricted' ? (
+                <Lock size={14} className="text-amber-300 drop-shadow-sm" />
+              ) : (
+                <Unlock size={14} className="text-emerald-300 drop-shadow-sm" />
+              )}
               {t?.('upload.year') || 'Year'} <span className="text-yellow-300">*</span>
             </label>
             <select
               value={selectedYear}
               onChange={(e) => onYearChange?.(e.target.value)}
-              className="w-full px-3 sm:px-4 py-2 sm:py-3 border-2 border-white/30 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-white bg-white/95 appearance-none cursor-pointer font-semibold text-sm sm:text-base"
+              disabled={restriction?.mode === 'restricted'}
+              className={`w-full px-3 sm:px-4 py-2 sm:py-3 border-2 border-white/30 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-white bg-white/95 appearance-none cursor-pointer font-semibold text-sm sm:text-base ${restriction?.mode === 'restricted' ? 'opacity-60 cursor-not-allowed' : ''}`}
             >
               <option value="">{t?.('upload.selectYear') || 'Select Year'}</option>
               {Array.from({ length: 5 }, (_, i) => {

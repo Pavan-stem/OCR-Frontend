@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Edit, Trash2, FileSymlink, Filter, Loader2, X, Shield, User, MapPin, Phone, Lock, Unlock, CheckCircle, Search, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, FileText, Calendar, AlertCircle, AlertTriangle, Settings, Power, Clock, Download, Eye, EyeOff, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import { API_BASE } from '../utils/apiConfig';
 import { formatDateTime } from '../utils/dateUtils';
 const REJECTION_REASONS = [
@@ -785,6 +784,10 @@ const UsersTab = ({ filterProps }) => {
   const [isGateCollapsed, setIsGateCollapsed] = useState(true);
   // [MOVED TO PROPS]: expandedRows, loadingNodes
 
+  // VO Upload Access States
+  // [CLEANUP]: Unified into direct toggle logic
+  const [updatingAccessId, setUpdatingAccessId] = useState(null);
+
   // Helper to update children in a nested tree
   const updateTreeWithChildren = (parentId, children) => {
     const updateNodes = (list) => {
@@ -1300,95 +1303,96 @@ const UsersTab = ({ filterProps }) => {
     }
   };
 
+  const syncVisibleStats = async () => {
+    if (!serverStatus.active) return;
+    // 1. Collect all visible IDs from the current tree
+    const visibleIds = [];
+    const collectIds = (list) => {
+      if (!list) return;
+      list.forEach(u => {
+        visibleIds.push(u._id);
+        const children = u.ccs || u.vos;
+        if (children) collectIds(children);
+      });
+    };
+    collectIds(usersRef.current);
+
+    if (visibleIds.length === 0) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_BASE}/api/users/sync-stats`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userIds: visibleIds,
+          month: filterMonth,
+          year: filterYear
+        })
+      });
+      const data = await res.json();
+      if (data.success && data.stats) {
+        // 2. Surgical "In-Place" Update
+        setUsers(prevUsers => {
+          const updateStatsRecursive = (list) => {
+            if (!list) return [];
+            return list.map(u => {
+              const newStats = data.stats[String(u._id)];
+              const updatedUser = newStats ? {
+                ...u,
+                totalFiles: newStats.stats?.total ?? u.totalFiles,
+                uploadedFiles: newStats.stats?.uploaded ?? u.uploadedFiles,
+                pendingFiles: newStats.stats?.pending ?? u.pendingFiles,
+                performanceStats: newStats.performance ? {
+                  uploads: {
+                    approved: newStats.performance.uploads?.approved ?? 0,
+                    rejected: newStats.performance.uploads?.rejected ?? 0,
+                    pending: newStats.performance.uploads?.pending ?? 0
+                  },
+                  conversion: {
+                    success: newStats.performance.conversion?.success ?? 0,
+                    failed: newStats.performance.conversion?.failed ?? 0,
+                    pending: newStats.performance.conversion?.pending ?? 0,
+                    processing: newStats.performance.conversion?.processing ?? 0
+                  }
+                } : u.performanceStats
+              } : u;
+
+              const children = u.ccs || u.vos;
+              if (children) {
+                if (u.ccs) return { ...updatedUser, ccs: updateStatsRecursive(u.ccs) };
+                if (u.vos) return { ...updatedUser, vos: updateStatsRecursive(u.vos) };
+              }
+              return updatedUser;
+            });
+          };
+          return updateStatsRecursive(prevUsers);
+        });
+      }
+    } catch (err) {
+      console.error('Error syncing stats:', err);
+    }
+  };
+
   useEffect(() => {
     fetchUsers();
     fetchUserCounts();
+    // Immediate deep sync when filters change to avoid "Data Ghosting"
+    syncVisibleStats();
   }, [serverStatus.active, page, limit, debouncedSearchTerm, selectedDistrict, selectedMandal, selectedVillage, filterMonth, filterYear]);
 
   // Periodic refresh for users list (to update online status dots & stats)
   useEffect(() => {
     if (!serverStatus.active) return;
 
-    const syncVisibleStats = async () => {
-      // 1. Collect all visible IDs from the current tree
-      const visibleIds = [];
-      const collectIds = (list) => {
-        if (!list) return;
-        list.forEach(u => {
-          visibleIds.push(u._id);
-          const children = u.ccs || u.vos;
-          if (children) collectIds(children);
-        });
-      };
-      collectIds(usersRef.current);
-
-      if (visibleIds.length === 0) return;
-
-      try {
-        const token = localStorage.getItem('token');
-        const res = await fetch(`${API_BASE}/api/users/sync-stats`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            userIds: visibleIds,
-            month: filterMonth,
-            year: filterYear
-          })
-        });
-        const data = await res.json();
-        if (data.success && data.stats) {
-          // 2. Surgical "In-Place" Update
-          setUsers(prevUsers => {
-            const updateStatsRecursive = (list) => {
-              if (!list) return [];
-              return list.map(u => {
-                const newStats = data.stats[String(u._id)];
-                const updatedUser = newStats ? {
-                  ...u,
-                  stats: newStats.stats,
-                  performance: newStats.performance,
-                  totalFiles: newStats.stats?.total ?? u.totalFiles,
-                  uploadedFiles: newStats.stats?.uploaded ?? u.uploadedFiles,
-                  pendingFiles: newStats.stats?.pending ?? u.pendingFiles,
-                  performanceStats: newStats.performance ? {
-                    uploads: {
-                      approved: newStats.performance.uploads?.approved ?? 0,
-                      rejected: newStats.performance.uploads?.rejected ?? 0,
-                      pending: newStats.performance.uploads?.pending ?? 0
-                    },
-                    conversion: {
-                      success: newStats.performance.conversion?.success ?? 0,
-                      failed: newStats.performance.conversion?.failed ?? 0,
-                      pending: newStats.performance.conversion?.pending ?? 0,
-                      processing: newStats.performance.conversion?.processing ?? 0
-                    }
-                  } : u.performanceStats
-                } : u;
-
-                const children = u.ccs || u.vos;
-                if (children) {
-                  if (u.ccs) return { ...updatedUser, ccs: updateStatsRecursive(u.ccs) };
-                  if (u.vos) return { ...updatedUser, vos: updateStatsRecursive(u.vos) };
-                }
-                return updatedUser;
-              });
-            };
-            return updateStatsRecursive(prevUsers);
-          });
-        }
-      } catch (err) {
-        console.error('Error syncing stats:', err);
-      }
-    };
-
     const interval = setInterval(() => {
       // Refresh counts and surgical sync
       fetchUserCounts();
       syncVisibleStats();
-    }, 15000); // More frequent (15s) since it's lightweight
+    }, 15000); // 15s sync
 
     return () => clearInterval(interval);
   }, [serverStatus.active, filterMonth, filterYear]);
@@ -1538,6 +1542,87 @@ const UsersTab = ({ filterProps }) => {
       alert('Error toggling approval gate');
     } finally {
       setIsTogglingGate(false);
+    }
+  };
+
+  const handleToggleUploadAccess = async (targetUser) => {
+    if (updatingAccessId) return;
+
+    setUpdatingAccessId(targetUser._id);
+    try {
+      const token = localStorage.getItem('token');
+      const currentMode = targetUser.uploadAccessMode || 'default';
+      const newMode = currentMode === 'default' ? 'restricted' : 'default';
+
+      const payload = {
+        userId: targetUser._id,
+        mode: newMode,
+        month: filterMonth,
+        year: filterYear,
+        applyToBranch: !targetUser.role?.toLowerCase().includes('vo') // APM/CC always apply to branch
+      };
+
+      const res = await fetch(`${API_BASE}/api/admin/vo/upload-access`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        // Direct local state update for both individual VO and branch-level toggles (CC/APM)
+        setUsers(prevUsers => {
+          const updateInBranch = (list, forceMode = null) => {
+            if (!list) return [];
+            return list.map(u => {
+              // Should we force this node to the new mode? (e.g. child of a toggled CC)
+              if (forceMode) {
+                const updated = { 
+                  ...u, 
+                  uploadAccessMode: forceMode.mode,
+                  restrictedMonth: forceMode.month,
+                  restrictedYear: forceMode.year
+                };
+                if (u.ccs) updated.ccs = updateInBranch(u.ccs, forceMode);
+                if (u.vos) updated.vos = updateInBranch(u.vos, forceMode);
+                return updated;
+              }
+
+              // Is this the target node?
+              if (u._id === targetUser._id) {
+                const updated = { 
+                  ...u, 
+                  uploadAccessMode: payload.mode,
+                  restrictedMonth: payload.month,
+                  restrictedYear: payload.year
+                };
+                // If applying to branch, force all children to follow the same state
+                if (payload.applyToBranch) {
+                  if (u.ccs) updated.ccs = updateInBranch(u.ccs, { mode: payload.mode, month: payload.month, year: payload.year });
+                  if (u.vos) updated.vos = updateInBranch(u.vos, { mode: payload.mode, month: payload.month, year: payload.year });
+                }
+                return updated;
+              }
+
+              // Otherwise continue searching
+              const updated = { ...u };
+              if (u.ccs) updated.ccs = updateInBranch(u.ccs);
+              if (u.vos) updated.vos = updateInBranch(u.vos);
+              return updated;
+            });
+          };
+          return updateInBranch(prevUsers);
+        });
+      } else {
+        alert(data.message || 'Failed to update access');
+      }
+    } catch (err) {
+      console.error('Toggle Access Error:', err);
+    } finally {
+      setUpdatingAccessId(null);
     }
   };
 
@@ -2539,6 +2624,8 @@ const UsersTab = ({ filterProps }) => {
           </div>
         )}
 
+        {/* VO Upload Access Gateway - Admin/APM/CC/Dev */}
+
         <div className={`grid gap-6 ${currentUserRole.includes('admin - cc')
           ? 'grid-cols-1 hidden'
           : currentUserRole.includes('admin - apm')
@@ -2879,6 +2966,27 @@ const UsersTab = ({ filterProps }) => {
                               </td>
                               <td className="px-4 py-6 whitespace-nowrap text-right">
                                 <div className="flex justify-end gap-2 transition-opacity">
+                                  {(isDeveloperUser || currentUserRole.includes('admin') || currentUserRole.includes('apm') || currentUserRole.includes('cc')) && (
+                                    <button
+                                      id={`select-access-${u._id}`}
+                                      onClick={() => handleToggleUploadAccess(u)}
+                                      disabled={updatingAccessId === u._id}
+                                      className={`p-1.5 rounded-lg transition-all shadow-sm ${
+                                        u.uploadAccessMode === 'restricted'
+                                          ? 'bg-orange-600 text-white shadow-orange-200' 
+                                          : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-100'
+                                      }`}
+                                      title={u.uploadAccessMode === 'restricted' ? "Upload Access: LOCKED (Click to release)" : "Upload Access: OPEN (Click to lock to current month)"}
+                                    >
+                                      {updatingAccessId === u._id ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                      ) : u.uploadAccessMode === 'restricted' ? (
+                                        <Lock className="w-4 h-4" />
+                                      ) : (
+                                        <Unlock className="w-4 h-4" />
+                                      )}
+                                    </button>
+                                  )}
                                   {(uIsAPM || uIsCC) && (
                                     <button
                                       onClick={() => downloadSummaryExcel(u)}
