@@ -14,7 +14,8 @@ const REJECTION_REASONS = [
   "There was background noise use plane background",
   "Table was bent",
   "Table was rotated",
-  "Wrong Image"
+  "Wrong Image",
+  "Old Form Uploaded"
 ];
 
 // Helper Component for Grouped Uploads in Admin View
@@ -1734,7 +1735,7 @@ const UsersTab = ({ filterProps }) => {
           assignedCC: '', shgList: []
         });
         setCcList([]);
-        
+
         // 🔄 Optimized Refersh: Find parent and refresh only that branch
         let refreshedBranch = false;
         if (formData.role === 'VO' && formData.assignedCC) {
@@ -1757,7 +1758,7 @@ const UsersTab = ({ filterProps }) => {
         if (!refreshedBranch) {
           fetchUsers(); // Fallback to full refresh
         }
-        
+
         fetchUserCounts();
       } else {
         alert(data.error || 'Failed to create user');
@@ -1874,7 +1875,7 @@ const UsersTab = ({ filterProps }) => {
       const data = await res.json();
       if (data.success) {
         // --- OPTIMIZED FRONTEND REMOVAL ---
-        
+
         let deletedUser = null;
         let parentId = null;
 
@@ -1892,7 +1893,7 @@ const UsersTab = ({ filterProps }) => {
           }
           return false;
         };
-        
+
         findAndTrace(users);
         if (!deletedUser) {
           deletedUser = staffUsers.find(u => u._id === userId);
@@ -1918,7 +1919,7 @@ const UsersTab = ({ filterProps }) => {
             .filter(u => u._id !== userId)
             .map(u => {
               const updatedNode = { ...u };
-              
+
               // Recurse into children
               if (u.ccs) updatedNode.ccs = removeFromTree(u.ccs);
               if (u.vos) updatedNode.vos = removeFromTree(u.vos);
@@ -1929,7 +1930,7 @@ const UsersTab = ({ filterProps }) => {
                 updatedNode.totalFiles = Math.max(0, (u.totalFiles || 0) - (deletedUser.totalFiles || 0));
                 updatedNode.uploadedFiles = Math.max(0, (u.uploadedFiles || 0) - (deletedUser.uploadedFiles || 0));
                 updatedNode.pendingFiles = Math.max(0, (u.pendingFiles || 0) - (deletedUser.pendingFiles || 0));
-                
+
                 // Deep stats object
                 if (u.stats) {
                   updatedNode.stats = {
@@ -1940,7 +1941,7 @@ const UsersTab = ({ filterProps }) => {
                   };
                 }
               }
-              
+
               return updatedNode;
             });
         };

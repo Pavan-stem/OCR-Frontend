@@ -286,7 +286,6 @@ const AnalyticsPage = ({ filterProps }) => {
         }
         refreshTimeoutRef.current = setTimeout(() => {
             setRefreshKey(prev => prev + 1);
-            showToast('info', '🔄 Data updated', 2000);
         }, 500);
     }, []);
 
@@ -522,11 +521,6 @@ const AnalyticsPage = ({ filterProps }) => {
                 <div className="w-[25rem]">
                     <h2 className="text-5xl font-black text-white px-2 tracking-tighter flex items-center gap-3 drop-shadow-2xl">
                         Analytics
-                        {isRefreshing && (
-                            <div className="flex items-center gap-2 px-3 py-1 bg-indigo-500/20 border border-indigo-500/30 rounded-full animate-pulse ml-4">
-                                <Loader2 className="w-3 h-3 text-indigo-400 animate-spin" />
-                            </div>
-                        )}
                     </h2>
                 </div>
 
