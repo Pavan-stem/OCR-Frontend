@@ -31,7 +31,7 @@ const DataValueCell = ({ id, idMap, isEditing, onEdit, colSpan = 1, rowSpan = 1,
         <td
             colSpan={colSpan}
             rowSpan={rowSpan}
-            className={`border border-black px-2 py-1.5 align-middle min-w-[60px] text-right text-[13px] font-mono font-black ${brown ? 'bg-[#B3713D] text-white' : orange ? 'text-orange-600 bg-orange-50' : 'text-indigo-900 bg-white'} group transition-colors hover:bg-indigo-50/30`}
+            className={`border border-black px-2 py-1.5 align-middle min-w-[60px] text-right text-[13px] font-mono font-black ${brown ? 'bg-[#F7BD83] text-white' : orange ? 'text-orange-600 bg-orange-50' : 'text-indigo-900 bg-white'} group transition-colors ${!brown ? 'hover:bg-indigo-50/30' : ''}`}
         >
             {isEditing && !computed && !brown ? (
                 <input
@@ -175,10 +175,20 @@ export default function SHGPage2View({ tableData, isEditing, onCellEdit, related
 
     const totalsMatch = Math.abs(col1Total - col2Total) < 0.01;
 
+    const lastSentTotals = React.useRef({ t119: null, t121: null });
+
     React.useEffect(() => {
         if (totalsMatch) {
-            onCellEdit?.(119, fmt(col1Total));
-            onCellEdit?.(121, fmt(col2Total));
+            const next119 = fmt(col1Total);
+            const next121 = fmt(col2Total);
+
+            // Use a ref to track what we've sent to prevent infinite loop
+            // This is safer than checking idMap since these cells might not be in the data rows yet
+            if (lastSentTotals.current.t119 !== next119 || lastSentTotals.current.t121 !== next121) {
+                lastSentTotals.current = { t119: next119, t121: next121 };
+                onCellEdit?.(119, next119);
+                onCellEdit?.(121, next121);
+            }
         }
     }, [col1Total, col2Total, totalsMatch, onCellEdit]);
 
