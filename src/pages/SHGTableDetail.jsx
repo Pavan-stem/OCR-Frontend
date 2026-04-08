@@ -57,6 +57,7 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
     const [showImage, setShowImage] = useState(false);
     const [s3Url, setS3Url] = useState(null);
     const [opacity, setOpacity] = useState(0.5);
+    const [page1Totals, setPage1Totals] = useState(null);
 
     useEffect(() => {
         const fetchDetail = async () => {
@@ -72,6 +73,7 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                     setData(result.data);
                     setOriginalData(JSON.parse(JSON.stringify(result.data)));
                     setS3Url(result.s3Url);
+                    setPage1Totals(result.related_page1_totals);
                 } else {
                     setError(result.message || 'Failed to load table data');
                 }
@@ -676,6 +678,7 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                         tableData={tableData}
                         isEditing={isEditing}
                         onCellEdit={handlePage2CellEdit}
+                        relatedPage1Totals={page1Totals}
                     />
                 ) : (
                     /* ── PAGE 1: Member spreadsheet renderer (unchanged) ── */

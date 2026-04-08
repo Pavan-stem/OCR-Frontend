@@ -44,8 +44,8 @@ const DataValueCell = ({ id, idMap, isEditing, onEdit, colSpan = 1, rowSpan = 1,
                     <span className={isEmpty ? 'opacity-20 italic' : ''}>{isEmpty ? '—' : text}</span>
                     {!isEmpty && !computed && (
                         <div
-                            className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${conf >= 0.8 ? 'bg-emerald-500' : conf >= 0.5 ? 'bg-amber-400' : 'bg-red-500'}`}
-                            title={`OCR: ${(conf * 100).toFixed(0)}%`}
+                            className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cell.isLinked ? 'bg-blue-500' : (conf >= 0.8 ? 'bg-emerald-500' : conf >= 0.5 ? 'bg-amber-400' : 'bg-red-500')}`}
+                            title={cell.isLinked ? "Linked to Page 1 Total" : `OCR: ${(conf * 100).toFixed(0)}%`}
                         />
                     )}
                 </div>
@@ -79,7 +79,7 @@ const parseValue = (val) => {
 
 const fmt = (n) => n === 0 ? '' : n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
 
-export default function SHGPage2View({ tableData, isEditing, onCellEdit }) {
+export default function SHGPage2View({ tableData, isEditing, onCellEdit, relatedPage1Totals }) {
     const idMap = useMemo(() => {
         const map = {};
         (tableData?.data_rows || []).forEach(row => {
@@ -87,16 +87,51 @@ export default function SHGPage2View({ tableData, isEditing, onCellEdit }) {
                 if (cell.debug_id != null) map[`cell_${cell.debug_id}`] = { text: cell.text || '', confidence: cell.confidence || 0 };
             });
         });
+
+        // Link Page 1 totals if available — overwrites detected data in Page 2
+        if (relatedPage1Totals) {
+            const mappings = {
+                '4': 89,  // Bank Loan
+                '5': 93,  // Streenidhi Micro
+                '6': 97,  // Streenidhi Tenni
+                '7': 101, // Unnathi SCSP
+                '8': 105, // Unnathi TSP
+                '9': 109  // CIF
+            };
+
+            Object.entries(mappings).forEach(([p1Col, p2Id]) => {
+                const val = relatedPage1Totals[p1Col];
+                if (val !== undefined && val !== null) {
+                    // If total is 0, we treat it as empty per user request
+                    const text = val > 0 ? String(val) : '';
+                    map[`cell_${p2Id}`] = { 
+                        text: text, 
+                        confidence: 1.0,
+                        isLinked: true
+                    };
+                }
+            });
+        }
+
         return map;
-    }, [tableData]);
+    }, [tableData, relatedPage1Totals]);
 
     const handleEdit = (id, val) => onCellEdit?.(id, val);
 
-    const editableIds = useMemo(() => new Set([
-        10, 12, 17, 19, 24, 26, 31, 33, 36, 38, 42, 43, 46, 48, 51, 53,
-        56, 58, 61, 63, 68, 72, 76, 80, 83, 85, 87, 89, 91, 93, 97, 101,
-        105, 109, 113, 115
-    ]), []);
+    const editableIds = useMemo(() => {
+        const baseIds = new Set([
+            10, 12, 17, 19, 24, 26, 31, 33, 36, 38, 42, 43, 46, 48, 51, 53,
+            56, 58, 61, 63, 68, 72, 76, 80, 83, 85, 87, 89, 91, 93, 97, 101,
+            105, 109, 113, 115
+        ]);
+
+        // If linked data exists, these 6 IDs are NO LONGER editable in Page 2
+        if (relatedPage1Totals) {
+            [89, 93, 97, 101, 105, 109].forEach(id => baseIds.delete(id));
+        }
+
+        return baseIds;
+    }, [relatedPage1Totals]);
 
     const g = (id) => parseValue(idMap[`cell_${id}`]?.text || '');
 
