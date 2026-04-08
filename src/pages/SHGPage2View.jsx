@@ -9,18 +9,19 @@ import React, { useMemo } from 'react';
  * Col 2 structure is unchanged from the original physical form.
  */
 
-const RowHeaderCell = ({ text, colSpan = 1, rowSpan = 1, center = false, bold = true, small = false }) => (
+const RowHeaderCell = ({ text, colSpan = 1, rowSpan = 1, center = false, bold = false, small = false }) => (
     <td
         colSpan={colSpan}
         rowSpan={rowSpan}
-        className={`border border-black px-2 py-1.5 align-middle bg-gray-50/50 ${center ? 'text-center' : 'text-left'} ${bold ? 'font-bold text-gray-900' : 'font-normal text-gray-700'} ${small ? 'text-[10px]' : 'text-[11.5px]'}`}
+        style={bold ? { textShadow: '0.5px 0 0 black', fontFamily: "'Nirmala UI', 'Segoe UI', sans-serif" } : { fontFamily: "'Nirmala UI', 'Segoe UI', sans-serif" }}
+        className={`border border-black px-2 py-1.5 align-middle bg-gray-50/50 ${center ? 'text-center' : 'text-left'} ${bold ? 'font-black' : 'font-normal'} text-black ${small ? 'text-[10px]' : 'text-[11.5px]'}`}
     >
         {text}
     </td>
 );
 
 /** Editable/read-only data cell — reads from its own id in idMap */
-const DataValueCell = ({ id, idMap, isEditing, onEdit, colSpan = 1, rowSpan = 1, computed = false, value = null, orange = false }) => {
+const DataValueCell = ({ id, idMap, isEditing, onEdit, colSpan = 1, rowSpan = 1, computed = false, value = null, orange = false, brown = false }) => {
     const cell = idMap[`cell_${id}`] || {};
     const text = computed ? (value !== null ? String(value) : '') : (cell.text || '');
     const conf = cell.confidence || 0;
@@ -30,9 +31,9 @@ const DataValueCell = ({ id, idMap, isEditing, onEdit, colSpan = 1, rowSpan = 1,
         <td
             colSpan={colSpan}
             rowSpan={rowSpan}
-            className={`border border-black px-2 py-1.5 align-middle min-w-[60px] text-right text-[13px] font-mono font-black ${orange ? 'text-orange-600 bg-orange-50' : 'text-indigo-900 bg-white'} group transition-colors hover:bg-indigo-50/30`}
+            className={`border border-black px-2 py-1.5 align-middle min-w-[60px] text-right text-[13px] font-mono font-black ${brown ? 'bg-[#B3713D] text-white' : orange ? 'text-orange-600 bg-orange-50' : 'text-indigo-900 bg-white'} group transition-colors hover:bg-indigo-50/30`}
         >
-            {isEditing && !computed ? (
+            {isEditing && !computed && !brown ? (
                 <input
                     type="text"
                     value={text}
@@ -41,7 +42,7 @@ const DataValueCell = ({ id, idMap, isEditing, onEdit, colSpan = 1, rowSpan = 1,
                 />
             ) : (
                 <div className="flex items-center justify-between gap-1">
-                    <span className={isEmpty ? 'opacity-20 italic' : ''}>{isEmpty ? '—' : text}</span>
+                    <span className={isEmpty ? 'opacity-20 italic' : ''}>{(isEmpty && !brown) ? '—' : text}</span>
                     {!isEmpty && !computed && (
                         <div
                             className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${cell.isLinked ? 'bg-blue-500' : (conf >= 0.8 ? 'bg-emerald-500' : conf >= 0.5 ? 'bg-amber-400' : 'bg-red-500')}`}
@@ -104,8 +105,8 @@ export default function SHGPage2View({ tableData, isEditing, onCellEdit, related
                 if (val !== undefined && val !== null) {
                     // If total is 0, we treat it as empty per user request
                     const text = val > 0 ? String(val) : '';
-                    map[`cell_${p2Id}`] = { 
-                        text: text, 
+                    map[`cell_${p2Id}`] = {
+                        text: text,
                         confidence: 1.0,
                         isLinked: true
                     };
@@ -192,10 +193,10 @@ export default function SHGPage2View({ tableData, isEditing, onCellEdit, related
                             <RowHeaderCell text="గత నెల (.........................) బ్యాంక్ నిల్వలు" colSpan={6} center bold />
                         </tr>
                         <tr>
-                            <RowHeaderCell text="సంఘానికి వచ్చిన వివరములు" small />
-                            <RowHeaderCell text="మొత్తం రూ." center small />
-                            <RowHeaderCell text="సంఘం చెల్లించిన వివరములు" small />
-                            <RowHeaderCell text="మొత్తం రూ." center small />
+                            <RowHeaderCell text="సంఘానికి వచ్చిన వివరములు" center bold />
+                            <RowHeaderCell text="మొత్తం రూ." center bold />
+                            <RowHeaderCell text="సంఘం చెల్లించిన వివరములు" center bold />
+                            <RowHeaderCell text="మొత్తం రూ." center bold />
                             <RowHeaderCell text="ఖాతా వివరము" small />
                             <RowHeaderCell text="తేది నాటికి" center small />
                             <RowHeaderCell text="రూ." center colSpan={4} small />
@@ -203,13 +204,13 @@ export default function SHGPage2View({ tableData, isEditing, onCellEdit, related
 
                         {/* ── R3-R5: Savings / Investments ── */}
                         {[
-                            { t1: "సంఘానికి వచ్చిన పొదుపు మొత్తం", id1: 10, t2: "సంఘం పెట్టుబడులు",       id2: 12, label: "చేతి నిల్వ",      idV1: 14, idV2: 15 },
-                            { t1: "పొదుపులు (SN+VO+Other Saving)", id1: 17, t2: "VO లో కట్టిన వాటాధనం",   id2: 19, label: "పొదుపు ఖాతా",     idV1: 21, idV2: 22 },
-                            { t1: "సంఘానికి వచ్చిన ఫండ్స్",        id1: 24, t2: "VO లో కట్టిన పొదుపు",    id2: 26, label: "బ్యాంక్ లోన్ ఖాతా", idV1: 28, idV2: 29 },
+                            { t1: "సంఘానికి వచ్చిన పొదుపు మొత్తం", id1: 10, t2: "సంఘం పెట్టుబడులు", id2: 12, label: "చేతి నిల్వ", idV1: 14, idV2: 15, bold1: true, center1: true, brown1: true },
+                            { t1: "పొదుపులు (SN+VO+Other Saving)", id1: 17, t2: "VO లో కట్టిన వాటాధనం", id2: 19, label: "పొదుపు ఖాతా", idV1: 21, idV2: 22 },
+                            { t1: "సంఘానికి వచ్చిన ఫండ్స్", id1: 24, t2: "VO లో కట్టిన పొదుపు", id2: 26, label: "బ్యాంక్ లోన్ ఖాతా", idV1: 28, idV2: 29, bold1: true, center1: true, brown1: true },
                         ].map((row, idx) => (
                             <tr key={idx}>
-                                <RowHeaderCell text={row.t1} />
-                                <DataValueCell id={row.id1} idMap={idMap} isEditing={isEditing && editableIds.has(row.id1)} onEdit={handleEdit} />
+                                <RowHeaderCell text={row.t1} bold={row.bold1 || false} center={row.center1 || false} />
+                                <DataValueCell id={row.id1} idMap={idMap} isEditing={isEditing && editableIds.has(row.id1)} onEdit={handleEdit} brown={row.brown1 || false} />
                                 <RowHeaderCell text={row.t2} />
                                 <DataValueCell id={row.id2} idMap={idMap} isEditing={isEditing && editableIds.has(row.id2)} onEdit={handleEdit} />
                                 <RowHeaderCell text={row.label} />
@@ -245,10 +246,10 @@ export default function SHGPage2View({ tableData, isEditing, onCellEdit, related
                             </td>
                         </tr>
                         <tr>
-                            <RowHeaderCell text="సంఘానికి తిరిగి వచ్చినవి" />
-                            <DataValueCell id={42} idMap={idMap} isEditing={isEditing && editableIds.has(42)} onEdit={handleEdit} />
-                            <RowHeaderCell text="సంఘం ఖర్చులు" />
-                            <DataValueCell id={43} idMap={idMap} isEditing={isEditing && editableIds.has(43)} onEdit={handleEdit} />
+                            <RowHeaderCell text="సంఘానికి తిరిగి వచ్చినవి" center bold />
+                            <DataValueCell id={42} idMap={idMap} isEditing={isEditing && editableIds.has(42)} onEdit={handleEdit} brown />
+                            <RowHeaderCell text="సంఘం ఖర్చులు" center bold />
+                            <DataValueCell id={43} idMap={idMap} isEditing={isEditing && editableIds.has(43)} onEdit={handleEdit} brown />
                         </tr>
 
                         {/* ── R9-R10: VO returns ── */}
@@ -323,10 +324,10 @@ export default function SHGPage2View({ tableData, isEditing, onCellEdit, related
                              Col 1 empty slots (95, 99, 103, 107, 111) → mirror remaining 3 loans.
                         ── */}
                         <tr>
-                            <RowHeaderCell text="సంఘానికి వచ్చిన ఆదాయాలు" bold />
-                            <DataValueCell id={83} idMap={idMap} isEditing={isEditing && editableIds.has(83)} onEdit={handleEdit} />
-                            <RowHeaderCell text="ఋణాలకు సంఘం చెల్లించిన రికవరీలు" bold />
-                            <DataValueCell id={85} idMap={idMap} isEditing={isEditing && editableIds.has(85)} onEdit={handleEdit} />
+                            <RowHeaderCell text="సంఘానికి వచ్చిన ఆదాయాలు" center bold />
+                            <DataValueCell id={83} idMap={idMap} isEditing={isEditing && editableIds.has(83)} onEdit={handleEdit} brown />
+                            <RowHeaderCell text="ఋణాలకు సంఘం చెల్లించిన రికవరీలు" center bold />
+                            <DataValueCell id={85} idMap={idMap} isEditing={isEditing && editableIds.has(85)} onEdit={handleEdit} brown />
                             <td colSpan={6} rowSpan={11} className="border-2 border-black p-4 align-top bg-gray-50/50">
                                 <div className="font-bold text-[11px] mb-6">సభ్యుల సంతకాలు :</div>
                                 <div className="grid grid-cols-2 gap-x-24 px-12 py-2">
