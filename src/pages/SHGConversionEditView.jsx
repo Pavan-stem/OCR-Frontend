@@ -50,13 +50,14 @@ const SHG_COLUMN_HEADERS = [
     { index: 15, key: "other_savings_total", label: "సభ్యుల ఇతర పొదుపు (విరాళం ఇతరములు)" },
 ];
 
-const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess }) => {
+const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
     const [activePageTab, setActivePageTab] = useState(1);
     const [loading, setLoading] = useState(true);
     const [page1Data, setPage1Data] = useState(null);
     const [page2Data, setPage2Data] = useState(null);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(null);
+    const [confirmReject, setConfirmReject] = useState(null); // { pageNum: number }
 
     useEffect(() => {
         const fetchAllData = async () => {
@@ -88,11 +89,11 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess }) => {
                 }
 
                 if (!data1.success || !data2.success) {
-                    setError('Failed to fetch some page data');
+                    setError(t?.('upload.errorLoading') || 'Failed to fetch some page data');
                 }
             } catch (err) {
                 console.error('Error fetching conversion edit data:', err);
-                setError('Network error');
+                setError(t?.('conversion.networkError') || 'Network error');
             } finally {
                 setLoading(false);
             }
@@ -137,22 +138,21 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess }) => {
             const r2 = await p2Res.json();
 
             if (r1.success && r2.success) {
-                alert('All changes saved successfully');
                 onSaveSuccess?.();
             } else {
-                alert('Failed to save some changes');
+                alert(t?.('conversion.saveFailed') || 'Failed to save some changes');
             }
         } catch (err) {
             console.error('Error saving data:', err);
-            alert('Save failed due to network error');
+            alert(t?.('conversion.networkError') || 'Save failed due to network error');
         } finally {
             setSaving(false);
         }
     };
 
-    const handleReject = async (pageNum) => {
+    const handleRejectExecute = async (pageNum) => {
         const item = shgGroup.pages[pageNum];
-        if (!window.confirm(`Are you sure you want to reject Page ${pageNum}? it will need reach back to VO for re-upload.`)) return;
+        setConfirmReject(null);
 
         try {
             const token = localStorage.getItem('token');
@@ -170,14 +170,13 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess }) => {
 
             const data = await res.json();
             if (data.success) {
-                alert(`Page ${pageNum} rejected`);
                 onSaveSuccess?.(); // Refresh list and go back
             } else {
-                alert(data.message || 'Failed to reject');
+                alert(data.message || t?.('common.error') || 'Failed to reject');
             }
         } catch (err) {
             console.error('Error rejecting:', err);
-            alert('Error rejecting item');
+            alert(t?.('conversion.rejectError') || 'Error rejecting item');
         }
     };
 
@@ -217,9 +216,9 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess }) => {
 
     if (loading) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-[400px]">
-                <Loader2 className="w-10 h-10 animate-spin text-indigo-600 mb-4" />
-                <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">Loading SHG Details...</p>
+            <div className="flex flex-col items-center justify-center min-h-[400px] text-white">
+                <Loader2 className="w-10 h-10 animate-spin mb-4" />
+                <p className="font-black uppercase tracking-widest text-xs opacity-80">{t?.('conversion.loading') || 'Loading SHG Details...'}</p>
             </div>
         );
     }
@@ -236,46 +235,46 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess }) => {
     const shgIdForPage1 = padSHGId(page1Data?.shgID);
 
     return (
-        <div className="flex flex-col min-h-screen bg-gray-50/50 -m-4 sm:-m-8 p-4 sm:p-8 animate-in fade-in duration-500">
-            <div className="space-y-6 max-w-4xl mx-auto w-full pb-20">
+        <div className="flex flex-col min-h-screen bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-800 -m-4 sm:-m-8 p-2 sm:p-8 animate-in fade-in duration-500 overflow-x-hidden">
+            <div className="space-y-4 sm:space-y-6 max-w-4xl mx-auto w-full pb-24">
                 {/* Header Area */}
-                <div className="bg-white rounded-[32px] p-6 shadow-xl border border-gray-100">
-                    <div className="flex items-center justify-between mb-6">
-                        <button onClick={onBack} className="p-3 bg-gray-50 hover:bg-gray-100 rounded-2xl transition-all">
-                            <ArrowLeft className="w-5 h-5 text-gray-600" />
+                <div className="bg-white/10 backdrop-blur-xl rounded-2xl sm:rounded-[32px] p-4 sm:p-6 shadow-2xl border border-white/20 sticky top-0 z-[100]">
+                    <div className="flex items-center justify-between mb-4 sm:mb-6 gap-2">
+                        <button onClick={onBack} className="p-2 sm:p-3 bg-white/10 hover:bg-white/20 rounded-xl sm:rounded-2xl transition-all border border-white/10">
+                            <ArrowLeft className="w-5 h-5 text-white" />
                         </button>
-                        <div className="text-center flex-1">
-                            <h2 className="text-lg font-black text-gray-900 leading-tight truncate px-4">{shgGroup.shgName}</h2>
-                            <span className="text-[10px] font-black tracking-widest text-indigo-500 uppercase">{shgIdForPage1}</span>
+                        <div className="text-center flex-1 min-w-0">
+                            <h2 className="text-sm sm:text-lg font-black text-white leading-tight truncate px-2">{shgGroup.shgName}</h2>
+                            <span className="text-[8px] sm:text-[10px] font-black tracking-wider sm:tracking-widest text-indigo-200 uppercase block mt-0.5">{shgIdForPage1}</span>
                         </div>
-                        <button
+                        <button 
                             onClick={handleSave}
                             disabled={saving}
-                            className="p-3 bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-100 hover:bg-indigo-700 disabled:opacity-50"
+                            className="p-2 sm:p-3 bg-white text-indigo-600 rounded-xl sm:rounded-2xl shadow-xl hover:bg-indigo-50 transition-all font-black disabled:opacity-50"
                         >
                             {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
                         </button>
                     </div>
 
                     {/* Compact Page Tabs */}
-                    <div className="flex bg-gray-50 p-1.5 rounded-2xl gap-2 border border-gray-100">
+                    <div className="flex bg-black/10 p-1.5 rounded-2xl gap-2 border border-white/10">
                         <button
                             onClick={() => setActivePageTab(1)}
-                            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all ${activePageTab === 1
-                                ? 'bg-white text-indigo-600 shadow-sm'
-                                : 'text-gray-400 hover:text-gray-600'
+                            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-black uppercase tracking-widest text-[9px] sm:text-[10px] transition-all ${activePageTab === 1
+                                ? 'bg-white text-indigo-600 shadow-md scale-[1.02]'
+                                : 'text-white/60 hover:text-white hover:bg-white/5'
                                 }`}
                         >
-                            <Layout size={14} /> Page 1 (Members)
+                            <Layout size={14} /> {t?.('conversion.page1Tab') || 'Page 1 (Members)'}
                         </button>
                         <button
                             onClick={() => setActivePageTab(2)}
-                            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all ${activePageTab === 2
-                                ? 'bg-white text-emerald-600 shadow-sm'
-                                : 'text-gray-400 hover:text-gray-600'
+                            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-black uppercase tracking-widest text-[9px] sm:text-[10px] transition-all ${activePageTab === 2
+                                ? 'bg-white text-emerald-600 shadow-md scale-[1.02]'
+                                : 'text-white/60 hover:text-white hover:bg-white/5'
                                 }`}
                         >
-                            <Smartphone size={14} /> Page 2 (Financials)
+                            <Smartphone size={14} /> {t?.('conversion.page2Tab') || 'Page 2 (Financials)'}
                         </button>
                     </div>
                 </div>
@@ -284,56 +283,90 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess }) => {
                 <div className="space-y-4">
                     {activePageTab === 1 ? (
                         <div className="space-y-4">
-                            {/* Page 1 Rejection */}
+                             {/* Page 1 Rejection */}
                             <div className="flex justify-end">
                                 <button
-                                    onClick={() => handleReject(1)}
-                                    className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-100 transition-all border border-red-100"
+                                    onClick={() => setConfirmReject({ pageNum: 1 })}
+                                    className="flex items-center gap-2 px-6 py-3 bg-white/10 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-red-500 transition-all border border-white/10 shadow-lg"
                                 >
-                                    <XCircle size={14} /> Reject Page 1
+                                    <XCircle size={16} /> {t?.('conversion.rejectPage', { page: 1 }) || 'Reject Page 1'}
                                 </button>
                             </div>
 
                             {/* Member Cards */}
                             {(page1Data?.table_data?.data_rows || []).map((row, rIdx) => (
-                                <MemberCard
+                                 <MemberCard
                                     key={rIdx}
                                     row={row}
                                     rIdx={rIdx}
                                     shgId={shgIdForPage1}
                                     onCellChange={handleMemberCellChange}
+                                    t={t}
                                 />
                             ))}
                         </div>
                     ) : (
                         <div className="space-y-4">
-                            {/* Page 2 Rejection */}
+                             {/* Page 2 Rejection */}
                             <div className="flex justify-end">
                                 <button
-                                    onClick={() => handleReject(2)}
-                                    className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-100 transition-all border border-red-100"
+                                    onClick={() => setConfirmReject({ pageNum: 2 })}
+                                    className="flex items-center gap-2 px-6 py-3 bg-white/10 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-red-500 transition-all border border-white/10 shadow-lg"
                                 >
-                                    <XCircle size={14} /> Reject Page 2
+                                    <XCircle size={16} /> {t?.('conversion.rejectPage', { page: 2 }) || 'Reject Page 2'}
                                 </button>
                             </div>
 
-                            {/* Page 2 Two Column View */}
-                            <div className="bg-white rounded-[32px] shadow-xl border border-gray-100 overflow-hidden">
+                             {/* Page 2 Two Column View */}
+                            <div className="bg-white/95 backdrop-blur-md rounded-2xl sm:rounded-[32px] shadow-2xl border border-white/20 overflow-hidden">
                                 <Page2ColumnView
                                     tableData={page2Data?.table_data}
                                     onEdit={handlePage2CellEdit}
                                     relatedPage1Totals={page2Data?.relatedPage1Totals}
+                                    t={t}
                                 />
                             </div>
                         </div>
                     )}
                 </div>
             </div>
+
+            {/* Custom Reject Confirmation Modal */}
+            {confirmReject && (
+                <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4">
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setConfirmReject(null)} />
+                    <div className="relative bg-white rounded-[32px] p-8 max-w-sm w-full shadow-2xl animate-in zoom-in duration-300">
+                        <div className="w-16 h-16 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center mb-6 mx-auto">
+                            <XCircle size={32} />
+                        </div>
+                        <h3 className="text-xl font-black text-gray-900 text-center mb-2">
+                            {t?.('common.areYouSure') || 'Are you sure?'}
+                        </h3>
+                        <p className="text-gray-500 text-center text-sm font-bold mb-8 leading-relaxed">
+                            {t?.('conversion.rejectConfirm', { page: confirmReject.pageNum }) || `Are you sure you want to reject Page ${confirmReject.pageNum}? It will be sent back to the VO for re-upload.`}
+                        </p>
+                        <div className="flex gap-3">
+                            <button 
+                                onClick={() => setConfirmReject(null)}
+                                className="flex-1 py-4 bg-gray-100 text-gray-500 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-gray-200 transition-all"
+                            >
+                                {t?.('common.cancel') || 'Cancel'}
+                            </button>
+                            <button 
+                                onClick={() => handleRejectExecute(confirmReject.pageNum)}
+                                className="flex-1 py-4 bg-red-600 text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-lg shadow-red-200 hover:bg-red-700 transition-all"
+                            >
+                                {t?.('common.confirm') || 'Confirm'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
 
-const MemberCard = ({ row, rIdx, shgId, onCellChange }) => {
+const MemberCard = ({ row, rIdx, shgId, onCellChange, t }) => {
     const [showAddFieldMenu, setShowAddFieldMenu] = useState(false);
     const [visibleIndices, setVisibleIndices] = useState([]);
 
@@ -362,8 +395,8 @@ const MemberCard = ({ row, rIdx, shgId, onCellChange }) => {
     const allFieldOptions = SHG_COLUMN_HEADERS.filter(h => h.index > 1);
 
     return (
-        <div className="bg-white rounded-[32px] p-6 shadow-lg border border-gray-100 transition-all hover:shadow-2xl group">
-            <div className="flex items-center justify-between mb-4 border-b border-gray-50 pb-4">
+        <div className="bg-white/95 backdrop-blur-md rounded-2xl sm:rounded-[32px] p-4 sm:p-6 shadow-2xl border border-white/20 transition-all hover:scale-[1.01] hover:shadow-cyan-500/10 group">
+            <div className="flex items-center justify-between mb-4 border-b border-gray-100 pb-4 gap-2">
                 <div className="flex items-center gap-3">
                     <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl">
                         <User size={20} />
@@ -372,7 +405,9 @@ const MemberCard = ({ row, rIdx, shgId, onCellChange }) => {
                         {hasName ? (
                             <h4 className="font-black text-gray-900 leading-tight">{memberNameInput}</h4>
                         ) : (
-                            <h4 className="font-black text-gray-900 leading-tight uppercase tracking-tighter">Member {rIdx + 1}</h4>
+                            <h4 className="font-black text-gray-900 leading-tight uppercase tracking-tighter">
+                                {t?.('upload.member') || 'Member'} {rIdx + 1}
+                            </h4>
                         )}
                         <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mt-1">
                             {shgId}{padMBKId(mbkId)}
@@ -381,15 +416,15 @@ const MemberCard = ({ row, rIdx, shgId, onCellChange }) => {
                 </div>
                 <div className="text-right">
                     <span className="text-[10px] font-black px-3 py-1 bg-gray-100 text-gray-500 rounded-full uppercase tracking-widest">
-                        ROW {rIdx + 1}
+                        {t?.('upload.row') || 'ROW'} {rIdx + 1}
                     </span>
                 </div>
             </div>
 
             <div className="grid grid-cols-1 gap-3">
                 {/* Specific field for MBK ID editing */}
-                <div className="flex flex-col gap-1.5 p-3 bg-gray-50/50 rounded-2xl border border-gray-100">
-                    <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest">సభ్యురాలి MBK ID</label>
+                 <div className="flex flex-col gap-1.5 p-3 bg-indigo-50/50 rounded-2xl border border-indigo-100/50">
+                    <label className="text-[9px] font-black text-indigo-400 uppercase tracking-widest">{t?.('conversion.memberMbkId') || 'Member MBK ID'}</label>
                     <input
                         type="text"
                         value={mbkId}
@@ -406,12 +441,12 @@ const MemberCard = ({ row, rIdx, shgId, onCellChange }) => {
                                 onCellChange(rIdx, field.index, '');
                                 setVisibleIndices(prev => prev.filter(idx => idx !== field.index));
                             }}
-                            className="absolute top-2 right-2 p-1 text-gray-300 hover:text-red-500 transition-colors"
+                            className="absolute top-2 right-2 p-1 text-red-400 hover:text-red-600 transition-colors"
                         >
                             <Trash2 size={12} />
                         </button>
-                        <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest pr-6">
-                            {SHG_COLUMN_HEADERS[field.index]?.label}
+                         <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest pr-6">
+                            {t?.(`fields.${field.key}`) || SHG_COLUMN_HEADERS[field.index]?.label}
                         </label>
                         <input
                             type="text"
@@ -426,15 +461,15 @@ const MemberCard = ({ row, rIdx, shgId, onCellChange }) => {
                 <div className="relative mt-2">
                     <button
                         onClick={() => setShowAddFieldMenu(!showAddFieldMenu)}
-                        className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-gray-200 rounded-2xl text-gray-400 hover:border-indigo-400 hover:text-indigo-500 transition-all font-bold text-xs"
+                         className="w-full flex items-center justify-center gap-2 py-4 border-2 border-dashed border-indigo-200 rounded-2xl text-indigo-400 hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 transition-all font-black text-xs uppercase tracking-widest shadow-sm"
                     >
-                        <Plus size={16} /> Add Field
+                        <Plus size={16} /> {t?.('conversion.addField') || 'Add Field'}
                     </button>
 
                     {showAddFieldMenu && (
                         <div className="absolute bottom-full left-0 right-0 mb-2 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden z-20 max-h-60 overflow-y-auto animate-in slide-in-from-bottom-2">
-                            <div className="p-2 border-b border-gray-50 flex items-center justify-between sticky top-0 bg-white">
-                                <span className="text-[10px] font-black uppercase text-gray-400 px-2">Select Field</span>
+                             <div className="p-3 border-b border-gray-50 flex items-center justify-between sticky top-0 bg-white z-10">
+                                <span className="text-[10px] font-black uppercase text-gray-400 px-2">{t?.('conversion.selectField') || 'Select Field'}</span>
                                 <button onClick={() => setShowAddFieldMenu(false)} className="p-1 hover:bg-gray-100 rounded-lg text-gray-400"><X size={14} /></button>
                             </div>
                             {allFieldOptions.filter(h => !visibleFields.find(vf => vf.index === h.index)).map(option => (
@@ -458,7 +493,7 @@ const MemberCard = ({ row, rIdx, shgId, onCellChange }) => {
     );
 };
 
-const Page2ColumnView = ({ tableData, onEdit, relatedPage1Totals }) => {
+const Page2ColumnView = ({ tableData, onEdit, relatedPage1Totals, t }) => {
     const idMap = useMemo(() => {
         const map = {};
         (tableData?.data_rows || []).forEach(row => {
@@ -499,27 +534,28 @@ const Page2ColumnView = ({ tableData, onEdit, relatedPage1Totals }) => {
     const readOnlyIds = relatedPage1Totals ? [89, 93, 97, 101, 105, 109] : [];
 
     return (
-        <div className="divide-y divide-gray-50 flex flex-col h-full bg-white">
-            <div className="bg-emerald-600 px-6 py-4 flex items-center justify-between sticky top-0 z-10 shadow-md">
+         <div className="divide-y divide-gray-50 flex flex-col h-full bg-white/20">
+            <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 px-4 sm:px-6 py-4 sm:py-5 flex items-center justify-between sticky top-0 z-10 shadow-lg">
                 <div>
-                    <h4 className="text-white font-black text-xs uppercase tracking-widest">Financial Data Correction</h4>
-                    <p className="text-emerald-100 text-[9px] font-bold uppercase tracking-widest mt-0.5">Edit all financial entries below</p>
+                    <h4 className="text-white font-black text-[11px] sm:text-xs uppercase tracking-widest">{t?.('conversion.financialHeader') || 'Financial Data Correction'}</h4>
+                    <p className="text-emerald-100 text-[9px] font-bold uppercase tracking-widest mt-0.5 opacity-80">{t?.('conversion.financialSubheader') || 'Edit all financial entries below'}</p>
                 </div>
-                <Layout className="text-white/40" size={20} />
+                <Layout className="text-white/40 hidden sm:block" size={24} />
             </div>
 
             <div className="p-4 grid grid-cols-1 gap-1 flex-1 overflow-y-auto pb-10">
                 {EDITABLE_FIELDS.map((field) => {
                     const isReadOnly = readOnlyIds.includes(field.id);
                     return (
-                        <div key={field.id} className={`flex items-center gap-3 p-3 transition-colors rounded-xl ${isReadOnly ? 'bg-blue-50/30' : 'hover:bg-gray-50'}`}>
+                        <div key={field.id} className={`flex items-center gap-2 sm:gap-3 p-2 sm:p-3 transition-colors rounded-xl ${isReadOnly ? 'bg-blue-50/30' : 'hover:bg-gray-50'}`}>
                             <div className="flex-1 min-w-0">
-                                <label className="text-[10px] sm:text-xs font-bold text-gray-700 line-clamp-2 leading-snug">
+                                <label className="text-[10px] sm:text-xs font-bold text-gray-700 line-clamp-2 leading-tight">
                                     {field.label}
                                 </label>
-                                <div className="flex items-center gap-2 mt-0.5">
+                                 <div className="flex items-center gap-2 mt-0.5">
+                                    <span className="text-[7px] sm:text-[8px] text-gray-400 font-black uppercase tracking-widest block">ID: {field.id}</span>
                                     {isReadOnly && (
-                                        <span className="text-[7px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded font-black uppercase tracking-tight">Mirrored from Page 1</span>
+                                        <span className="text-[7px] bg-emerald-100 text-emerald-600 px-1.5 py-0.5 rounded font-black uppercase tracking-tight">{t?.('conversion.mirrored') || 'Mirrored'}</span>
                                     )}
                                 </div>
                             </div>
@@ -542,11 +578,17 @@ const Page2ColumnView = ({ tableData, onEdit, relatedPage1Totals }) => {
             </div>
 
             {/* Calculations Banner */}
-            <div className="p-6 bg-gray-50 border-t border-gray-100 mt-auto sticky bottom-0 z-10">
-                <div className="flex items-center gap-3 text-amber-600 mb-4 bg-amber-50 p-3 rounded-2xl border border-amber-100">
-                    <AlertCircle size={16} />
-                    <span className="text-[10px] font-black uppercase tracking-widest font-sans">Calculations are updated on save</span>
+            <div className="p-4 sm:p-8 bg-gray-50/80 backdrop-blur-sm border-t border-gray-100 mt-auto sticky bottom-0 z-10">
+                <div className="flex items-center gap-3 text-amber-600 mb-6 bg-amber-50 p-3 sm:p-4 rounded-2xl border border-amber-100 shadow-sm">
+                    <AlertCircle size={18} className="flex-shrink-0" />
+                    <span className="text-[10px] sm:text-xs font-black uppercase tracking-widest font-sans">{t?.('conversion.saveCalculationsNote') || 'Calculations are updated on save'}</span>
                 </div>
+                <button 
+                    onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                    className="w-full py-5 bg-indigo-600 text-white rounded-3xl font-black text-xs sm:text-sm uppercase tracking-widest hover:bg-indigo-700 transition-all flex items-center justify-center gap-3 shadow-2xl shadow-indigo-200"
+                >
+                    <RotateCw size={18} /> {t?.('conversion.saveAll') || 'Review & Save All'}
+                </button>
             </div>
         </div>
     );

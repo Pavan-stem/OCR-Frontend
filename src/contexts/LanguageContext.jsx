@@ -21,7 +21,7 @@ export const LanguageProvider = ({ children }) => {
         }
     };
 
-    const t = (key) => {
+    const t = (key, variables = {}) => {
         // Navigate through nested translation keys (e.g., 'common.upload')
         const keys = key.split('.');
         let value = translations[language];
@@ -32,6 +32,14 @@ export const LanguageProvider = ({ children }) => {
             } else {
                 return key; // Return key if translation not found
             }
+        }
+
+        if (typeof value === 'string') {
+            // Basic string interpolation for variables like {{page}}
+            Object.keys(variables).forEach(vKey => {
+                const regex = new RegExp(`{{${vKey}}}`, 'gi');
+                value = value.replace(regex, variables[vKey]);
+            });
         }
 
         return value || key;

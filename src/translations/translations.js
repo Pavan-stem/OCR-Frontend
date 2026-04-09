@@ -21,6 +21,8 @@ export const translations = {
             confirm: 'Confirm',
             yes: 'Yes',
             no: 'No',
+            confirmAction: 'Confirm Action',
+            areYouSure: 'Are you sure?',
         },
 
         // Header & Navigation
@@ -56,6 +58,8 @@ export const translations = {
 
         // Upload Section
         upload: {
+            member: 'Member',
+            row: 'Row',
             monthAndYear: 'Month & Year',
             month: 'Month',
             year: 'Year',
@@ -85,6 +89,9 @@ export const translations = {
             pendingUploads: 'Pending Uploads',
             completedUploads: 'Completed Uploads',
             view: 'View',
+            conversionTab: 'Conversion Edit',
+            saved: 'Saved',
+            unsaved: 'Unsaved',
             uploadFileOne: 'upload File',
             remove: 'Remove',
             confirmRemove: 'Are you sure you want to remove this file?',
@@ -324,6 +331,8 @@ export const translations = {
 
         // Upload Section - Telugu
         upload: {
+            member: 'సభ్యురాలు',
+            row: 'వరుస',
             monthAndYear: 'నెల & సంవత్సరం',
             month: 'నెల',
             year: 'సంవత్సరం',
@@ -426,6 +435,28 @@ export const translations = {
             noConversionsMessage: "ప్రాసెస్ చేసిన తర్వాత ఈ కాలానికి సంబంధించిన కన్వర్ట్ అయిన రికార్డులు ఇక్కడ కనిపిస్తాయి.",
             saved: "సేవ్ చేయబడింది",
             unsaved: "సేవ్ చేయబడలేదు",
+        },
+
+        // Conversion Edit View - Telugu
+        conversion: {
+            page1Tab: 'పేజీ 1 (సభ్యులు)',
+            page2Tab: 'పేజీ 2 (ఆర్థిక వివరాలు)',
+            rejectPage: 'పేజీ {{page}} తిరస్కరించండి',
+            rejectConfirm: 'మీరు ఖచ్చితంగా పేజీ {{page}} తిరస్కరించాలనుకుంటున్నారా? ఇది మళ్లీ అప్‌లోడ్ చేయడానికి VO కి పంపబడుతుంది.',
+            financialHeader: 'ఆర్థిక డేటా సవరణ',
+            financialSubheader: 'క్రింద ఉన్న అన్ని ఆర్థిక వివరాలను సవరించండి',
+            memberMbkId: 'సభ్యురాలి MBK ID',
+            saveCalculationsNote: 'సేవ్ చేసినప్పుడు లెక్కలు నవీకరించబడతాయి',
+            saveAll: 'సమీక్షించి & సేవ్ చేయండి',
+            addField: 'ఫీల్డ్ జోడించండి',
+            selectField: 'ఫీల్డ్ ఎంచుకోండి',
+            saveSuccess: 'అన్ని మార్పులు విజయవంతంగా సేవ్ చేయబడ్డాయి',
+            saveFailed: 'కొన్ని మార్పులను సేవ్ చేయడం విఫలమైంది',
+            networkError: 'నెట్‌వర్క్ లోపం వల్ల సేవ్ చేయడం విఫలమైంది',
+            rejected: 'పేజీ {{page}} తిరస్కరించబడింది',
+            rejectError: 'తిరస్కరించడంలో లోపం',
+            loading: 'SHG వివరాలు లోడ్ అవుతున్నాయి...',
+            mirrored: 'మిర్రర్డ్',
         },
 
 

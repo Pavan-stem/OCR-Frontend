@@ -1640,10 +1640,11 @@ const SHGUploadSection = ({
 
       {/* Edit View Overlay - Using Portal to ensure full coverage over the app UI */}
       {editingSHG && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-white overflow-y-auto p-4 sm:p-8 animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-[9999] bg-black/40 backdrop-blur-md overflow-y-auto p-4 sm:p-8 animate-in fade-in duration-300">
           <SHGConversionEditView
             shgGroup={editingSHG}
             onBack={() => setEditingSHG(null)}
+            t={t}
             onSaveSuccess={() => {
               setEditingSHG(null);
               fetchConversions();
