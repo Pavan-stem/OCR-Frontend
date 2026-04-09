@@ -54,6 +54,9 @@ const SHGUploadSection = ({
   const [cameraTarget, setCameraTarget] = useState({ id: null, name: null });
   const [permanentlyUploadedFiles, setPermanentlyUploadedFiles] = useState([]);
   const [currentlyViewingId, setCurrentlyViewingId] = useState(null);
+  const [activeTab, setActiveTab] = useState('upload'); // 'upload' or 'conversion'
+  const [conversions, setConversions] = useState({ success: [], failed: [] });
+  const [isConversionsLoading, setIsConversionsLoading] = useState(false);
 
   // VO Upload Access Restriction States
   const [restriction, setRestriction] = useState(null); // { mode: 'restricted', month: '02', year: '2025' }
@@ -194,8 +197,67 @@ const SHGUploadSection = ({
   useEffect(() => {
     if (selectedMonth && selectedYear) {
       fetchPermanentlyUploadedFiles();
+      fetchConversions();
     }
   }, [selectedMonth, selectedYear, user?.voID, serverProgress?.uploadedShgIds]);
+
+  const fetchConversions = async () => {
+    if (!user?._id || !selectedMonth || !selectedYear) return;
+    setIsConversionsLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const params = new URLSearchParams({
+        month: selectedMonth,
+        year: selectedYear,
+        limit: 1000 // Get all for current scope
+      }).toString();
+
+      const res = await fetch(`${API_BASE}/api/conversion/results/${user._id}?${params}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setConversions(data.results);
+      }
+    } catch (err) {
+      console.error('Error fetching conversions:', err);
+    } finally {
+      setIsConversionsLoading(false);
+    }
+  };
+
+
+  // Group conversions by SHG ID for the edit list
+  const getGroupedConversions = () => {
+    const groups = {};
+    const items = [...(conversions.success || []), ...(conversions.failed || [])];
+    items.forEach(item => {
+      const shgId = item.shgID || item.shgId;
+      if (!shgId) return;
+      if (!groups[shgId]) {
+        groups[shgId] = {
+          shgID: shgId,
+          shgName: item.shgName,
+          pages: {},
+          isSynced: true, // Will be false if any page is not synced
+          hasFailed: false
+        };
+      }
+      groups[shgId].pages[item.page || 1] = item;
+      if (item.status === 'completed' && !item.isSynced) {
+        groups[shgId].isSynced = false;
+      }
+      if (item.status === 'failed') {
+        groups[shgId].hasFailed = true;
+      }
+    });
+
+    // Only show SHGs that have both Page 1 and Page 2 converted
+    return Object.values(groups).filter(group => group.pages[1] && group.pages[2]);
+  };
+
+  const groupedConversions = getGroupedConversions();
+  const unsavedCount = groupedConversions.filter(group => !group.isSynced).length || 0;
 
   const handleViewPermanentlyUploadedFile = async (shgId, page = 1) => {
     const viewId = `${shgId}-${page}`;
@@ -1542,24 +1604,57 @@ const SHGUploadSection = ({
         </div>
       </div>
 
-      {error && (
-        <div className="bg-red-50 border-2 border-red-300 rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-md">
-          <div className="flex items-center gap-3 mb-3">
-            <AlertCircle size={32} className="text-red-600 flex-shrink-0" />
-            <h3 className="text-lg sm:text-xl font-bold text-red-800">{t?.('upload.errorLoading') || 'No SHG Data Found'}</h3>
-          </div>
-          <p className="text-sm sm:text-base text-red-700 break-words font-medium">{error}</p>
-          <div className="mt-4 p-3 bg-white/50 rounded-lg border border-red-200 text-sm text-red-800">
-            <p>{t?.('upload.errorHelp') || 'Please try selecting a different month or year using the dropdowns above.'}</p>
-          </div>
-          <button
-            onClick={loadSHGDataFromBackend}
-            className="mt-4 px-4 sm:px-6 py-2 sm:py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold text-sm sm:text-base shadow-lg transition-all"
-          >
-            {t?.('upload.retry') || 'Retry'}
-          </button>
-        </div>
-      )}
+      {/* Tab Switcher */}
+      <div className="bg-white rounded-2xl border-2 border-gray-200 shadow-md p-1.5 flex gap-1.5">
+        <button
+          onClick={() => setActiveTab('upload')}
+          className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-black uppercase tracking-[0.12em] text-[10px] sm:text-xs transition-all duration-300 ${activeTab === 'upload'
+            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200'
+            : 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-800'
+            }`}
+        >
+          <Upload size={15} />
+          {t?.('upload.uploadTab') || 'Upload Files'}
+        </button>
+        <button
+          onClick={() => setActiveTab('conversion')}
+          className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-black uppercase tracking-[0.12em] text-[10px] sm:text-xs transition-all duration-300 relative ${activeTab === 'conversion'
+            ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-200'
+            : 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-800'
+            }`}
+        >
+          <RotateCw size={15} className={activeTab === 'conversion' ? 'animate-spin' : ''} />
+          {t?.('upload.conversionTab') || 'Conversion Edit'}
+
+          {/* Unsaved Badge */}
+          {unsavedCount > 0 && (
+            <div className="absolute -top-2 -right-1 min-w-[20px] h-5 bg-red-500 text-white text-[9px] font-black rounded-full flex items-center justify-center px-1.5 shadow-lg border-2 border-white">
+              {unsavedCount}
+            </div>
+          )}
+        </button>
+      </div>
+
+      {activeTab === 'upload' ? (
+        <>
+          {error && (
+            <div className="bg-red-50 border-2 border-red-300 rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-md">
+              <div className="flex items-center gap-3 mb-3">
+                <AlertCircle size={32} className="text-red-600 flex-shrink-0" />
+                <h3 className="text-lg sm:text-xl font-bold text-red-800">{t?.('upload.errorLoading') || 'No SHG Data Found'}</h3>
+              </div>
+              <p className="text-sm sm:text-base text-red-700 break-words font-medium">{error}</p>
+              <div className="mt-4 p-3 bg-white/50 rounded-lg border border-red-200 text-sm text-red-800">
+                <p>{t?.('upload.errorHelp') || 'Please try selecting a different month or year using the dropdowns above.'}</p>
+              </div>
+              <button
+                onClick={loadSHGDataFromBackend}
+                className="mt-4 px-4 sm:px-6 py-2 sm:py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold text-sm sm:text-base shadow-lg transition-all"
+              >
+                {t?.('upload.retry') || 'Retry'}
+              </button>
+            </div>
+          )}
 
       {/* Search, Filter and Action Bar */}
       {!error && (
@@ -1705,16 +1800,120 @@ const SHGUploadSection = ({
         </div>
       )}
 
-      {!loading && !error && filteredShgData.length === 0 && shgData.length > 0 && (
-        <div className="text-center py-8 sm:py-12">
-          <div className="w-20 h-20 sm:w-24 sm:h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Search size={36} className="sm:hidden text-gray-400" />
-            <Search size={48} className="hidden sm:block text-gray-400" />
+          {!loading && !error && filteredShgData.length === 0 && shgData.length > 0 && (
+            <div className="text-center py-8 sm:py-12">
+              <div className="w-20 h-20 sm:w-24 sm:h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Search size={36} className="sm:hidden text-gray-400" />
+                <Search size={48} className="hidden sm:block text-gray-400" />
+              </div>
+              <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-2">{t?.('upload.noSHGsFound') || 'No SHGs Found'}</h3>
+              <p className="text-sm sm:text-base text-gray-600 px-4">
+                {searchTerm ? t?.('upload.adjustSearch') || 'Try adjusting your search terms' : t?.('upload.noSHGsAvailable') || 'No SHGs available'}
+              </p>
+            </div>
+          )}
+        </>
+      ) : (
+        /* Conversion Edit Tab Content */
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          {/* Search Bar for Conversions */}
+          <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg p-3 sm:p-4 border-2 border-gray-200">
+            <div className="relative group">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 group-focus-within:text-emerald-600 transition-colors" size={18} />
+              <input
+                type="text"
+                placeholder={t?.('upload.searchConversions') || 'Search converted SHGs...'}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 sm:py-3 border-2 border-gray-300 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm sm:text-base"
+              />
+            </div>
           </div>
-          <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-2">{t?.('upload.noSHGsFound') || 'No SHGs Found'}</h3>
-          <p className="text-sm sm:text-base text-gray-600 px-4">
-            {searchTerm ? t?.('upload.adjustSearch') || 'Try adjusting your search terms' : t?.('upload.noSHGsAvailable') || 'No SHGs available'}
-          </p>
+
+          <div className="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden">
+            <div className="bg-gray-50/50 px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-700">
+                {t?.('upload.convertedResults') || 'Converted SHG Results'} ({groupedConversions.length})
+              </h3>
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-emerald-600 rounded-full animate-pulse"></div>
+                <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-widest">
+                  {t?.('upload.realTimeSync') || 'Real-time sync'}
+                </span>
+              </div>
+            </div>
+
+            {isConversionsLoading && getGroupedConversions().length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20">
+                <RotateCw className="w-10 h-10 animate-spin text-emerald-700 mb-4" />
+                <p className="text-gray-700 font-bold uppercase tracking-widest text-xs">
+                  {t?.('upload.fetchingConversions') || 'Fetching conversions...'}
+                </p>
+              </div>
+            ) : getGroupedConversions().length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center px-4">
+                <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mb-6">
+                  <ScanLine className="w-10 h-10 text-gray-300" />
+                </div>
+                <h4 className="text-gray-900 font-black uppercase tracking-wider text-sm mb-2">
+                  {t?.('upload.noConversionsFound') || 'No conversions found'}
+                </h4>
+                <p className="text-gray-600 text-xs font-bold max-w-xs uppercase tracking-tight">
+                  {searchTerm 
+                    ? t?.('upload.adjustSearch') || 'Try adjusting your search terms' 
+                    : t?.('upload.noConversionsMessage') || 'Converted records for this period will appear here once processed.'}
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-50">
+                {groupedConversions
+                  .filter(group =>
+                    !searchTerm ||
+                    group.shgName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    group.shgID?.toString().toLowerCase().includes(searchTerm.toLowerCase())
+                  )
+                  .map((group, idx) => (
+                    <div key={idx} className="p-4 sm:p-6 hover:bg-gray-50/50 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 group">
+                      <div className="flex items-start gap-4">
+                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg shrink-0 transition-transform group-hover:scale-110 ${group.isSynced ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
+                          {group.isSynced ? <CheckCircle size={24} /> : <AlertTriangle size={24} />}
+                        </div>
+                        <div className="min-w-0">
+                          <h4 className="text-base font-black text-gray-900 leading-tight truncate">{group.shgName}</h4>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-[10px] font-black text-indigo-600/60 bg-indigo-50 px-2 py-0.5 rounded-lg uppercase tracking-wider">{group.shgID}</span>
+                            <div className="flex gap-1">
+                              {Object.keys(group.pages).map(p => (
+                                <span key={p} className="text-[9px] font-black bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded border border-gray-200">P{p}</span>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="mt-2 flex items-center gap-2">
+                             <div className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest shadow-sm border ${
+                               group.isSynced
+                                 ? 'bg-emerald-600 text-white border-emerald-500'
+                                 : 'bg-red-600 text-white border-red-500 animate-pulse'
+                             }`}>
+                               {group.isSynced 
+                                ? t?.('upload.saved') || 'Saved' 
+                                : t?.('upload.unsaved') || 'Unsaved'}
+                             </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 self-end sm:self-center">
+                        <button
+                          onClick={() => alert(`Editing functionality for ${group.shgName} will be available in the next update.`)}
+                          className="px-6 py-3 bg-white border-2 border-gray-200 hover:border-indigo-600 text-gray-600 hover:text-indigo-600 rounded-xl font-black text-xs uppercase tracking-widest transition-all shadow-sm hover:shadow-md active:scale-95"
+                        >
+                          Edit
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

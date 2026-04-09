@@ -148,6 +148,16 @@ export const translations = {
             locked: "Locked",
             noFilesSelected: "No files selected.",
             invalidShgIdRefresing: "The SHG ID is not valid. Refreshing the list...",
+            uploadTab: "Upload Files",
+            conversionTab: "Conversion Edit",
+            searchConversions: "Search converted SHGs...",
+            convertedResults: "Converted SHG Results",
+            realTimeSync: "Real-time sync",
+            fetchingConversions: "Fetching conversions...",
+            noConversionsFound: "No conversions found",
+            noConversionsMessage: "Converted records for this period will appear here once processed.",
+            saved: "Saved",
+            unsaved: "Unsaved",
         },
 
 
@@ -406,6 +416,16 @@ export const translations = {
             locked: "లాక్ చేయబడింది",
             noFilesSelected: "ఫైల్స్ ఏదీ ఎంపిక చేయలేదు.",
             invalidShgIdRefresing: "SHG ID చెల్లదు. జాబితా రీఫ్రెష్ అవుతోంది...",
+            uploadTab: "ఫైల్స్ అప్‌లోడ్ చేయండి",
+            conversionTab: "కన్వర్షన్ ఎడిట్",
+            searchConversions: "కన్వర్ట్ అయిన SHGలు వెతకండి...",
+            convertedResults: "కన్వర్ట్ అయిన SHG ఫలితాలు",
+            realTimeSync: "రియల్ టైమ్ సింక్",
+            fetchingConversions: "కన్వర్షన్స్‌ని పొందుతోంది...",
+            noConversionsFound: "కన్వర్షన్‌లు కనుగొనబడలేదు",
+            noConversionsMessage: "ప్రాసెస్ చేసిన తర్వాత ఈ కాలానికి సంబంధించిన కన్వర్ట్ అయిన రికార్డులు ఇక్కడ కనిపిస్తాయి.",
+            saved: "సేవ్ చేయబడింది",
+            unsaved: "సేవ్ చేయబడలేదు",
         },
 
 
