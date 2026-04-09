@@ -1580,8 +1580,8 @@ const UsersTab = ({ filterProps }) => {
             return list.map(u => {
               // Should we force this node to the new mode? (e.g. child of a toggled CC)
               if (forceMode) {
-                const updated = { 
-                  ...u, 
+                const updated = {
+                  ...u,
                   uploadAccessMode: forceMode.mode,
                   restrictedMonth: forceMode.month,
                   restrictedYear: forceMode.year
@@ -1593,8 +1593,8 @@ const UsersTab = ({ filterProps }) => {
 
               // Is this the target node?
               if (u._id === targetUser._id) {
-                const updated = { 
-                  ...u, 
+                const updated = {
+                  ...u,
                   uploadAccessMode: payload.mode,
                   restrictedMonth: payload.month,
                   restrictedYear: payload.year
@@ -2971,11 +2971,10 @@ const UsersTab = ({ filterProps }) => {
                                       id={`select-access-${u._id}`}
                                       onClick={() => handleToggleUploadAccess(u)}
                                       disabled={updatingAccessId === u._id}
-                                      className={`p-1.5 rounded-lg transition-all shadow-sm ${
-                                        u.uploadAccessMode === 'restricted'
-                                          ? 'bg-orange-600 text-white shadow-orange-200' 
+                                      className={`p-1.5 rounded-lg transition-all shadow-sm ${u.uploadAccessMode === 'restricted'
+                                          ? 'bg-orange-600 text-white shadow-orange-200'
                                           : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-100'
-                                      }`}
+                                        }`}
                                       title={u.uploadAccessMode === 'restricted' ? "Upload Access: LOCKED (Click to release)" : "Upload Access: OPEN (Click to lock to current month)"}
                                     >
                                       {updatingAccessId === u._id ? (
