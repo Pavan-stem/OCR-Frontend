@@ -1646,7 +1646,7 @@ const SHGUploadSection = ({
             onBack={() => setEditingSHG(null)}
             onSaveSuccess={() => {
               setEditingSHG(null);
-              fetchConversionResults();
+              fetchConversions();
             }}
           />
         </div>,

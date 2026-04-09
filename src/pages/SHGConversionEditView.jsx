@@ -43,8 +43,8 @@ const SHG_COLUMN_HEADERS = [
     { index: 8, key: "unnathi_tsp_loan_total", label: "ఉన్నతి (TSP) అప్పు కట్టిన మొత్తం" },
     { index: 9, key: "cif_loan_total", label: "CIF అప్పు కట్టిన మొత్తం" },
     { index: 10, key: "vo_internal_loan_total", label: "VO అంతర్గత అప్పు కట్టిన మొత్తం" },
-    { index: 11, key: "loan_type", label: "అప్పు రకం" },
-    { index: 12, key: "loan_type_amount", label: "మొత్తం" },
+    { index: 11, key: "loan_type", label: "కొత్త అప్పు రకం" },
+    { index: 12, key: "loan_type_amount", label: "కొత్త అప్పు మొత్తం" },
     { index: 13, key: "penalty_amount", label: "జరిమానా రకం" },
     { index: 14, key: "returned_to_members", label: "సభ్యులకు తిరిగి ఇచ్చిన మొత్తం" },
     { index: 15, key: "other_savings_total", label: "సభ్యుల ఇతర పొదుపు (విరాళం ఇతరములు)" },
@@ -102,10 +102,11 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess }) => {
     }, [shgGroup]);
 
     const handleSave = async () => {
+        if (saving) return;
         setSaving(true);
         try {
             const token = localStorage.getItem('token');
-            
+
             // Save Page 1
             const p1Res = await fetch(`${API_BASE}/api/conversion/detail/${shgGroup.pages[1].uploadId}`, {
                 method: 'PUT',
@@ -152,7 +153,7 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess }) => {
     const handleReject = async (pageNum) => {
         const item = shgGroup.pages[pageNum];
         if (!window.confirm(`Are you sure you want to reject Page ${pageNum}? it will need reach back to VO for re-upload.`)) return;
-        
+
         try {
             const token = localStorage.getItem('token');
             const res = await fetch(`${API_BASE}/api/admin/uploads/${item.uploadId}/status`, {
@@ -247,7 +248,7 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess }) => {
                             <h2 className="text-lg font-black text-gray-900 leading-tight truncate px-4">{shgGroup.shgName}</h2>
                             <span className="text-[10px] font-black tracking-widest text-indigo-500 uppercase">{shgIdForPage1}</span>
                         </div>
-                        <button 
+                        <button
                             onClick={handleSave}
                             disabled={saving}
                             className="p-3 bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-100 hover:bg-indigo-700 disabled:opacity-50"
@@ -263,7 +264,7 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess }) => {
                             className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all ${activePageTab === 1
                                 ? 'bg-white text-indigo-600 shadow-sm'
                                 : 'text-gray-400 hover:text-gray-600'
-                            }`}
+                                }`}
                         >
                             <Layout size={14} /> Page 1 (Members)
                         </button>
@@ -272,7 +273,7 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess }) => {
                             className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-black uppercase tracking-widest text-[10px] transition-all ${activePageTab === 2
                                 ? 'bg-white text-emerald-600 shadow-sm'
                                 : 'text-gray-400 hover:text-gray-600'
-                            }`}
+                                }`}
                         >
                             <Smartphone size={14} /> Page 2 (Financials)
                         </button>
@@ -295,10 +296,10 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess }) => {
 
                             {/* Member Cards */}
                             {(page1Data?.table_data?.data_rows || []).map((row, rIdx) => (
-                                <MemberCard 
+                                <MemberCard
                                     key={rIdx}
-                                    row={row} 
-                                    rIdx={rIdx} 
+                                    row={row}
+                                    rIdx={rIdx}
                                     shgId={shgIdForPage1}
                                     onCellChange={handleMemberCellChange}
                                 />
@@ -318,9 +319,9 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess }) => {
 
                             {/* Page 2 Two Column View */}
                             <div className="bg-white rounded-[32px] shadow-xl border border-gray-100 overflow-hidden">
-                                <Page2ColumnView 
-                                    tableData={page2Data?.table_data} 
-                                    onEdit={handlePage2CellEdit} 
+                                <Page2ColumnView
+                                    tableData={page2Data?.table_data}
+                                    onEdit={handlePage2CellEdit}
                                     relatedPage1Totals={page2Data?.relatedPage1Totals}
                                 />
                             </div>
@@ -334,17 +335,17 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess }) => {
 
 const MemberCard = ({ row, rIdx, shgId, onCellChange }) => {
     const [showAddFieldMenu, setShowAddFieldMenu] = useState(false);
-    
+
     // Get non-empty fields
     const mbkId = row.cells[0]?.text || '';
     const memberNameInput = row.cells[1]?.text || '';
     const hasName = memberNameInput.trim().length > 0;
-    
+
     const visibleFields = row.cells.map((c, i) => ({ ...c, index: i }))
         .filter(c => c.index > 1 && c.text && c.text.trim() !== '');
 
-    const allFieldOptions = SHG_COLUMN_HEADERS.filter(h => h.index > 1);
-    
+    const allFieldOptions = SHG_COLUMN_HEADERS.filter(h => [9, 10, 11, 12, 13].includes(h.index));
+
     return (
         <div className="bg-white rounded-[32px] p-6 shadow-lg border border-gray-100 transition-all hover:shadow-2xl group">
             <div className="flex items-center justify-between mb-4 border-b border-gray-50 pb-4">
@@ -374,9 +375,9 @@ const MemberCard = ({ row, rIdx, shgId, onCellChange }) => {
                 {/* Specific field for MBK ID editing */}
                 <div className="flex flex-col gap-1.5 p-3 bg-gray-50/50 rounded-2xl border border-gray-100">
                     <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest">సభ్యురాలి MBK ID</label>
-                    <input 
-                        type="text" 
-                        value={mbkId} 
+                    <input
+                        type="text"
+                        value={mbkId}
                         onChange={(e) => onCellChange(rIdx, 0, e.target.value)}
                         className="bg-white border border-gray-200 rounded-xl px-4 py-2 text-sm font-bold text-gray-700 focus:border-indigo-500 outline-none"
                     />
@@ -385,7 +386,7 @@ const MemberCard = ({ row, rIdx, shgId, onCellChange }) => {
                 {/* Visible Data Fields */}
                 {visibleFields.map((field) => (
                     <div key={field.index} className="flex flex-col gap-1.5 p-3 bg-gray-50/50 rounded-2xl border border-gray-100 relative">
-                        <button 
+                        <button
                             onClick={() => onCellChange(rIdx, field.index, '')}
                             className="absolute top-2 right-2 p-1 text-gray-300 hover:text-red-500 transition-colors"
                         >
@@ -394,9 +395,9 @@ const MemberCard = ({ row, rIdx, shgId, onCellChange }) => {
                         <label className="text-[9px] font-black text-gray-400 uppercase tracking-widest pr-6">
                             {SHG_COLUMN_HEADERS[field.index]?.label}
                         </label>
-                        <input 
-                            type="text" 
-                            value={field.text} 
+                        <input
+                            type="text"
+                            value={field.text}
                             onChange={(e) => onCellChange(rIdx, field.index, e.target.value)}
                             className="bg-white border border-gray-200 rounded-xl px-4 py-2 text-sm font-bold text-gray-700 focus:border-indigo-500 outline-none"
                         />
@@ -405,7 +406,7 @@ const MemberCard = ({ row, rIdx, shgId, onCellChange }) => {
 
                 {/* Add Field Button */}
                 <div className="relative mt-2">
-                    <button 
+                    <button
                         onClick={() => setShowAddFieldMenu(!showAddFieldMenu)}
                         className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-gray-200 rounded-2xl text-gray-400 hover:border-indigo-400 hover:text-indigo-500 transition-all font-bold text-xs"
                     >
@@ -416,7 +417,7 @@ const MemberCard = ({ row, rIdx, shgId, onCellChange }) => {
                         <div className="absolute bottom-full left-0 right-0 mb-2 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden z-20 max-h-60 overflow-y-auto animate-in slide-in-from-bottom-2">
                             <div className="p-2 border-b border-gray-50 flex items-center justify-between sticky top-0 bg-white">
                                 <span className="text-[10px] font-black uppercase text-gray-400 px-2">Select Field</span>
-                                <button onClick={() => setShowAddFieldMenu(false)} className="p-1 hover:bg-gray-100 rounded-lg text-gray-400"><X size={14}/></button>
+                                <button onClick={() => setShowAddFieldMenu(false)} className="p-1 hover:bg-gray-100 rounded-lg text-gray-400"><X size={14} /></button>
                             </div>
                             {allFieldOptions.filter(h => !visibleFields.find(vf => vf.index === h.index)).map(option => (
                                 <button
@@ -505,16 +506,15 @@ const Page2ColumnView = ({ tableData, onEdit, relatedPage1Totals }) => {
                                 </div>
                             </div>
                             <div className="w-24 sm:w-32">
-                                <input 
-                                    type="text" 
-                                    value={idMap[field.id] || ''} 
+                                <input
+                                    type="text"
+                                    value={idMap[field.id] || ''}
                                     onChange={(e) => onEdit(field.id, e.target.value)}
                                     disabled={isReadOnly}
-                                    className={`w-full border rounded-lg px-3 py-2 text-sm font-black text-right outline-none shadow-sm transition-all ${
-                                        isReadOnly 
-                                        ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed' 
-                                        : 'bg-white border-gray-200 text-indigo-900 focus:border-indigo-500'
-                                    }`}
+                                    className={`w-full border rounded-lg px-3 py-2 text-sm font-black text-right outline-none shadow-sm transition-all ${isReadOnly
+                                            ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
+                                            : 'bg-white border-gray-200 text-indigo-900 focus:border-indigo-500'
+                                        }`}
                                     placeholder="0.00"
                                 />
                             </div>
@@ -529,12 +529,6 @@ const Page2ColumnView = ({ tableData, onEdit, relatedPage1Totals }) => {
                     <AlertCircle size={16} />
                     <span className="text-[10px] font-black uppercase tracking-widest font-sans">Calculations are updated on save</span>
                 </div>
-                <button 
-                    onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-                    className="w-full py-4 bg-white border border-gray-200 rounded-2xl font-black text-gray-500 text-xs uppercase tracking-widest hover:bg-gray-100 transition-all flex items-center justify-center gap-2"
-                >
-                    <RotateCw size={14} /> Review & Save All
-                </button>
             </div>
         </div>
     );
