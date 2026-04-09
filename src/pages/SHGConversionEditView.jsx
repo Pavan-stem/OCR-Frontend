@@ -335,16 +335,31 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess }) => {
 
 const MemberCard = ({ row, rIdx, shgId, onCellChange }) => {
     const [showAddFieldMenu, setShowAddFieldMenu] = useState(false);
+    const [visibleIndices, setVisibleIndices] = useState([]);
 
-    // Get non-empty fields
+    // Initialize visibleIndices based on existing text data
+    useEffect(() => {
+        if (row.cells) {
+            const initialVisible = row.cells
+                .map((c, i) => ({ text: c.text, index: i }))
+                .filter(c => c.index > 1 && c.text && c.text.trim() !== '')
+                .map(c => c.index);
+
+            setVisibleIndices(prev => {
+                const combined = new Set([...prev, ...initialVisible]);
+                return Array.from(combined);
+            });
+        }
+    }, [row.cells]);
+
     const mbkId = row.cells[0]?.text || '';
     const memberNameInput = row.cells[1]?.text || '';
     const hasName = memberNameInput.trim().length > 0;
 
     const visibleFields = row.cells.map((c, i) => ({ ...c, index: i }))
-        .filter(c => c.index > 1 && c.text && c.text.trim() !== '');
+        .filter(c => c.index > 1 && visibleIndices.includes(c.index));
 
-    const allFieldOptions = SHG_COLUMN_HEADERS.filter(h => [9, 10, 11, 12, 13].includes(h.index));
+    const allFieldOptions = SHG_COLUMN_HEADERS.filter(h => h.index > 1);
 
     return (
         <div className="bg-white rounded-[32px] p-6 shadow-lg border border-gray-100 transition-all hover:shadow-2xl group">
@@ -387,7 +402,10 @@ const MemberCard = ({ row, rIdx, shgId, onCellChange }) => {
                 {visibleFields.map((field) => (
                     <div key={field.index} className="flex flex-col gap-1.5 p-3 bg-gray-50/50 rounded-2xl border border-gray-100 relative">
                         <button
-                            onClick={() => onCellChange(rIdx, field.index, '')}
+                            onClick={() => {
+                                onCellChange(rIdx, field.index, '');
+                                setVisibleIndices(prev => prev.filter(idx => idx !== field.index));
+                            }}
                             className="absolute top-2 right-2 p-1 text-gray-300 hover:text-red-500 transition-colors"
                         >
                             <Trash2 size={12} />
@@ -423,7 +441,8 @@ const MemberCard = ({ row, rIdx, shgId, onCellChange }) => {
                                 <button
                                     key={option.index}
                                     onClick={() => {
-                                        onCellChange(rIdx, option.index, ' ');
+                                        onCellChange(rIdx, option.index, '');
+                                        setVisibleIndices(prev => [...new Set([...prev, option.index])]);
                                         setShowAddFieldMenu(false);
                                     }}
                                     className="w-full text-left px-4 py-3 text-xs font-bold text-gray-600 hover:bg-indigo-50 hover:text-indigo-600 border-b border-gray-50 last:border-0"
@@ -499,7 +518,6 @@ const Page2ColumnView = ({ tableData, onEdit, relatedPage1Totals }) => {
                                     {field.label}
                                 </label>
                                 <div className="flex items-center gap-2 mt-0.5">
-                                    <span className="text-[8px] text-gray-400 font-black uppercase tracking-widest block">ID: {field.id}</span>
                                     {isReadOnly && (
                                         <span className="text-[7px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded font-black uppercase tracking-tight">Mirrored from Page 1</span>
                                     )}
@@ -512,8 +530,8 @@ const Page2ColumnView = ({ tableData, onEdit, relatedPage1Totals }) => {
                                     onChange={(e) => onEdit(field.id, e.target.value)}
                                     disabled={isReadOnly}
                                     className={`w-full border rounded-lg px-3 py-2 text-sm font-black text-right outline-none shadow-sm transition-all ${isReadOnly
-                                            ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
-                                            : 'bg-white border-gray-200 text-indigo-900 focus:border-indigo-500'
+                                        ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
+                                        : 'bg-white border-gray-200 text-indigo-900 focus:border-indigo-500'
                                         }`}
                                     placeholder="0.00"
                                 />
