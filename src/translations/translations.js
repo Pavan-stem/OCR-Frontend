@@ -296,6 +296,7 @@ export const translations = {
             confirm: 'నిర్ధారించండి',
             yes: 'అవును',
             no: 'కాదు',
+            areYouSure: 'మీకు ఖచ్చితంగా తెలుసా?',
         },
 
         // Header & Navigation - Telugu

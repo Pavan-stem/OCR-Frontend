@@ -1,7 +1,7 @@
 // SHGUploadSection.jsx
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Upload, CheckCircle, X, FileText, Search, AlertCircle, Eye, Filter, RotateCw, RotateCcw, Camera, AlertTriangle, Activity, ScanLine, Lock, Unlock } from 'lucide-react';
+import { Upload, CheckCircle, X, FileText, Search, AlertCircle, FilePenLine, Filter, RotateCw, RotateCcw, Camera, AlertTriangle, Activity, ScanLine, Lock, Unlock } from 'lucide-react';
 import { API_BASE } from './utils/apiConfig';
 import { analyzeImage } from './utils/imageQualityCheck';
 import SmartCamera from './smartcamera';
@@ -1648,6 +1648,7 @@ const SHGUploadSection = ({
             onSaveSuccess={() => {
               setEditingSHG(null);
               fetchConversions();
+              fetchUploadProgress();
             }}
           />
         </div>,
@@ -1673,7 +1674,7 @@ const SHGUploadSection = ({
             : 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-800'
             }`}
         >
-          <RotateCw size={15} className={activeTab === 'conversion' ? 'animate-spin' : ''} />
+          <FilePenLine size={15} />
           {t?.('upload.conversionTab') || 'Conversion Edit'}
 
           {/* Improved Notification Badge */}

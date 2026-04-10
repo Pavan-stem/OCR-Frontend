@@ -137,6 +137,7 @@ const SHGUploadCard = ({
         const isPageValidated = pageKey === 'page1' ? page1Validated : page2Validated;
         const fileData = filesData[pageKey];
         const isAnalyzing = analyzingState[pageKey];
+        const isViewingPermanent = currentlyViewingId === `${shg.shgId}-${pageNum}`;
 
         // ── ACCEPTED (locked) server page ─────────────────────────────────
         if (isAcceptedOnServer && !isRejectedOnServer) {
