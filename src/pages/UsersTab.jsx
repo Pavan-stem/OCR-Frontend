@@ -1056,14 +1056,19 @@ const UsersTab = ({ filterProps }) => {
         `${API_BASE}/api/sse/stream/${connectionId}`
       );
 
-      const handleTreeRefresh = (event) => {
+      const handleTreeRefresh = async (event) => {
         try {
           const message = JSON.parse(event.data);
 
           if (message.type === 'tree_refresh') {
             console.log('📡 Received tree_refresh event:', message);
 
-            fetchUsers({ isBackground: true });
+            // 1. Refresh basic tree state in background
+            await fetchUsers({ isBackground: true });
+            
+            // 2. Surgical stats sync (refresh numbers)
+            // This ensures Case 1 (APM/CC) and Case 2 (VO) stats update immediately
+            await syncVisibleStats();
 
             console.log(`✅ Tree refreshed due to: ${message.reason}`);
           }
