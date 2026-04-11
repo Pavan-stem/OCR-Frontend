@@ -273,11 +273,16 @@ const SHGUploadSection = ({
         };
       }
 
-      const pageNum = item.page || 1;
+      // Robust Page Detection: Check multiple possible locations for the page number
+      const pageNum = item.page || item.page_num || item.table_data?.page || 1;
       groups[shgId].pages[pageNum] = item;
 
-      // Mark as unsaved if ANY page in the group is not explicitly synced
-      if (item.status === 'completed' && item.isSynced !== true) {
+      // Robust Sync Detection: Check for multiple field names and status values
+      const syncedField = item.isSynced ?? item.is_synced ?? item.synced;
+      const isActuallySynced = syncedField === true || item.status === 'synced' || item.status === 'synced_to_db';
+      
+      // Mark as unsaved if ANY page in the group (completed or success) is not explicitly synced
+      if ((item.status === 'completed' || item.status === 'success' || !item.status) && !isActuallySynced) {
         groups[shgId].isSynced = false;
       }
 
@@ -286,12 +291,13 @@ const SHGUploadSection = ({
       }
     });
 
-    return Object.values(groups);
+    // Filter: ONLY show SHGs that have BOTH Page 1 and Page 2 converted/present
+    return Object.values(groups).filter(group => group.pages[1] && group.pages[2]);
   };
 
   const groupedConversions = getGroupedConversions();
-  // The badge now uses the backend-calculated totalUnsaved count for reliability
-  const unsavedCount = conversionSummary.totalUnsaved || 0;
+  // Now that detection logic is robust, we can safely sync the badge with the filtered list
+  const unsavedCount = groupedConversions.filter(g => !g.isSynced).length;
 
   const handleViewPermanentlyUploadedFile = async (shgId, page = 1) => {
     const viewId = `${shgId}-${page}`;
@@ -1936,10 +1942,15 @@ const SHGUploadSection = ({
                           <h4 className="text-base font-black text-gray-900 leading-tight truncate">{group.shgName}</h4>
                           <div className="flex items-center gap-2 mt-1">
                             <span className="text-[10px] font-black text-indigo-600/60 bg-indigo-50 px-2 py-0.5 rounded-lg uppercase tracking-wider">{group.shgID}</span>
-                            <div className="flex gap-1">
-                              {Object.keys(group.pages).map(p => (
-                                <span key={p} className="text-[9px] font-black bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded border border-gray-200">P{p}</span>
-                              ))}
+                            <div className="flex gap-1.5 items-center">
+                              <div className="flex gap-1">
+                                {Object.keys(group.pages).map(p => (
+                                  <span key={p} className="text-[9px] font-black bg-indigo-600 text-white px-1.5 py-0.5 rounded shadow-sm">P{p}</span>
+                                ))}
+                              </div>
+                              <span className="text-[8px] font-black text-emerald-600 uppercase tracking-tighter bg-emerald-50 px-1.5 py-0.5 rounded">
+                                {t?.('upload.bothPagesReady') || 'Both Pages Ready'}
+                              </span>
                             </div>
                           </div>
                           <div className="mt-2 flex items-center gap-2">

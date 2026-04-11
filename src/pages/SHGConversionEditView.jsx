@@ -246,6 +246,12 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
             <div className="text-center flex-1 min-w-0">
               <h2 className="text-sm sm:text-lg font-black text-white leading-tight truncate px-2">{shgGroup.shgName}</h2>
               <span className="text-[8px] sm:text-[10px] font-black tracking-wider sm:tracking-widest text-indigo-200 uppercase block mt-0.5">{shgIdForPage1}</span>
+              <div className="flex items-center justify-center gap-1.5 mt-2 bg-emerald-500/20 py-1 px-3 rounded-full border border-emerald-500/30 w-fit mx-auto backdrop-blur-sm">
+                <CheckCircle size={10} className="text-emerald-400" />
+                <span className="text-[8px] font-black text-emerald-200 uppercase tracking-tighter">
+                  {t?.('conversion.bothPagesVerified') || 'Both Pages Verified & Ready'}
+                </span>
+              </div>
             </div>
             <button
               onClick={handleSave}
