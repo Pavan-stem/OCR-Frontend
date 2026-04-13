@@ -12,7 +12,9 @@ import {
   RotateCw,
   AlertCircle,
   Smartphone,
-  Layout
+  Layout,
+  ArrowDownCircle,
+  ArrowUpCircle
 } from 'lucide-react';
 import { API_BASE } from '../utils/apiConfig';
 import SHGPage2View from './SHGPage2View';
@@ -251,11 +253,6 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
     setPage1Data(newData);
   };
 
-  const handleAddField = (rIdx, cIdx) => {
-    // Just a placeholder for "Adding" a field — in our card view, we just show it if it has an empty string
-    // but the user wants to pick from options.
-  };
-
   // Page 2 Handlers
   const handlePage2CellEdit = (debugId, value) => {
     const newData = JSON.parse(JSON.stringify(page2Data));
@@ -364,18 +361,20 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
               </div>
 
               {/* Member Cards */}
-              {(page1Data?.table_data?.data_rows || []).map((row, rIdx) => (
-                <MemberCard
-                  key={rIdx}
-                  row={row}
-                  rIdx={rIdx}
-                  shgId={shgIdForPage1}
-                  onCellChange={handleMemberCellChange}
-                  onCellBlur={handleMemberCellBlur}
-                  isDuplicate={duplicateMBKIds.includes(row.cells[0]?.text?.trim())}
-                  t={t}
-                />
-              ))}
+              {(page1Data?.table_data?.data_rows || [])
+                .filter(row => row.cells?.some(c => c.text && c.text.trim() !== ''))
+                .map((row, rIdx) => (
+                  <MemberCard
+                    key={rIdx}
+                    row={row}
+                    rIdx={rIdx}
+                    shgId={shgIdForPage1}
+                    onCellChange={handleMemberCellChange}
+                    onCellBlur={handleMemberCellBlur}
+                    isDuplicate={duplicateMBKIds.includes(row.cells[0]?.text?.trim())}
+                    t={t}
+                  />
+                ))}
             </div>
           ) : (
             <div className="space-y-4">
@@ -389,9 +388,9 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
                 </button>
               </div>
 
-              {/* Page 2 Two Column View */}
-              <div className="bg-white/95 backdrop-blur-md rounded-2xl sm:rounded-[32px] shadow-2xl border border-white/20 overflow-hidden">
-                <Page2ColumnView
+              {/* Page 2 Grouped List View */}
+              <div className="bg-white rounded-2xl sm:rounded-[32px] shadow-2xl overflow-hidden border border-white/20">
+                <Page2GroupedView
                   tableData={page2Data?.table_data}
                   onEdit={handlePage2CellEdit}
                   relatedPage1Totals={page2Data?.relatedPage1Totals}
@@ -439,7 +438,6 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
 };
 
 const MemberCard = ({ row, rIdx, shgId, onCellChange, onCellBlur, isDuplicate, t }) => {
-  const [showAddFieldMenu, setShowAddFieldMenu] = useState(false);
   const [visibleIndices, setVisibleIndices] = useState([]);
 
   // Initialize visibleIndices based on existing text data
@@ -463,8 +461,6 @@ const MemberCard = ({ row, rIdx, shgId, onCellChange, onCellBlur, isDuplicate, t
 
   const visibleFields = row.cells.map((c, i) => ({ ...c, index: i }))
     .filter(c => c.index > 1 && visibleIndices.includes(c.index));
-
-  const allFieldOptions = SHG_COLUMN_HEADERS.filter(h => h.index > 1);
 
   return (
     <div className="bg-white/95 backdrop-blur-md rounded-2xl sm:rounded-[32px] p-4 sm:p-6 shadow-2xl border border-white/20 transition-all hover:scale-[1.01] hover:shadow-cyan-500/10 group">
@@ -542,44 +538,12 @@ const MemberCard = ({ row, rIdx, shgId, onCellChange, onCellBlur, isDuplicate, t
             />
           </div>
         ))}
-
-        {/* Add Field Button */}
-        <div className="relative mt-1 col-span-full">
-          <button
-            onClick={() => setShowAddFieldMenu(!showAddFieldMenu)}
-            className="w-full flex items-center justify-center gap-2 py-4 border-2 border-dashed border-indigo-200 rounded-2xl text-indigo-400 hover:border-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 transition-all font-black text-xs uppercase tracking-widest shadow-sm"
-          >
-            <Plus size={16} /> {t?.('conversion.addField') || 'Add Field'}
-          </button>
-
-          {showAddFieldMenu && (
-            <div className="absolute bottom-full left-0 right-0 mb-2 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden z-20 max-h-60 overflow-y-auto animate-in slide-in-from-bottom-2">
-              <div className="p-3 border-b border-gray-50 flex items-center justify-between sticky top-0 bg-white z-10">
-                <span className="text-[10px] font-black uppercase text-gray-400 px-2">{t?.('conversion.selectField') || 'Select Field'}</span>
-                <button onClick={() => setShowAddFieldMenu(false)} className="p-1 hover:bg-gray-100 rounded-lg text-gray-400"><X size={14} /></button>
-              </div>
-              {allFieldOptions.filter(h => !visibleFields.find(vf => vf.index === h.index)).map(option => (
-                <button
-                  key={option.index}
-                  onClick={() => {
-                    onCellChange(rIdx, option.index, '');
-                    setVisibleIndices(prev => [...new Set([...prev, option.index])]);
-                    setShowAddFieldMenu(false);
-                  }}
-                  className="w-full text-left px-4 py-3 text-xs font-bold text-gray-600 hover:bg-indigo-50 hover:text-indigo-600 border-b border-gray-50 last:border-0"
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
     </div>
   );
 };
 
-const Page2ColumnView = ({ tableData, onEdit, relatedPage1Totals, t }) => {
+const Page2GroupedView = ({ tableData, onEdit, relatedPage1Totals, t }) => {
   const idMap = useMemo(() => {
     const map = {};
     (tableData?.data_rows || []).forEach(row => {
@@ -590,67 +554,149 @@ const Page2ColumnView = ({ tableData, onEdit, relatedPage1Totals, t }) => {
     return map;
   }, [tableData]);
 
-  // User strictly requested only these 22 fields for Page 2 editing
-  const EDITABLE_FIELDS = [
-    { id: 17, label: "పొదుపులు (SN+VO+Other Saving)" },
-    { id: 31, label: "రివాల్వింగ్ ఫండ్" },
-    { id: 36, label: "ఆధార్ గ్రాంట్స్" },
-    { id: 46, label: "VO నుండి తిరిగి వచ్చిన వాటాధనం" },
-    { id: 51, label: "VO నుండి తిరిగి వచ్చిన పొదుపు" },
-    { id: 56, label: "శ్రీనిధి నుండి తిరిగి వచ్చిన పొదుపు" },
-    { id: 61, label: "బ్యాంకు నుండి తిరిగి వచ్చిన డిపాజిట్" },
-    { id: 12, label: "సంఘం పెట్టుబడులు" },
-    { id: 19, label: "VO లో కట్టిన వాటాధనం" },
-    { id: 26, label: "VO లో కట్టిన పొదుపు" },
-    { id: 33, label: "శ్రీనిధి లో కట్టిన పొదుపు" },
-    { id: 38, label: "బ్యాంకు లో చేసిన డిపాజిట్" },
-    { id: 48, label: "VO కు చెల్లించిన ప్రవేశ రుసుము/సభ్యత్వ రుసుము" },
-    { id: 53, label: "VO కు చెల్లించిన జరిమానాలు" },
-    { id: 58, label: "గౌరవవేతనం చెల్లింపు" },
-    { id: 63, label: "ప్రయాణపు చార్జీల చెల్లింపు" },
-    { id: 68, label: "ఇతర ఖర్చులు" },
-    { id: 72, label: "స్టేషనరీ" },
-    { id: 76, label: "ఆడిట్ ఫీజు" },
-    { id: 80, label: "బ్యాంకు చార్జీలు" },
-    { id: 87, label: "బ్యాంకు వడ్డీలు" },
-    { id: 91, label: "డిపాజిట్ లపై వచ్చిన వడ్డీలు" },
-  ];
-
-  // Check which ones are READ ONLY due to Page 1 linking
   const readOnlyIds = relatedPage1Totals ? [89, 93, 97, 101, 105, 109] : [];
 
+  const COLUMN_SECTIONS = [
+    {
+      title: "సంఘానికి వచ్చిన వివరములు",
+      color: "from-indigo-600 to-indigo-700",
+      icon: <ArrowDownCircle className="text-white/40" size={24} />,
+      categories: [
+        {
+          title: "సంఘానికి వచ్చిన పొదుపు మొత్తం",
+          fields: [{ id: 17, label: "పొదుపులు (SN+VO+Other Saving)" }]
+        },
+        {
+          title: "సంఘానికి వచ్చిన ఫండ్స్",
+          fields: [
+            { id: 31, label: "రివాల్వింగ్ ఫండ్" },
+            { id: 36, label: "ఆధార్ గ్రాంట్స్" }
+          ]
+        },
+        {
+          title: "సంఘానికి తిరిగి వచ్చినవి",
+          fields: [
+            { id: 61, label: "బ్యాంకు నుండి తిరిగి వచ్చిన డిపాజిట్" },
+            { id: 56, label: "శ్రీనిధి నుండి తిరిగి వచ్చిన పొదుపు" },
+            { id: 51, label: "VO నుండి తిరిగి వచ్చిన పొదుపు" }
+          ]
+        },
+        {
+          title: "సంఘానికి వచ్చిన ఆదాయాలు",
+          fields: [
+            { id: 91, label: "డిపాజిట్ లపై వచ్చిన వడ్డీలు" },
+            { id: 87, label: "బ్యాంకు వడ్డీలు" }
+          ]
+        }
+      ]
+    },
+    {
+      title: "సంఘం చెల్లించిన వివరములు",
+      color: "from-indigo-600 to-indigo-700",
+      icon: <ArrowUpCircle className="text-white/40" size={24} />,
+      categories: [
+        {
+          title: "సంఘం పెట్టుబడులు",
+          fields: [
+            { id: 19, label: "VO లో కట్టిన వాటాధనం" },
+            { id: 26, label: "VO లో కట్టిన పొదుపు" },
+            { id: 33, label: "శ్రీనిధి లో కట్టిన పొదుపు" }
+          ]
+        },
+        {
+          title: "సంఘం ఖర్చులు",
+          fields: [
+            { id: 38, label: "బ్యాంకు లో చేసిన డిపాజిట్" },
+            { id: 48, label: "VO కు చెల్లించిన ప్రవేశ రుసుము/సభ్యత్వ రుసుము" },
+            { id: 53, label: "VO కు చెల్లించిన జరిమానాలు" },
+            { id: 58, label: "గౌరవవేతనం చెల్లింపు" },
+            { id: 63, label: "ప్రయాణపు చార్జీల చెల్లింపు" },
+            { id: 68, label: "ఇతర ఖర్చులు" },
+            { id: 72, label: "స్టేషనరీ" },
+            { id: 76, label: "ఆడిట్ ఫీజు" },
+            { id: 80, label: "బ్యాంకు చార్జీలు" }
+          ]
+        }
+      ]
+    }
+  ];
+
   return (
-    <div className="divide-y divide-gray-50 flex flex-col h-full bg-white/20">
-      <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 px-4 sm:px-6 py-4 sm:py-5 flex items-center justify-between sticky top-0 z-10 shadow-lg">
+    <div className="flex flex-col h-full bg-white">
+      {/* Header Area */}
+      <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 px-6 py-5 flex items-center justify-between shadow-lg">
         <div>
-          <h4 className="text-white font-black text-[11px] sm:text-xs uppercase tracking-widest">{t?.('conversion.financialHeader') || 'Financial Data Correction'}</h4>
-          <p className="text-emerald-100 text-[9px] font-bold uppercase tracking-widest mt-0.5 opacity-80">{t?.('conversion.financialSubheader') || 'Edit all financial entries below'}</p>
+          <h4 className="text-white font-black text-xs uppercase tracking-widest leading-tight">
+            {t?.('conversion.financialHeader') || 'ఆర్ధిక డేటా సవరణ'}
+          </h4>
+          <p className="text-emerald-100 text-[10px] font-bold uppercase tracking-widest mt-1 opacity-90 leading-tight">
+            {t?.('conversion.financialSubheader') || 'క్రింద ఉన్న అన్ని ఆర్థిక వివరాలను సవరించండి'}
+          </p>
         </div>
         <Layout className="text-white/40 hidden sm:block" size={24} />
       </div>
 
-      <div className="p-4 grid grid-cols-1 gap-1 flex-1 overflow-y-auto pb-10">
-        {EDITABLE_FIELDS.map((field) => {
-          const isReadOnly = readOnlyIds.includes(field.id);
+      <div className="flex-1 overflow-y-auto pb-10 sm:max-h-[75vh]">
+        {COLUMN_SECTIONS.map((section, sIdx) => {
+          const sectionDetectedFieldsCount = section.categories.reduce((acc, cat) => {
+             return acc + cat.fields.filter(f => idMap[f.id] && idMap[f.id].toString().trim() !== '').length;
+          }, 0);
+
+          if (sectionDetectedFieldsCount === 0) return null;
+
           return (
-            <div key={field.id} className={`flex items-center gap-2 sm:gap-3 p-2 sm:p-3 transition-colors rounded-xl ${isReadOnly ? 'bg-blue-50/30' : 'hover:bg-gray-50'}`}>
-              <div className="flex-1 min-w-0">
-                <label className="text-[10px] sm:text-xs font-bold text-gray-700 line-clamp-2 leading-tight">
-                  {field.label}
-                </label>
+            <div key={sIdx} className="mb-6">
+              {/* Column Title */}
+              <div className={`bg-gradient-to-r ${section.color} px-6 py-3 flex items-center justify-between sticky top-0 z-30 shadow-md`}>
+                <h5 className="text-white font-black text-[11px] uppercase tracking-wider">
+                  {section.title}
+                </h5>
+                {section.icon}
               </div>
-              <div className="w-24 sm:w-32">
-                <input
-                  type="text"
-                  value={idMap[field.id] || ''}
-                  onChange={(e) => onEdit(field.id, e.target.value)}
-                  disabled={isReadOnly}
-                  className={`w-full border rounded-lg px-3 py-2 text-sm font-black text-right outline-none shadow-sm transition-all ${isReadOnly
-                    ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
-                    : 'bg-white border-gray-200 text-indigo-900 focus:border-indigo-500'
-                    }`}
-                  placeholder="0.00"
-                />
+
+              <div className="p-4 space-y-6">
+                {section.categories.map((cat, cIdx) => {
+                  const detectedFields = cat.fields.filter(f => idMap[f.id] && idMap[f.id].toString().trim() !== '');
+                  if (detectedFields.length === 0) return null;
+
+                  return (
+                    <div key={cIdx} className="space-y-3">
+                      {/* Section Title (Orange) */}
+                      <h6 className="text-[10px] font-black text-orange-600 uppercase tracking-widest px-3 py-1 bg-orange-50 w-fit rounded-lg border border-orange-200 shadow-sm ml-1">
+                        {cat.title}
+                      </h6>
+                      
+                      {/* Fields in List */}
+                      <div className="space-y-2 px-1">
+                        {detectedFields.map((field) => {
+                          const isReadOnly = readOnlyIds.includes(field.id);
+                          return (
+                            <div key={field.id} className={`flex items-center gap-3 p-4 transition-all rounded-2xl bg-white border border-gray-100 shadow-sm ${isReadOnly ? 'opacity-80' : 'hover:border-indigo-200 hover:shadow-md'}`}>
+                              <div className="flex-1 min-w-0">
+                                <label className="text-xs font-bold text-gray-700 line-clamp-2 leading-tight">
+                                  {field.label}
+                                </label>
+                              </div>
+                              <div className="w-32">
+                                <input
+                                  type="text"
+                                  value={idMap[field.id] || ''}
+                                  onChange={(e) => onEdit(field.id, e.target.value)}
+                                  disabled={isReadOnly}
+                                  className={`w-full border rounded-xl px-4 py-2 text-sm font-black text-right outline-none transition-all ${isReadOnly
+                                    ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
+                                    : 'bg-white border-gray-200 text-indigo-900 focus:border-indigo-500 shadow-sm focus:shadow-indigo-100'
+                                    }`}
+                                  placeholder="0.00"
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           );

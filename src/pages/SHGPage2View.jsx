@@ -194,6 +194,10 @@ export default function SHGPage2View({ tableData, isEditing, onCellEdit, related
 
   return (
     <div className="flex flex-col items-center bg-gray-100 p-4 sm:p-10 min-h-screen">
+      <div className="mb-6 text-center">
+        <h2 className="text-2xl sm:text-3xl font-black text-indigo-900 uppercase tracking-tighter">Financial Ledger</h2>
+        <p className="text-xs font-bold text-indigo-400 uppercase tracking-widest mt-1 italic">Page 2 — Physical Reconstruction</p>
+      </div>
       <div className="bg-white shadow-2xl p-[0.3in] border-t-8 border-indigo-600 w-full max-w-[1200px] border border-gray-300">
         <table className="w-full border-collapse border-2 border-black">
           <tbody>
