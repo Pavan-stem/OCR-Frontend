@@ -166,6 +166,32 @@ export const translations = {
             saved: "Saved",
             unsaved: "Unsaved",
         },
+ 
+        // Conversion Edit View
+        conversion: {
+            page1Tab: 'Page 1 (Members)',
+            page2Tab: 'Page 2 (Financials)',
+            rejectPage: 'Reject Page {{page}}',
+            rejectConfirm: 'Are you sure you want to reject Page {{page}}? It will be sent back to the VO for re-upload.',
+            financialHeader: 'Financial Data Correction',
+            financialSubheader: 'Edit all financial entries below',
+            memberMbkId: 'Member MBK ID',
+            saveCalculationsNote: 'Calculations will be updated upon saving',
+            saveAll: 'Review & Save All',
+            addField: 'Add Field',
+            selectField: 'Select Field',
+            saveSuccess: 'All changes saved successfully',
+            saveFailed: 'Failed to save some changes',
+            networkError: 'Save failed due to network error',
+            rejected: 'Page {{page}} Rejected',
+            rejectError: 'Error rejecting',
+            loading: 'Loading SHG details...',
+            mirrored: 'Mirrored',
+            bothPagesVerified: 'Both Pages Verified & Ready',
+            financialHeader: "Financial Data Correction",
+            financialSubheader: "Edit all financial entries below",
+            duplicateMBKIdError: 'Duplicate MBK IDs detected! Please ensure all Member MBK IDs are unique before saving.',
+        },
 
 
         // Months
@@ -458,6 +484,8 @@ export const translations = {
             rejectError: 'తిరస్కరించడంలో లోపం',
             loading: 'SHG వివరాలు లోడ్ అవుతున్నాయి...',
             mirrored: 'మిర్రర్డ్',
+            bothPagesVerified: 'రెండు పేజీలు ధృవీకరించబడ్డాయి & సిద్ధంగా ఉన్నాయి',
+            duplicateMBKIdError: 'డూప్లికేట్ MBK ID-లు కనుగొనబడ్డాయి! దయచేసి సేవ్ చేయడానికి ముందు సభ్యులందరికీ వేర్వేరు MBK ID-లు ఉన్నాయని నిర్ధారించుకోండి.',
         },
 
 

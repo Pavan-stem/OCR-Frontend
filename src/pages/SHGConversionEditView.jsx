@@ -31,6 +31,23 @@ const padMBKId = (id) => {
   return s;
 };
 
+const normalizeMBKId = (id) => {
+  if (!id) return '';
+  // Remove non-digits
+  let s = String(id).trim().replace(/\D/g, '');
+  if (!s) return '';
+  
+  // Rule: if one digit add a zero in front
+  if (s.length === 1) return `0${s}`;
+  
+  // Rule: zero in front should be removed if 3 digits
+  // Rule: if it detected a big number with more than 2 digit make it show last two digits
+  // Both result in taking last two digits if length >= 2
+  if (s.length >= 2) return s.slice(-2);
+  
+  return s;
+};
+
 const SHG_COLUMN_HEADERS = [
   { index: 0, key: "member_mbk_id", label: "సభ్యురాలి MBK ID" },
   { index: 1, key: "member_name", label: "సభ్యురాలు పేరు" },
@@ -79,7 +96,18 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
         const data1 = await res1.json();
         const data2 = await res2.json();
 
-        if (data1.success) setPage1Data(data1.data);
+        if (data1.success) {
+          // Normalize MBK IDs in initial data (OCR might detect > 2 digits)
+          const processedP1 = JSON.parse(JSON.stringify(data1.data));
+          if (processedP1.table_data?.data_rows) {
+            processedP1.table_data.data_rows.forEach(row => {
+              if (row.cells && row.cells[0]) {
+                row.cells[0].text = normalizeMBKId(row.cells[0].text);
+              }
+            });
+          }
+          setPage1Data(processedP1);
+        }
         if (data2.success) {
           // Inject related_page1_totals into page2Data for the column view
           setPage2Data({
@@ -100,10 +128,32 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
     };
 
     fetchAllData();
-  }, [shgGroup]);
+  }, [shgGroup, t]);
+
+  const duplicateMBKIds = useMemo(() => {
+    const ids = (page1Data?.table_data?.data_rows || [])
+      .map(row => row.cells[0]?.text?.trim())
+      .filter(id => id && id !== '');
+
+    const counts = {};
+    ids.forEach(id => {
+      counts[id] = (counts[id] || 0) + 1;
+    });
+
+    return Object.keys(counts).filter(id => counts[id] > 1);
+  }, [page1Data]);
 
   const handleSave = async () => {
     if (saving) return;
+
+    if (duplicateMBKIds.length > 0) {
+      const errorMsg = t?.('conversion.duplicateMBKIdError');
+      alert(errorMsg === 'conversion.duplicateMBKIdError' || !errorMsg 
+        ? 'Duplicate MBK IDs detected! Please ensure all Member MBK IDs are unique before saving.' 
+        : errorMsg);
+      return;
+    }
+
     setSaving(true);
     try {
       const token = localStorage.getItem('token');
@@ -150,6 +200,15 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
     }
   };
 
+  const handleMemberCellBlur = (rIdx, cIdx, val) => {
+    if (cIdx === 0) { // MBK ID column
+      const normalized = normalizeMBKId(val);
+      if (normalized !== val) {
+        handleMemberCellChange(rIdx, cIdx, normalized);
+      }
+    }
+  };
+
   const handleRejectExecute = async (pageNum) => {
     const item = shgGroup.pages[pageNum];
     setConfirmReject(null);
@@ -183,7 +242,12 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
   // Page 1 Handlers
   const handleMemberCellChange = (rIdx, cIdx, val) => {
     const newData = { ...page1Data };
-    newData.table_data.data_rows[rIdx].cells[cIdx].text = val;
+    let finalVal = val;
+    if (cIdx === 0) {
+      // For MBK ID, only allow digits and max 2
+      finalVal = val.replace(/\D/g, '').slice(0, 2);
+    }
+    newData.table_data.data_rows[rIdx].cells[cIdx].text = finalVal;
     setPage1Data(newData);
   };
 
@@ -307,6 +371,8 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
                   rIdx={rIdx}
                   shgId={shgIdForPage1}
                   onCellChange={handleMemberCellChange}
+                  onCellBlur={handleMemberCellBlur}
+                  isDuplicate={duplicateMBKIds.includes(row.cells[0]?.text?.trim())}
                   t={t}
                 />
               ))}
@@ -372,7 +438,7 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
   );
 };
 
-const MemberCard = ({ row, rIdx, shgId, onCellChange, t }) => {
+const MemberCard = ({ row, rIdx, shgId, onCellChange, onCellBlur, isDuplicate, t }) => {
   const [showAddFieldMenu, setShowAddFieldMenu] = useState(false);
   const [visibleIndices, setVisibleIndices] = useState([]);
 
@@ -404,17 +470,25 @@ const MemberCard = ({ row, rIdx, shgId, onCellChange, t }) => {
     <div className="bg-white/95 backdrop-blur-md rounded-2xl sm:rounded-[32px] p-4 sm:p-6 shadow-2xl border border-white/20 transition-all hover:scale-[1.01] hover:shadow-cyan-500/10 group">
       <div className="flex items-center justify-between mb-4 border-b border-gray-100 pb-4 gap-2">
         <div className="flex items-center gap-3">
-          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl">
+          <div className={`p-3 rounded-2xl transition-colors ${isDuplicate ? 'bg-red-50 text-red-600 animate-pulse' : 'bg-indigo-50 text-indigo-600'}`}>
             <User size={20} />
           </div>
           <div>
-            {hasName ? (
-              <h4 className="font-black text-gray-900 leading-tight">{memberNameInput}</h4>
-            ) : (
-              <h4 className="font-black text-gray-900 leading-tight uppercase tracking-tighter">
-                {t?.('upload.member') || 'Member'} {rIdx + 1}
-              </h4>
-            )}
+            <div className="flex items-center gap-2">
+              {hasName ? (
+                <h4 className="font-black text-gray-900 leading-tight">{memberNameInput}</h4>
+              ) : (
+                <h4 className="font-black text-gray-900 leading-tight uppercase tracking-tighter">
+                  {t?.('upload.member') || 'Member'} {rIdx + 1}
+                </h4>
+              )}
+              {isDuplicate && (
+                <div className="flex items-center gap-1 bg-red-100 text-red-600 px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-tighter border border-red-200">
+                  <AlertCircle size={10} />
+                  Duplicate ID
+                </div>
+              )}
+            </div>
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mt-1">
               {shgId}{padMBKId(mbkId)}
             </p>
@@ -429,13 +503,17 @@ const MemberCard = ({ row, rIdx, shgId, onCellChange, t }) => {
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
         {/* Specific field for MBK ID editing */}
-        <div className="flex flex-col gap-1 p-2 bg-indigo-50/50 rounded-2xl border border-indigo-100/50">
-          <label className="text-[10px] font-black text-indigo-400 uppercase tracking-tight">{SHG_COLUMN_HEADERS[0]?.label}</label>
+        <div className={`flex flex-col gap-1 p-2 rounded-2xl border transition-all ${isDuplicate ? 'bg-red-50 border-red-200 shadow-lg shadow-red-100' : 'bg-indigo-50/50 border-indigo-100/50'}`}>
+          <label className={`text-[10px] font-black uppercase tracking-tight ${isDuplicate ? 'text-red-500' : 'text-indigo-400'}`}>
+            {SHG_COLUMN_HEADERS[0]?.label}
+          </label>
           <input
             type="text"
             value={mbkId}
+            maxLength={2}
             onChange={(e) => onCellChange(rIdx, 0, e.target.value)}
-            className="bg-white border border-gray-200 rounded-xl px-2 py-1.5 text-xs font-bold text-gray-700 focus:border-indigo-500 outline-none w-full"
+            onBlur={(e) => onCellBlur(rIdx, 0, e.target.value)}
+            className={`bg-white border rounded-xl px-2 py-1.5 text-xs font-bold transition-all outline-none w-full ${isDuplicate ? 'border-red-300 text-red-700' : 'border-gray-200 text-gray-700 focus:border-indigo-500'}`}
           />
         </div>
 
