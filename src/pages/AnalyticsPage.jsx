@@ -564,8 +564,6 @@ const AnalyticsPage = ({ filterProps }) => {
                                 pending: summary?.shgStats?.pending,
                                 total: summary?.shgStats?.total,
                                 approved: summary?.ccActions?.approved,
-                                rejected: summary?.ccActions?.rejected,
-                                ccPending: summary?.ccActions?.pending,
                                 converted: conv.converted,
                                 sentToDB: conv.sentToDB,
                                 failed: conv.failed,
@@ -1322,15 +1320,6 @@ const RowStats = ({ stats }) => (
         <td className="px-8 py-6">
             <div className="flex flex-col items-center gap-1.5">
                 <div className="flex gap-1.5 font-black text-[10px]">
-                    <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100">{stats?.ccActions?.approved || 0}A</span>
-                    <span className="text-rose-500 bg-red-50 px-2 py-0.5 rounded-lg border border-red-100">{stats?.ccActions?.rejected || 0}R</span>
-                    <span className="text-gray-400 bg-gray-50 px-2 py-0.5 rounded-lg border border-gray-100">{stats?.ccActions?.pending || 0}P</span>
-                </div>
-            </div>
-        </td>
-        <td className="px-8 py-6">
-            <div className="flex flex-col items-center gap-1.5">
-                <div className="flex gap-1.5 font-black text-[10px]">
                     <span className="text-purple-600 bg-purple-50 px-2 py-0.5 rounded-lg">{stats?.conversion?.converted || 0}C</span>
                     <span className="text-rose-500 bg-red-50 px-2 py-0.5 rounded-lg">{stats?.conversion?.failed || 0}F</span>
                 </div>
@@ -1444,7 +1433,7 @@ const HierarchicalRow = ({ item, handleDetailedDownload, level = 0, filters, ref
             </tr>
             {isExpanded && loadingChildren && (
                 <tr>
-                    <td colSpan="5" className="px-8 py-4">
+                    <td colSpan="4" className="px-8 py-4">
                         <div className="flex items-center gap-3" style={{ paddingLeft: `${(level + 1) * 24}px` }}>
                             <Loader2 className="w-3 h-3 text-indigo-400 animate-spin" />
                             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest animate-pulse">{getLoadingText()}</span>
@@ -1484,7 +1473,6 @@ const DetailedTable = ({ data, loading, handleDetailedDownload, filters, refresh
                         <tr className="bg-indigo-900 text-white">
                             <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-left">User (Hierarchy)</th>
                             <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-center">Uploads (U/P/T)</th>
-                            <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-center">Approved (A/R/P)</th>
                             <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-center">Conversion (C/F)</th>
                             <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-center">Action</th>
                         </tr>

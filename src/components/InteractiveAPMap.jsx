@@ -1127,24 +1127,6 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
                                 </div>
                             </div>
 
-                            {/* CC Actions Section */}
-                            <div className="bg-emerald-50 rounded-2xl p-5">
-                                <h4 className="text-xs font-black text-emerald-900 uppercase mb-3">CC Actions</h4>
-                                <div className="grid grid-cols-3 gap-3">
-                                    <div className="bg-white/80 p-3 rounded-xl">
-                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Approved</span>
-                                        <span className="text-lg font-black text-green-600">{activeSummary?.approved || 0}</span>
-                                    </div>
-                                    <div className="bg-white/80 p-3 rounded-xl">
-                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Rejected</span>
-                                        <span className="text-lg font-black text-red-600">{activeSummary?.rejected || 0}</span>
-                                    </div>
-                                    <div className="bg-white/80 p-3 rounded-xl">
-                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Pending</span>
-                                        <span className="text-lg font-black text-amber-600">{activeSummary?.ccPending || (activeSummary?.ccActions?.pending) || 0}</span>
-                                    </div>
-                                </div>
-                            </div>
 
                             {/* Digital Conversion Section */}
                             <div className="bg-purple-50 rounded-2xl p-5">
@@ -1221,24 +1203,6 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
                                 </div>
                             </div>
 
-                            {/* State Level CC Actions Section */}
-                            <div className="bg-emerald-50 rounded-2xl p-5">
-                                <h4 className="text-xs font-black text-emerald-900 uppercase mb-3">Statewide CC Actions</h4>
-                                <div className="grid grid-cols-3 gap-3">
-                                    <div className="bg-white/80 p-3 rounded-xl">
-                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Approved</span>
-                                        <span className="text-lg font-black text-green-600">{summary.all?.approved || 0}</span>
-                                    </div>
-                                    <div className="bg-white/80 p-3 rounded-xl">
-                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Rejected</span>
-                                        <span className="text-lg font-black text-red-600">{summary.all?.rejected || 0}</span>
-                                    </div>
-                                    <div className="bg-white/80 p-3 rounded-xl">
-                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Pending</span>
-                                        <span className="text-lg font-black text-amber-600">{summary.all?.ccPending || 0}</span>
-                                    </div>
-                                </div>
-                            </div>
 
                             {/* State Level Digital Conversion Section */}
                             <div className="bg-purple-50 rounded-2xl p-5">

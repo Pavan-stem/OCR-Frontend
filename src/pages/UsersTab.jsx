@@ -3,19 +3,7 @@ import { createPortal } from 'react-dom';
 import { Plus, Edit, Trash2, FileSymlink, Filter, Loader2, X, Shield, User, MapPin, Phone, Lock, Unlock, CheckCircle, Search, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, FileText, Calendar, AlertCircle, AlertTriangle, Settings, Power, Clock, Download, Eye, EyeOff, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { API_BASE } from '../utils/apiConfig';
 import { formatDateTime } from '../utils/dateUtils';
-const REJECTION_REASONS = [
-  "Follow guidelines",
-  "Table was cut off",
-  "There are dark shadows",
-  "table wasn't visible",
-  "wrong table",
-  "There was too much blur",
-  "There was background noise use plane background",
-  "Table was bent",
-  "Table was rotated",
-  "Wrong Image",
-  "Old Form Uploaded"
-];
+const REJECTION_REASONS = [];
 
 // Helper Component for Grouped Uploads in Admin View
 const AdminUploadCard = ({ group, currentUserRole, uploading, handleQuickStatusUpdate, openStatusModal, openImageViewer, downloadImage }) => {
@@ -26,13 +14,12 @@ const AdminUploadCard = ({ group, currentUserRole, uploading, handleQuickStatusU
 
   // Use the status of the CURRENTLY SELECTED page
   const status = currentPage?.status || 'pending';
-  const borderColor = status === 'pending' ? 'border-orange-300' : status === 'rejected' ? 'border-red-300' : 'border-green-300';
-  const bgColor = status === 'pending' ? 'bg-orange-50' : status === 'rejected' ? 'bg-red-50' : 'bg-green-50';
-  const badgeColor = status === 'pending' ? 'bg-orange-200 text-orange-800' : status === 'rejected' ? 'bg-red-200 text-red-800' : 'bg-green-200 text-green-800';
+  const borderColor = status === 'pending' ? 'border-orange-300' : 'border-green-300';
+  const bgColor = status === 'pending' ? 'bg-orange-50' : 'bg-green-50';
+  const badgeColor = status === 'pending' ? 'bg-orange-200 text-orange-800' : 'bg-green-200 text-green-800';
 
   const getStatusColor = (s) => {
     if (s === 'validated') return 'bg-emerald-500';
-    if (s === 'rejected') return 'bg-red-500';
     return 'bg-orange-500';
   };
 
@@ -87,12 +74,6 @@ const AdminUploadCard = ({ group, currentUserRole, uploading, handleQuickStatusU
           <Calendar className="w-3 h-3" />
           <span>{formatDateTime(currentPage.uploadTimestamp)}</span>
         </div>
-        {status === 'rejected' && currentPage.rejectionReason && (
-          <div className="bg-white/60 rounded-lg p-2 border-l-4 border-red-500">
-            <p className="text-[9px] font-black text-red-600 mb-0.5">Reason (P{currentPage.page || 1}):</p>
-            <p className="text-[10px] text-gray-800 line-clamp-2 leading-tight">{currentPage.rejectionReason}</p>
-          </div>
-        )}
         <div className="text-gray-400 truncate opacity-60" title={currentPage.originalFilename}>
           {currentPage.originalFilename}
         </div>
@@ -110,27 +91,17 @@ const AdminUploadCard = ({ group, currentUserRole, uploading, handleQuickStatusU
         {/* Page Specific Actions */}
         <div className="flex gap-2">
           {status === 'pending' && currentUserRole !== 'admin - apm' && (
-            <>
-              <button
-                onClick={() => handleQuickStatusUpdate(currentPage, 'validated')}
-                disabled={uploading}
-                className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-[10px] transition-all shadow-sm flex items-center justify-center gap-1"
-                title={`Approve Page ${currentPage.page || 1}`}
-              >
-                <CheckCircle size={12} /> Approve P{currentPage.page || 1}
-              </button>
-              <button
-                onClick={() => openStatusModal(currentPage)}
-                disabled={uploading}
-                className="flex-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-black text-[10px] transition-all shadow-sm flex items-center justify-center gap-1"
-                title={`Reject Page ${currentPage.page || 1}`}
-              >
-                <X size={12} /> Reject P{currentPage.page || 1}
-              </button>
-            </>
+            <button
+              onClick={() => handleQuickStatusUpdate(currentPage, 'validated')}
+              disabled={uploading}
+              className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-[10px] transition-all shadow-sm flex items-center justify-center gap-1"
+              title={`Approve Page ${currentPage.page || 1}`}
+            >
+              <CheckCircle size={12} /> Approve P{currentPage.page || 1}
+            </button>
           )}
 
-          {(status === 'rejected' || status === 'validated') && currentUserRole !== 'admin - apm' && (
+          {(status === 'validated') && currentUserRole !== 'admin - apm' && (
             <button
               onClick={() => openStatusModal(currentPage)}
               className="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-[10px] transition-all shadow-sm flex items-center justify-center gap-1"
@@ -146,7 +117,7 @@ const AdminUploadCard = ({ group, currentUserRole, uploading, handleQuickStatusU
             onClick={async () => {
               for (const p of pages) {
                 const up = group.pages[p];
-                if (up.status === 'pending' || up.status === 'rejected') {
+                if (up.status === 'pending') {
                   await handleQuickStatusUpdate(up, 'validated');
                 }
               }
@@ -693,10 +664,8 @@ const UsersTab = ({ filterProps }) => {
       const pageUploads = Object.values(group.pages);
       const statuses = pageUploads.map(p => p.status || 'pending');
 
-      if (statuses.includes('pending')) {
+      if (statuses.includes('pending') || statuses.includes('rejected')) {
         sections.pending.push(group);
-      } else if (statuses.includes('rejected')) {
-        sections.rejected.push(group);
       } else {
         sections.validated.push(group);
       }
@@ -1354,7 +1323,6 @@ const UsersTab = ({ filterProps }) => {
                 performanceStats: newStats.performance ? {
                   uploads: {
                     approved: newStats.performance.uploads?.approved ?? 0,
-                    rejected: newStats.performance.uploads?.rejected ?? 0,
                     pending: newStats.performance.uploads?.pending ?? 0
                   },
                   conversion: {
@@ -1484,7 +1452,7 @@ const UsersTab = ({ filterProps }) => {
     }
   };
 
-  // Approval Gate Functions
+  // Conversion Gate Functions
   useEffect(() => {
     fetchGateStatus();
     const interval = setInterval(fetchGateStatus, 15000); // Sync every 15s
@@ -1544,7 +1512,7 @@ const UsersTab = ({ filterProps }) => {
       }
     } catch (err) {
       console.error('Error toggling gate:', err);
-      alert('Error toggling approval gate');
+      alert('Error toggling conversion gate');
     } finally {
       setIsTogglingGate(false);
     }
@@ -2547,7 +2515,7 @@ const UsersTab = ({ filterProps }) => {
           </div>
         )}
 
-        {/* Approval Gate Controls - Admin/Dev Only */}
+        {/* Conversion Gate Controls - Admin/Dev Only */}
         {isDeveloperUser && (
           <div className="bg-white rounded-3xl p-4 sm:p-6 shadow-md border border-gray-100">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -2557,7 +2525,7 @@ const UsersTab = ({ filterProps }) => {
                 </div>
                 <div>
                   <h3 className="text-sm sm:text-base font-black text-gray-900 flex items-center gap-2">
-                    Approval Gate
+                    Conversion Gate
                     <span className={`text-xs font-black px-2 py-1 rounded-full ${gateStatus.isOpen
                       ? 'bg-emerald-100 text-emerald-700'
                       : 'bg-red-100 text-red-700'
@@ -2567,7 +2535,7 @@ const UsersTab = ({ filterProps }) => {
                   </h3>
                   <p className="text-[10px] sm:text-xs text-gray-400 font-bold uppercase tracking-wider mt-0.5">
                     {gateStatus.lastUpdatedAt
-                      ? `Last updated by ${gateStatus.lastUpdatedBy} at ${new Date(gateStatus.lastUpdatedAt).toLocaleTimeString()}`
+                      ? `Last updated by ${gateStatus.lastUpdatedByName || gateStatus.lastUpdatedBy} at ${new Date(gateStatus.lastUpdatedAt).toLocaleTimeString()}`
                       : 'Gate status'}
                   </p>
                 </div>
@@ -2932,28 +2900,6 @@ const UsersTab = ({ filterProps }) => {
                                   <div className="flex flex-col gap-2">
                                     <div className="flex justify-center items-center gap-4">
                                       <div className="flex flex-col items-center">
-                                        <span className="text-xs font-black text-green-600 leading-none">{perf.uploads.approved}</span>
-                                        <span className="text-[8px] font-black text-green-600/60 uppercase tracking-tighter mt-1">Approved</span>
-                                      </div>
-                                      <div className="flex flex-col items-center">
-                                        <span className="text-xs font-black text-red-600 leading-none">{perf.uploads.rejected}</span>
-                                        <span className="text-[8px] font-black text-red-400 uppercase tracking-tighter mt-1">Rejected</span>
-                                      </div>
-                                      <div className="flex flex-col items-center">
-                                        <span className="text-xs font-black text-orange-500 leading-none">{perf.uploads.pending}</span>
-                                        <span className="text-[8px] font-black text-orange-400 uppercase tracking-tighter mt-1">Pending</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                )}
-                              </td>
-                              <td className="px-4 py-6 text-center border-r border-gray-50">
-                                {(uIsAdmin || uIsDev) ? (
-                                  <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest italic">N/A</span>
-                                ) : (
-                                  <div className="flex flex-col gap-2">
-                                    <div className="flex justify-center items-center gap-4">
-                                      <div className="flex flex-col items-center">
                                         <span className="text-xs font-black text-green-600 leading-none">{perf.conversion.success}</span>
                                         <span className="text-[8px] font-black text-green-600/60 uppercase tracking-tighter mt-1">Success</span>
                                       </div>
@@ -3043,7 +2989,7 @@ const UsersTab = ({ filterProps }) => {
                             <table className="w-full text-left border-collapse min-w-[1000px]">
                               <thead>
                                 <tr className="bg-indigo-700 text-white">
-                                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest border-r border-white/10 w-[35%]">
+                                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest border-r border-white/10 w-[45%]">
                                     {currentUserRole.includes('admin - apm')
                                       ? 'CC Profile'
                                       : currentUserRole.includes('admin - cc')
@@ -3051,13 +2997,10 @@ const UsersTab = ({ filterProps }) => {
                                         : 'APM Profile'
                                     }
                                   </th>
-                                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest border-r border-white/10 text-center w-[18%]">
+                                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest border-r border-white/10 text-center w-[20%]">
                                     Uploads (U/P/T)
                                   </th>
-                                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest border-r border-white/10 text-center w-[18%]">
-                                    Approvals (A/R/P)
-                                  </th>
-                                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest border-r border-white/10 text-center w-[18%]">
+                                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest border-r border-white/10 text-center w-[24%]">
                                     Conversion
                                   </th>
                                   <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest text-right w-[11%]">Actions</th>
@@ -3186,7 +3129,7 @@ const UsersTab = ({ filterProps }) => {
                         const uIsVO = uRoleLower.startsWith('vo') || uRoleLower === 'none' || !u.role;
 
                         const perf = u.performanceStats || {
-                          uploads: { approved: 0, rejected: 0, pending: 0 },
+                          uploads: { approved: 0, pending: 0 },
                           conversion: { success: 0, failed: 0, pending: 0, processing: 0 }
                         };
 
@@ -3251,14 +3194,6 @@ const UsersTab = ({ filterProps }) => {
                                           <div className="flex-1"><div className="text-[10px] font-black text-green-600">{u.uploadedFiles}</div><div className="text-[5px] font-bold text-gray-400">U</div></div>
                                           <div className="flex-1"><div className="text-[10px] font-black text-orange-500">{u.pendingFiles}</div><div className="text-[5px] font-bold text-gray-400">P</div></div>
                                           <div className="flex-1"><div className="text-[10px] font-black text-black">{u.totalFiles}</div><div className="text-[5px] font-bold text-gray-400">T</div></div>
-                                        </div>
-                                      </div>
-                                      <div className="bg-white p-2 rounded-2xl border border-gray-100 text-center">
-                                        <div className="flex justify-between items-center mb-1 px-1"><span className="text-[7px] font-black text-gray-400 uppercase">Approvals</span><span className="text-[9px] font-black text-green-600">{perf.uploads.approved}</span></div>
-                                        <div className="flex gap-1 justify-between">
-                                          <div className="flex-1"><div className="text-[10px] font-black text-green-600">{perf.uploads.approved}</div><div className="text-[5px] font-bold text-green-600/60">A</div></div>
-                                          <div className="flex-1"><div className="text-[10px] font-black text-red-600">{perf.uploads.rejected}</div><div className="text-[5px] font-bold text-red-400">R</div></div>
-                                          <div className="flex-1"><div className="text-[10px] font-black text-orange-500">{perf.uploads.pending}</div><div className="text-[5px] font-bold text-orange-400">P</div></div>
                                         </div>
                                       </div>
                                     </div>
@@ -3955,10 +3890,6 @@ const UsersTab = ({ filterProps }) => {
                               <div className="text-[7px] sm:text-[10px] font-black text-white/70 uppercase truncate">Approved</div>
                               <div className="text-sm sm:text-2xl font-black text-white">{uploadsSummary.validated}</div>
                             </div>
-                            <div className="bg-white/10 backdrop-blur-sm rounded-xl px-2.5 sm:px-4 py-1 sm:py-2.5 border border-white/20 flex-1 min-w-[80px]">
-                              <div className="text-[7px] sm:text-[10px] font-black text-white/70 uppercase truncate">Rejected</div>
-                              <div className="text-sm sm:text-2xl font-black text-white">{uploadsSummary.rejected}</div>
-                            </div>
                           </div>
                         )}
                       </div>
@@ -4008,33 +3939,6 @@ const UsersTab = ({ filterProps }) => {
                             </div>
                           )}
 
-                          {/* Rejected Section */}
-                          {groupedUserUploads.rejected.length > 0 && (
-                            <div>
-                              <div className="flex items-center gap-2 mb-4 bg-white rounded-xl p-3 border-2 border-red-300 shadow-sm">
-                                <AlertTriangle className="text-red-500" size={24} />
-                                <h4 className="text-lg font-black text-gray-900">
-                                  Rejected Documents
-                                  <span className="ml-2 text-sm font-normal text-gray-500">({groupedUserUploads.rejected.length})</span>
-                                </h4>
-                              </div>
-                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {groupedUserUploads.rejected.map((group, idx) => (
-                                  <AdminUploadCard
-                                    key={idx}
-                                    group={group}
-                                    status="rejected"
-                                    currentUserRole={currentUserRole}
-                                    uploading={uploading}
-                                    handleQuickStatusUpdate={handleQuickStatusUpdate}
-                                    openStatusModal={openStatusModal}
-                                    openImageViewer={openImageViewer}
-                                    downloadImage={downloadImage}
-                                  />
-                                ))}
-                              </div>
-                            </div>
-                          )}
 
                           {/* Validated Section */}
                           {groupedUserUploads.validated.length > 0 && (
@@ -4097,13 +4001,12 @@ const UsersTab = ({ filterProps }) => {
                       {/* Action Selection */}
                       <div>
                         <label className="block text-sm font-black text-gray-700 mb-3">Select Action</label>
-                        <div className="grid grid-cols-2 gap-3">
                           <button
                             onClick={() => {
                               setStatus('validated');
                               setRejectionReason('');
                             }}
-                            className={`p-4 rounded-2xl border-2 transition-all font-black text-sm ${status === 'validated'
+                            className={`p-4 rounded-2xl border-2 transition-all font-black text-sm w-full ${status === 'validated'
                               ? 'bg-emerald-50 border-emerald-500 text-emerald-700'
                               : 'bg-gray-50 border-gray-200 text-gray-700 hover:border-gray-300'
                               }`}
@@ -4114,24 +4017,6 @@ const UsersTab = ({ filterProps }) => {
                             </div>
                             <p className="text-[11px] font-bold text-gray-600 mt-1 opacity-75">Send to conversion</p>
                           </button>
-
-                          <button
-                            onClick={() => {
-                              setStatus('rejected');
-                              setRejectionReason(REJECTION_REASONS[0]);
-                            }}
-                            className={`p-4 rounded-2xl border-2 transition-all font-black text-sm ${status === 'rejected'
-                              ? 'bg-red-50 border-red-500 text-red-700'
-                              : 'bg-gray-50 border-gray-200 text-gray-700 hover:border-gray-300'
-                              }`}
-                          >
-                            <div className="flex items-center justify-center gap-2">
-                              <AlertCircle className="w-5 h-5" />
-                              Reject
-                            </div>
-                            <p className="text-[11px] font-bold text-gray-600 mt-1 opacity-75">Return to VO</p>
-                          </button>
-                        </div>
                       </div>
 
                       {/* Status-Specific UI */}
@@ -4179,14 +4064,14 @@ const UsersTab = ({ filterProps }) => {
                           : 'bg-red-600 hover:bg-red-700'
                           }`}
                       >
-                        {uploading ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            Processing...
-                          </>
-                        ) : (
-                          status === 'validated' ? 'Approve & Queue' : 'Reject Upload'
-                        )}
+                          {uploading ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              Processing...
+                            </>
+                          ) : (
+                            'Approve & Queue'
+                          )}
                       </button>
                     </div>
                   </div>
@@ -4205,9 +4090,9 @@ const UsersTab = ({ filterProps }) => {
                     <div className="px-4 sm:px-8 py-3 sm:py-6 border-b border-gray-100 bg-gradient-to-r from-indigo-600 to-purple-600">
                       <div className="flex justify-between items-center bg-transparent">
                         <div className="bg-transparent">
-                          <h3 className="text-lg sm:text-2xl font-black text-white leading-tight">{viewerImageData.title}</h3>
+                          <h3 className="text-lg sm:text-2xl font-black text-white leading-tight">{viewerImages[currentViewerIndex]?.title}</h3>
                           <div className="flex items-center gap-2 mt-0.5 bg-transparent">
-                            <p className="text-[9px] sm:text-sm text-white/80 font-bold uppercase tracking-wider">{viewerImageData.subtitle}</p>
+                            <p className="text-[9px] sm:text-sm text-white/80 font-bold uppercase tracking-wider">{viewerImages[currentViewerIndex]?.subtitle}</p>
                           </div>
                         </div>
                         <button onClick={() => setShowImageViewer(false)} className="p-1.5 sm:p-2.5 bg-white/20 text-white hover:bg-white/30 hover:shadow-md rounded-xl transition-all border border-white/30">
@@ -4252,18 +4137,18 @@ const UsersTab = ({ filterProps }) => {
               )
             }
 
-            {/* Approval Gate Toggle Modal */}
+            {/* Conversion Gate Toggle Modal */}
             {
               showGateModal && createPortal(
                 <div className="fixed inset-0 bg-indigo-950/60 backdrop-blur-md flex items-center justify-center z-[100] p-2 sm:p-4 !mt-0 animate-in fade-in duration-300">
                   <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-md overflow-hidden border border-white/20 animate-in zoom-in-95 duration-200">
                     <div className="px-6 sm:px-8 py-4 sm:py-6 border-b border-gray-100 bg-gradient-to-r from-indigo-600 to-purple-600">
-                      <div className="flex justify-between items-center">
-                        <div>
+                      <div className="flex justify-between items-center bg-transparent">
+                        <div className="bg-transparent">
                           <h3 className="text-lg sm:text-2xl font-black text-white leading-tight">
-                            {gateStatus.isOpen ? 'Close Approval Gate' : 'Open Approval Gate'}
+                            {gateStatus.isOpen ? 'Close Conversion Gate' : 'Open Conversion Gate'}
                           </h3>
-                          <p className="text-[11px] sm:text-xs text-white/70 font-bold uppercase tracking-wider mt-1">
+                          <p className="text-[11px] sm:text-xs text-white/70 font-bold uppercase tracking-wider mt-1 bg-transparent">
                             This controls whether new upload approvals are processed
                           </p>
                         </div>
@@ -4280,7 +4165,7 @@ const UsersTab = ({ filterProps }) => {
                         }`}>
                         <p className="text-sm font-bold">
                           {gateStatus.isOpen
-                            ? '⚠️ You\'re about to CLOSE the gate. New approvals will be BLOCKED.'
+                            ? '⚠️ You\'re about to CLOSE the gate. New approvals will NOT be queued.'
                             : '✓ You\'re about to OPEN the gate. New approvals will be queued for conversion.'}
                         </p>
                       </div>
