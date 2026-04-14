@@ -2875,20 +2875,14 @@ const UsersTab = ({ filterProps }) => {
                                 {(uIsAdmin || uIsDev) ? (
                                   <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest italic">N/A</span>
                                 ) : (
-                                  <div className="flex flex-col gap-2">
-                                    <div className="flex justify-center items-center gap-4">
-                                      <div className="flex flex-col items-center">
-                                        <span className="text-xs font-black text-green-600 leading-none">{u.uploadedFiles || 0}</span>
-                                        <span className="text-[8px] font-black text-green-600/60 uppercase tracking-tighter mt-1">Uploaded</span>
-                                      </div>
-                                      <div className="flex flex-col items-center">
-                                        <span className="text-xs font-black text-orange-500 leading-none">{u.pendingFiles || 0}</span>
-                                        <span className="text-[8px] font-black text-orange-400 uppercase tracking-tighter mt-1">Pending</span>
-                                      </div>
-                                      <div className="flex flex-col items-center">
-                                        <span className="text-xs font-black text-black leading-none">{u.totalFiles || 0}</span>
-                                        <span className="text-[8px] font-black text-gray-400 uppercase tracking-tighter mt-1">Total</span>
-                                      </div>
+                                  <div className="flex justify-center items-center gap-6">
+                                    <span className="text-base font-black text-emerald-600 leading-none" title="Uploaded">{u.uploadedFiles || 0}</span>
+                                    <span className="text-base font-black text-orange-500 leading-none" title="Pending">{u.pendingFiles || 0}</span>
+                                    <span className="text-base font-black text-gray-900 leading-none" title="Total">{u.totalFiles || 0}</span>
+                                    <div className="border-l border-gray-100 pl-4">
+                                      <span className="text-base font-black text-indigo-500 tracking-tighter" title="Percentage Complete">
+                                        {u.totalFiles > 0 ? Math.round(((u.uploadedFiles || 0) / u.totalFiles) * 100) : 0}%
+                                      </span>
                                     </div>
                                   </div>
                                 )}
@@ -2898,19 +2892,10 @@ const UsersTab = ({ filterProps }) => {
                                   <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest italic">N/A</span>
                                 ) : (
                                   <div className="flex flex-col gap-2">
-                                    <div className="flex justify-center items-center gap-4">
-                                      <div className="flex flex-col items-center">
-                                        <span className="text-xs font-black text-green-600 leading-none">{perf.conversion.success}</span>
-                                        <span className="text-[8px] font-black text-green-600/60 uppercase tracking-tighter mt-1">Success</span>
-                                      </div>
-                                      <div className="flex flex-col items-center">
-                                        <span className="text-xs font-black text-red-600 leading-none">{perf.conversion.failed}</span>
-                                        <span className="text-[8px] font-black text-red-400 uppercase tracking-tighter mt-1">Failed</span>
-                                      </div>
-                                      <div className="flex flex-col items-center">
-                                        <span className="text-xs font-black text-orange-500 leading-none">{perf.conversion.pending + perf.conversion.processing}</span>
-                                        <span className="text-[8px] font-black text-orange-400 uppercase tracking-tighter mt-1">In Que</span>
-                                      </div>
+                                    <div className="flex justify-center items-center gap-6">
+                                      <span className="text-base font-black text-emerald-600 leading-none" title="Success">{perf.conversion.success}</span>
+                                      <span className="text-base font-black text-red-600 leading-none" title="Failed">{perf.conversion.failed}</span>
+                                      <span className="text-base font-black text-orange-500 leading-none" title="In Queue">{perf.conversion.pending + perf.conversion.processing}</span>
                                     </div>
                                   </div>
                                 )}
@@ -2985,11 +2970,30 @@ const UsersTab = ({ filterProps }) => {
 
                         return (
                           <div className="mb-10 last:mb-0">
-                            {/* Section Title removed per user request */}
+                            {/* Statistics Legend */}
+                            <div className="mb-4 flex flex-wrap items-center justify-end gap-6 px-4 py-3 bg-gray-50/50 rounded-2xl border border-gray-100/50 backdrop-blur-sm">
+                              <div className="flex items-center gap-2">
+                                <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.3)]"></div>
+                                <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Uploaded / Success</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <div className="w-2.5 h-2.5 rounded-full bg-orange-500 shadow-[0_0_8px_rgba(245,158,11,0.3)]"></div>
+                                <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Pending / In Queue</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.3)]"></div>
+                                <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Failed / Rejection</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <div className="w-2.5 h-2.5 rounded-full bg-gray-900 shadow-[0_0_8px_rgba(17,24,39,0.2)]"></div>
+                                <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Total baseline</span>
+                              </div>
+                            </div>
+
                             <table className="w-full text-left border-collapse min-w-[1000px]">
                               <thead>
                                 <tr className="bg-indigo-700 text-white">
-                                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest border-r border-white/10 w-[45%]">
+                                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest border-r border-white/10 w-[40%]">
                                     {currentUserRole.includes('admin - apm')
                                       ? 'CC Profile'
                                       : currentUserRole.includes('admin - cc')
@@ -2997,13 +3001,13 @@ const UsersTab = ({ filterProps }) => {
                                         : 'APM Profile'
                                     }
                                   </th>
+                                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest border-r border-white/10 text-center w-[25%]" title="Upload Status (U/P/T / %)">
+                                    Upload Status (U/P/T / %)
+                                  </th>
                                   <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest border-r border-white/10 text-center w-[20%]">
-                                    Uploads (U/P/T)
+                                    Conversion (S/F/Q)
                                   </th>
-                                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest border-r border-white/10 text-center w-[24%]">
-                                    Conversion
-                                  </th>
-                                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest text-right w-[11%]">Actions</th>
+                                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest text-right w-[15%]">Actions</th>
                                 </tr>
                               </thead>
                               <tbody key={page} className="divide-y divide-gray-100">
@@ -3188,12 +3192,19 @@ const UsersTab = ({ filterProps }) => {
                                       <div className="bg-white p-2 rounded-2xl border border-gray-100 text-center">
                                         <div className="flex justify-between items-center mb-1 px-1">
                                           <span className="text-[7px] font-black text-gray-400 uppercase">Uploads</span>
-                                          <span className="text-[9px] font-black text-black">{u.totalFiles}</span>
+                                          <span className="text-[9px] font-black text-indigo-500">
+                                            {u.totalFiles > 0 ? Math.round(((u.uploadedFiles || 0) / u.totalFiles) * 100) : 0}% Done
+                                          </span>
                                         </div>
-                                        <div className="flex gap-1 justify-between">
-                                          <div className="flex-1"><div className="text-[10px] font-black text-green-600">{u.uploadedFiles}</div><div className="text-[5px] font-bold text-gray-400">U</div></div>
-                                          <div className="flex-1"><div className="text-[10px] font-black text-orange-500">{u.pendingFiles}</div><div className="text-[5px] font-bold text-gray-400">P</div></div>
-                                          <div className="flex-1"><div className="text-[10px] font-black text-black">{u.totalFiles}</div><div className="text-[5px] font-bold text-gray-400">T</div></div>
+                                        <div className="flex gap-4 justify-center items-center py-1">
+                                          <div className="text-sm font-black text-emerald-600">{u.uploadedFiles || 0}</div>
+                                          <div className="text-sm font-black text-orange-500">{u.pendingFiles || 0}</div>
+                                          <div className="flex items-baseline gap-1 border-l border-gray-100 pl-3">
+                                            <div className="text-sm font-black text-black">{u.totalFiles || 0}</div>
+                                            <div className="text-[9px] font-black text-indigo-500">
+                                              ({u.totalFiles > 0 ? Math.round(((u.uploadedFiles || 0) / u.totalFiles) * 100) : 0}%)
+                                            </div>
+                                          </div>
                                         </div>
                                       </div>
                                     </div>
@@ -3201,17 +3212,10 @@ const UsersTab = ({ filterProps }) => {
                                       <div className="flex justify-between items-center mb-1 px-1">
                                         <span className="text-[7px] font-black text-gray-400 uppercase">Conversion</span>
                                       </div>
-                                      <div className="flex justify-between gap-1">
-                                        {[
-                                          { label: 'Success', val: perf.conversion.success, color: 'text-green-600' },
-                                          { label: 'Failed', val: perf.conversion.failed, color: 'text-red-600' },
-                                          { label: 'In Que', val: perf.conversion.pending + perf.conversion.processing, color: 'text-orange-500' }
-                                        ].map(item => (
-                                          <div key={item.label} className="text-center flex-1 bg-gray-50 rounded-lg p-1">
-                                            <div className={`text-[10px] font-black ${item.color}`}>{item.val}</div>
-                                            <div className="text-[5px] font-black text-gray-400 uppercase leading-none">{item.label}</div>
-                                          </div>
-                                        ))}
+                                      <div className="flex justify-center gap-6 py-1">
+                                        <div className="text-sm font-black text-emerald-600">{perf.conversion.success}</div>
+                                        <div className="text-sm font-black text-red-600">{perf.conversion.failed}</div>
+                                        <div className="text-sm font-black text-orange-500">{perf.conversion.pending + perf.conversion.processing}</div>
                                       </div>
                                     </div>
                                   </div>
