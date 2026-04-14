@@ -3,7 +3,7 @@ import {
     Download, FileBarChart, ChartPie as PieChartIcon, Activity, Clock, CheckCircle,
     FileText, Filter, LayoutGrid, List, ChevronRight, AlertCircle,
     TrendingUp, Users, MapPin, Calendar, ArrowUpRight, ArrowDownRight,
-    Shield, User, ChevronDown, Loader2, Database
+    Shield, User, ChevronDown, Loader2, Database, Landmark, BarChart2
 } from 'lucide-react';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -626,10 +626,21 @@ const AnalyticsPage = ({ filterProps }) => {
                         </div>
                     </div>
 
+
                     <div className="mb-8">
                         <CumulativeFinanceSummary
                             history={historyData}
                             loading={isHistoryLoading}
+                        />
+                    </div>
+
+                    <div className="mb-8">
+                        <Page2FinanceBarChart 
+                            data={paymentData?.financeStats?.page2Finance || summary?.financeStats?.page2Finance} 
+                            breakdown={paymentData?.financeStats?.page2Breakdown || summary?.financeStats?.page2Breakdown}
+                            distributions={paymentData?.financeStats?.page2Distributions || summary?.financeStats?.page2Distributions}
+                            month={filters.month} 
+                            year={filters.year} 
                         />
                     </div>
 
@@ -1218,6 +1229,323 @@ const MiniPaymentPie = ({ data, color, level, metricLabel }) => {
     );
 };
 
+const UploadCompletionPieChart = ({ conversion }) => {
+    if (!conversion) return null;
+
+    const { bothPagesCount = 0, page1OnlyCount = 0, page2OnlyCount = 0 } = conversion;
+    const total = bothPagesCount + page1OnlyCount + page2OnlyCount;
+
+    const data = [
+        { name: 'Complete (P1+P2)', value: bothPagesCount, color: '#10b981', label: 'సంఘం వివరాలు మరియు ఫైనాన్సియల్ లెడ్జర్ అప్లోడ్ అయినవి' },
+        { name: 'Page 2 Pending', value: page1OnlyCount, color: '#f59e0b', label: 'ఫైనాన్సియల్ లెడ్జర్ అప్లోడ్ కావాల్సి ఉంది' },
+        { name: 'Page 1 Pending', value: page2OnlyCount, color: '#6366f1', label: 'సంఘం వివరాలు అప్లోడ్ కావాల్సి ఉంది' }
+    ].filter(d => d.value > 0 || total === 0);
+
+    return (
+        <div className="space-y-4">
+            <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest text-center">Page Upload Status</h4>
+            <div className="h-44">
+                <ResponsiveContainer width="100%" height="100%">
+                    <PieChart margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
+                        <Pie
+                            data={data.length > 0 ? data : [{ name: 'No Data', value: 1, color: '#f1f5f9' }]}
+                            innerRadius={60}
+                            outerRadius={70}
+                            paddingAngle={5}
+                            dataKey="value"
+                        >
+                            {data.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                        </Pie>
+                        <Tooltip 
+                            content={({ active, payload }) => {
+                                if (active && payload && payload.length) {
+                                    const d = payload[0].payload;
+                                    return (
+                                        <div className="bg-slate-900/95 backdrop-blur-md border border-white/10 p-3 rounded-xl shadow-2xl">
+                                            <p className="text-[10px] font-black text-indigo-400 uppercase tracking-wider mb-1">{d.name}</p>
+                                            <p className="text-lg font-black text-white leading-none mb-2">{d.value}</p>
+                                            <p className="text-[9px] font-bold text-gray-400 border-t border-white/5 pt-2">{d.label}</p>
+                                        </div>
+                                    );
+                                }
+                                return null;
+                            }}
+                        />
+                    </PieChart>
+                </ResponsiveContainer>
+            </div>
+            <div className="flex flex-col gap-2">
+                {data.map(d => (
+                    <div key={d.name} className="flex items-center justify-between px-4 py-2 bg-gray-50 rounded-xl group hover:bg-white transition-all shadow-sm">
+                        <div className="flex items-center gap-2">
+                            <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: d.color }} />
+                            <span className="text-[10px] font-black text-gray-500 uppercase">{d.name}</span>
+                        </div>
+                        <span className="text-sm font-black" style={{ color: d.color }}>{d.value}</span>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+const DEBUG_ID_MAP = {
+    "17": "Member Savings",
+    "31": "Revolving Fund",
+    "36": "Aadhaar/Pension Grants",
+    "19": "VO Share Capital",
+    "26": "VO Savings",
+    "33": "Streenidhi Shares",
+    "38": "Bank/Other Deposits",
+    "46": "VO Loan Recovery",
+    "51": "Streenidhi Loan Recovery",
+    "56": "Bank Loan Recovery",
+    "61": "Unnathi Loan Recovery",
+    "48": "VO Entrance Fee",
+    "53": "Travel Expenses",
+    "58": "Honorarium",
+    "63": "Stationery/Audit",
+    "68": "Bank Charges",
+    "72": "Misc. Expenses",
+    "76": "Member Returns",
+    "80": "Member Interest Paid",
+    "87": "Bank Interest",
+    "91": "Deposit Interest",
+    "89": "Bank Principal",
+    "93": "Streenidhi Principal",
+    "97": "Unnathi Principal",
+    "101": "CIF Principal",
+    "105": "VO Principal",
+    "109": "Bank Interest Paid",
+    "113": "Streenidhi Interest Paid"
+};
+
+const Page2FinanceBarChart = ({ data, breakdown, distributions, month, year }) => {
+    const formatMonth = (m) => {
+        const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+        return months[parseInt(m) - 1] || m;
+    };
+    
+    const safeData = data || {
+        savingsReceived: 0,
+        fundsReceived: 0,
+        investments: 0,
+        recoveriesReceived: 0,
+        expenses: 0,
+        incomesReceived: 0,
+        loanRecoveriesPaid: 0
+    };
+
+    const safeBreakdown = breakdown || {};
+    const safeDist = distributions || [];
+
+    const chartData = [
+        { name: 'Savings Received', value: safeData.savingsReceived, breakdown: safeBreakdown.savingsReceived || {}, color: '#6366f1', key: 'savingsReceived' },
+        { name: 'Funds Received', value: safeData.fundsReceived, breakdown: safeBreakdown.fundsReceived || {}, color: '#8b5cf6', key: 'fundsReceived' },
+        { name: 'Group Investments', value: safeData.investments, breakdown: safeBreakdown.investments || {}, color: '#ec4899', key: 'investments' },
+        { name: 'Recoveries Received', value: safeData.recoveriesReceived, breakdown: safeBreakdown.recoveriesReceived || {}, color: '#f43f5e', key: 'recoveriesReceived' },
+        { name: 'Group Expenses', value: safeData.expenses, breakdown: safeBreakdown.expenses || {}, color: '#f59e0b', key: 'expenses' },
+        { name: 'Group Incomes', value: safeData.incomesReceived, breakdown: safeBreakdown.incomesReceived || {}, color: '#10b981', key: 'incomesReceived' },
+        { name: 'Loan Recoveries Paid', value: safeData.loanRecoveriesPaid, breakdown: safeBreakdown.loanRecoveriesPaid || {}, color: '#3b82f6', key: 'loanRecoveriesPaid' }
+    ];
+
+    const COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f59e0b', '#10b981', '#06b6d4', '#3b82f6'];
+
+    return (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+            {/* 1. Manual Ledger Summary Card */}
+            <div className="lg:col-span-2 bg-white rounded-[32px] shadow-xl border border-slate-100 p-8 hover:shadow-2xl transition-all duration-500 overflow-hidden relative h-full">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-50/30 blur-[80px] rounded-full -mr-20 -mt-20 pointer-events-none" />
+                
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-10 relative z-10">
+                    <div className="flex items-center gap-5">
+                        <div className="p-4 bg-indigo-600 shadow-lg shadow-indigo-200 rounded-2xl">
+                            <BarChart2 className="w-7 h-7 text-white" />
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-bold text-slate-900 tracking-tight">Manual Ledger Summary</h3>
+                            <p className="text-xs font-bold text-indigo-500 uppercase tracking-[0.2em] mt-1 flex items-center gap-2">
+                                <Calendar className="w-3 h-3" />
+                                Data for {formatMonth(month)} {year}
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2 px-5 py-2.5 bg-indigo-50/50 rounded-2xl border border-indigo-100 backdrop-blur-sm">
+                        <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse shadow-[0_0_8px_rgba(99,102,241,0.6)]" />
+                        <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Live Financial Insights</span>
+                    </div>
+                </div>
+
+                <div className="bg-slate-50/50 rounded-3xl p-6 border border-slate-100/50 relative z-10">
+                    <div className="flex items-center justify-between mb-6 px-2">
+                        <div className="flex items-center gap-2">
+                            <Activity className="w-4 h-4 text-slate-400" />
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-left">Category Volume</span>
+                        </div>
+                    </div>
+                    <div className="h-[400px] w-full mt-4">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={chartData} margin={{ top: 20, right: 10, left: 10, bottom: 65 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" strokeOpacity={0.6} />
+                                <XAxis 
+                                    dataKey="name" 
+                                    axisLine={false}
+                                    tickLine={false}
+                                    tick={{ fill: '#64748b', fontSize: 10, fontWeight: 700 }}
+                                    angle={-35}
+                                    textAnchor="end"
+                                    interval={0}
+                                    height={70}
+                                    dy={10}
+                                />
+                                <YAxis 
+                                    axisLine={false}
+                                    tickLine={false}
+                                    tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 600 }}
+                                    tickFormatter={(value) => formatIndianCurrency(value).replace('₹', '')}
+                                />
+                                <Tooltip 
+                                    cursor={{ fill: '#f1f5f9', opacity: 0.4 }}
+                                    wrapperStyle={{ zIndex: 1000 }}
+                                    content={({ active, payload }) => {
+                                        if (active && payload && payload.length) {
+                                            const entry = payload[0].payload;
+                                            const breakdownItems = Object.entries(entry.breakdown || {});
+                                            
+                                            return (
+                                                <div className="bg-white/95 backdrop-blur-md p-5 rounded-[24px] shadow-2xl border border-indigo-50 min-w-[240px] animate-in zoom-in-95 duration-200">
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
+                                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">{entry.name}</p>
+                                                    </div>
+                                                    <p className="text-2xl font-black text-slate-900 mb-4">{formatIndianCurrency(entry.value)}</p>
+                                                    
+                                                    {breakdownItems.length > 0 && (
+                                                        <div className="space-y-3 pt-4 border-t border-slate-100">
+                                                            {breakdownItems.map(([id, val]) => (
+                                                                <div key={id} className="flex items-center justify-between group">
+                                                                    <span className="text-[10px] font-bold text-slate-500 uppercase group-hover:text-indigo-600 transition-colors">{DEBUG_ID_MAP[id] || `Field ${id}`}</span>
+                                                                    <span className="text-[11px] font-black text-slate-800">{formatIndianCurrency(val)}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        }
+                                        return null;
+                                    }}
+                                />
+                                <Bar 
+                                    dataKey="value" 
+                                    radius={[12, 12, 4, 4]}
+                                    isAnimationActive={true}
+                                    barSize={40}
+                                >
+                                    {chartData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={entry.color} fillOpacity={0.8} />
+                                    ))}
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+            </div>
+
+            {/* 2. Regional Contribution Card */}
+            <div className="bg-white rounded-[32px] shadow-xl border border-slate-100 p-8 hover:shadow-2xl transition-all duration-500 overflow-hidden relative h-full flex flex-col">
+                <div className="absolute bottom-0 left-0 w-64 h-64 bg-indigo-50/20 blur-[80px] rounded-full -ml-20 -mb-20 pointer-events-none" />
+                
+                <div className="flex items-center justify-between mb-8 relative z-10">
+                    <div className="flex items-center gap-5">
+                        <div className="p-4 bg-indigo-500 shadow-lg shadow-indigo-100 rounded-2xl">
+                            <PieChartIcon className="w-6 h-6 text-white" />
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-bold text-slate-900 tracking-tight">Regional Contribution</h3>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-slate-50/50 rounded-3xl p-6 border border-slate-100/50 relative z-10 flex-1 overflow-y-auto custom-scrollbar">
+                    {Object.keys(distributions || {}).some(k => (distributions[k] || []).length > 0) ? (
+                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                            {chartData.map((catInfo, idx) => {
+                                const distData = distributions[catInfo.key] || [];
+                                if (distData.length === 0) return null;
+
+                                const totalVal = distData.reduce((acc, cur) => acc + cur.value, 0);
+
+                                return (
+                                    <div key={idx} className="flex flex-col items-center">
+                                        <div className="flex items-center gap-2 mb-2 w-full pb-2">
+                                            <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: catInfo.color }} />
+                                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter truncate">{catInfo.name}</span>
+                                        </div>
+                                        
+                                        <div className="w-full aspect-square relative min-h-[120px]">
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <PieChart>
+                                                    <Pie
+                                                        data={distData}
+                                                        innerRadius={35}
+                                                        outerRadius={50}
+                                                        paddingAngle={3}
+                                                        dataKey="value"
+                                                        stroke="none"
+                                                    >
+                                                        {distData.map((entry, index) => (
+                                                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                                        ))}
+                                                    </Pie>
+                                                    <Tooltip 
+                                                        wrapperStyle={{ zIndex: 10001, outline: 'none' }}
+                                                        useTranslate3d={true}
+                                                        content={({ active, payload }) => {
+                                                            if (active && payload && payload.length) {
+                                                                const { name, value } = payload[0].payload;
+                                                                const percent = ((value / totalVal) * 100).toFixed(1);
+                                                                return (
+                                                                    <div className="bg-slate-900/95 backdrop-blur-md px-3 py-2 rounded-xl shadow-2xl border border-white/10 flex flex-col gap-0.5 items-start min-w-[120px]">
+                                                                        <span className="text-[8px] font-black text-indigo-400 uppercase tracking-widest">{name}</span>
+                                                                        <span className="text-sm font-black text-white">{formatIndianCurrency(value)}</span>
+                                                                        <span className="text-[8px] font-bold text-slate-400">{percent}% of Category</span>
+                                                                    </div>
+                                                                );
+                                                            }
+                                                            return null;
+                                                        }}
+                                                    />
+                                                </PieChart>
+                                            </ResponsiveContainer>
+                                            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-0">
+                                                <span className="text-[7px] font-black text-gray-400 uppercase leading-none">Total</span>
+                                                <span className="text-[10px] font-black text-gray-900 mt-1">{formatIndianCurrency(totalVal)}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        <div className="flex-1 flex flex-col items-center justify-center gap-6 py-32">
+                            <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center opacity-40 animate-pulse">
+                                <Activity className="w-10 h-10 text-slate-400" />
+                            </div>
+                            <div className="text-center">
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-2">Awaiting Data</p>
+                                <p className="text-sm font-bold text-slate-300">No categorical regional data found</p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const DistributionCharts = ({ summary }) => {
     if (!summary) return null;
 
@@ -1234,17 +1562,17 @@ const DistributionCharts = ({ summary }) => {
     ];
 
     return (
-        <div className="bg-white/80 backdrop-blur-md p-8 rounded-[32px] border border-white/20 shadow-lg space-y-8">
-            <div className="grid grid-cols-2 gap-4 h-full">
+        <div className="bg-white/80 backdrop-blur-md p-8 rounded-[32px] border border-white/20 shadow-lg space-y-8 h-full">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 <div className="space-y-4">
                     <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest text-center">Capture Stats</h4>
                     <div className="h-44">
                         <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
+                            <PieChart margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
                                 <Pie
                                     data={pieData}
                                     innerRadius={60}
-                                    outerRadius={80}
+                                    outerRadius={70}
                                     paddingAngle={5}
                                     dataKey="value"
                                 >
@@ -1270,11 +1598,11 @@ const DistributionCharts = ({ summary }) => {
                     <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest text-center">Conversion Status</h4>
                     <div className="h-44">
                         <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
+                            <PieChart margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
                                 <Pie
                                     data={conversionData}
                                     innerRadius={60}
-                                    outerRadius={80}
+                                    outerRadius={70}
                                     paddingAngle={5}
                                     dataKey="value"
                                 >
@@ -1295,6 +1623,9 @@ const DistributionCharts = ({ summary }) => {
                         ))}
                     </div>
                 </div>
+
+                {/* New Upload Completion Pie Chart */}
+                <UploadCompletionPieChart conversion={summary.conversion} />
             </div>
         </div>
     );
