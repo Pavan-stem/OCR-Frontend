@@ -38,15 +38,15 @@ const normalizeMBKId = (id) => {
   // Remove non-digits
   let s = String(id).trim().replace(/\D/g, '');
   if (!s) return '';
-  
+
   // Rule: if one digit add a zero in front
   if (s.length === 1) return `0${s}`;
-  
+
   // Rule: zero in front should be removed if 3 digits
   // Rule: if it detected a big number with more than 2 digit make it show last two digits
   // Both result in taking last two digits if length >= 2
   if (s.length >= 2) return s.slice(-2);
-  
+
   return s;
 };
 
@@ -150,8 +150,8 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
 
     if (duplicateMBKIds.length > 0) {
       const errorMsg = t?.('conversion.duplicateMBKIdError');
-      alert(errorMsg === 'conversion.duplicateMBKIdError' || !errorMsg 
-        ? 'Duplicate MBK IDs detected! Please ensure all Member MBK IDs are unique before saving.' 
+      alert(errorMsg === 'conversion.duplicateMBKIdError' || !errorMsg
+        ? 'Duplicate MBK IDs detected! Please ensure all Member MBK IDs are unique before saving.'
         : errorMsg);
       return;
     }
@@ -558,7 +558,7 @@ const Page2GroupedView = ({ tableData, onEdit, relatedPage1Totals, t }) => {
 
   const COLUMN_SECTIONS = [
     {
-      title: "సంఘానికి వచ్చిన వివరములు",
+      title: "సంఘానికి వచ్చిన లావాదేవీలు",
       color: "from-indigo-600 to-indigo-700",
       icon: <ArrowDownCircle className="text-white/40" size={24} />,
       categories: [
@@ -591,7 +591,7 @@ const Page2GroupedView = ({ tableData, onEdit, relatedPage1Totals, t }) => {
       ]
     },
     {
-      title: "సంఘం చెల్లించిన వివరములు",
+      title: "సంఘం చెల్లించిన లావాదేవీలు",
       color: "from-indigo-600 to-indigo-700",
       icon: <ArrowUpCircle className="text-white/40" size={24} />,
       categories: [
@@ -639,7 +639,7 @@ const Page2GroupedView = ({ tableData, onEdit, relatedPage1Totals, t }) => {
       <div className="flex-1 overflow-y-auto pb-10 sm:max-h-[75vh]">
         {COLUMN_SECTIONS.map((section, sIdx) => {
           const sectionDetectedFieldsCount = section.categories.reduce((acc, cat) => {
-             return acc + cat.fields.filter(f => idMap[f.id] && idMap[f.id].toString().trim() !== '').length;
+            return acc + cat.fields.filter(f => idMap[f.id] && idMap[f.id].toString().trim() !== '').length;
           }, 0);
 
           if (sectionDetectedFieldsCount === 0) return null;
@@ -665,7 +665,7 @@ const Page2GroupedView = ({ tableData, onEdit, relatedPage1Totals, t }) => {
                       <h6 className="text-[10px] font-black text-orange-600 uppercase tracking-widest px-3 py-1 bg-orange-50 w-fit rounded-lg border border-orange-200 shadow-sm ml-1">
                         {cat.title}
                       </h6>
-                      
+
                       {/* Fields in List */}
                       <div className="space-y-2 px-1">
                         {detectedFields.map((field) => {
