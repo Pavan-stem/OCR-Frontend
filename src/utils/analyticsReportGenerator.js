@@ -1,4 +1,5 @@
 import PptxGenJS from 'pptxgenjs';
+import html2pdf from 'html2pdf.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
@@ -17,6 +18,215 @@ const formatINR = (val) => {
 
 const fmt = (val) => (val || 0).toLocaleString('en-IN');
 const pct = (n, d) => (d > 0 ? ((n / d) * 100).toFixed(1) + '%' : '0%');
+
+// ─── DOCUMENT EXPORT (Rich HTML → .pdf) ──────────────────────────────────────
+export const exportAnalyticsPDF = ({ summary, paymentData, paymentTrends, historyData, trends, filters }) => {
+    const reportDate = new Date().toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' });
+    const period = `${getMonthName(filters?.month)} ${filters?.year}`;
+    const scope = [
+        filters?.district !== 'all' ? filters.district : 'All Districts',
+        filters?.mandal && filters.mandal !== 'all' ? filters.mandal : null,
+        filters?.village && filters.village !== 'all' ? filters.village : null,
+    ].filter(Boolean).join(' › ');
+
+    const fs = paymentData?.financeStats || {};
+    const shg = summary?.shgStats || {};
+    const conv = summary?.conversion || {};
+    const cc = summary?.ccActions || {};
+    const lb = fs.loanRecoveryBreakdown || {};
+
+    // Process cumulative history
+    let runningBalance = 0;
+    const processedHistory = (historyData || []).map(item => {
+        const s = item.stats || {};
+        const inflow = (s.totalLoanRecovered || 0) + (s.totalSavings || 0) + (s.totalPenalties || 0) + (s.otherSavings || 0);
+        const outflow = (s.totalLoansTaken || 0) + (s.totalReturned || 0);
+        const opening = runningBalance;
+        const closing = opening + inflow - outflow;
+        runningBalance = closing;
+        return { ...item, opening, inflow, outflow, closing };
+    });
+
+    const dists = paymentData?.distributions || {};
+    const topCollections = (dists.totalCollections || []).slice(0, 10);
+
+    const html = `
+<div style="font-family: 'Segoe UI', Arial, sans-serif; font-size: 9pt; color: #1a1a2e; line-height: 1.5; background: white; margin: 0 auto; padding: 20px; width: 700px; box-sizing: border-box;">
+    <!-- All styles are now strictly inline to prevent clashing with the main dashboard CSS -->
+
+    <!-- ── COVER PAGE ─────────────────────────────────────────────────────────── -->
+    <div style="text-align: center; padding: 60px 40px; background: #fafbff; margin-bottom: 40px; border-radius: 15px; border: 1px solid #eef2ff; box-sizing: border-box;">
+      <span style="font-size: 9pt; font-weight: 800; letter-spacing: 4px; color: #6366f1; text-transform: uppercase; margin-bottom: 20px; display: block;">SHG Analytics Platform</span>
+      <h1 style="font-size: 30pt; font-weight: 950; margin: 0 0 10px; color: #1e1b4b; line-height: 1.1;">Monthly Portfolio Analysis</h1>
+      <div style="font-size: 14pt; color: #475569; font-weight: 500; margin-bottom: 25px;">Detailed Performance & Financial Assessment Report</div>
+      <div style="font-size: 22pt; font-weight: 900; color: #ea580c; margin: 25px 0;">${period}</div>
+      <div style="font-size: 10pt; color: #64748b; margin-top: 50px; border-top: 2px solid #e2e8f0; padding-top: 25px; font-weight: 600;">
+        Regional Scope: <span style="color: #1e40af;">${scope}</span> <br/>
+        Drafted on: ${reportDate}
+      </div>
+    </div>
+
+    <!-- ── 1. EXECUTIVE SUMMARY ────────────────────────────────────────────────── -->
+    <h2 style="font-size: 16pt; font-weight: 800; color: #1e3a8a; margin: 40px 0 20px; padding-bottom: 10px; border-bottom: 2px solid #eff6ff;">1. Executive Summary</h2>
+    <div style="background: #f0f7ff; border-left: 4px solid #3b82f6; border-radius: 6px; padding: 12px 15px; margin: 15px 0; color: #1e40af; font-size: 8.5pt; box-sizing: border-box;">
+      This report outlines the performance and financial stability of Self Help Groups (SHGs) within <strong>${scope}</strong> for ${period}.
+    </div>
+
+    <div style="display: flex; gap: 10px; margin: 25px 0; box-sizing: border-box;">
+      <div style="background: #1e3a8a; flex: 1; color: white; padding: 20px 15px; border-radius: 12px; text-align: center; box-sizing: border-box;">
+        <span style="font-size: 7.5pt; font-weight: 800; text-transform: uppercase; color: #bfdbfe; display: block; margin-bottom: 8px;">TOTAL SHGs</span>
+        <span style="font-size: 18pt; font-weight: 900;">${fmt(shg.total)}</span>
+      </div>
+      <div style="background: #059669; flex: 1; color: white; padding: 20px 15px; border-radius: 12px; text-align: center; box-sizing: border-box;">
+        <span style="font-size: 7.5pt; font-weight: 800; text-transform: uppercase; color: #a7f3d0; display: block; margin-bottom: 8px;">DOCS UPLOADED</span>
+        <span style="font-size: 18pt; font-weight: 900;">${fmt(shg.uploaded)}</span>
+        <div style="font-size: 7.5pt; color: #d1fae5; margin-top: 5px;">${pct(shg.uploaded, shg.total)} completion</div>
+      </div>
+      <div style="background: #ca8a04; flex: 1; color: white; padding: 20px 15px; border-radius: 12px; text-align: center; box-sizing: border-box;">
+        <span style="font-size: 7.5pt; font-weight: 800; text-transform: uppercase; color: #fef3c7; display: block; margin-bottom: 8px;">PENDING REVIEWS</span>
+        <span style="font-size: 18pt; font-weight: 900;">${fmt(shg.pending)}</span>
+      </div>
+    </div>
+
+    <table style="border-collapse: collapse; width: 100%; border: 1px solid #e2e8f0; margin-bottom: 25px;">
+      <thead><tr style="background: #1e3a8a; color: white;">
+        <th style="padding: 10px 8px; text-align: left; font-weight: 700; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid #e2e8f0;">Metric</th>
+        <th style="padding: 10px 8px; text-align: left; font-weight: 700; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid #e2e8f0;">Count</th>
+        <th style="padding: 10px 8px; text-align: left; font-weight: 700; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid #e2e8f0;">Progress</th>
+        <th style="padding: 10px 8px; text-align: left; font-weight: 700; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid #e2e8f0;">Status</th>
+      </tr></thead>
+      <tbody>
+        ${[
+          { label: 'Registered Groups', val: shg.total, rel: '100%', badge: 'Baseline', bColor: '#f1f5f9', tColor: '#475569' },
+          { label: 'Successful Uploads', val: shg.uploaded, rel: pct(shg.uploaded, shg.total), badge: 'Completed', bColor: '#dcfce7', tColor: '#166534' },
+          { label: 'Conversations Finalized', val: conv.converted, rel: pct(conv.converted, shg.uploaded), badge: 'Validated', bColor: '#dcfce7', tColor: '#166534' },
+          { label: 'Processing Failures', val: conv.failed, rel: pct(conv.failed, shg.uploaded), badge: 'Needs Attention', bColor: '#fee2e2', tColor: '#991b1b' }
+        ].map(row => `
+          <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 9px 10px; font-weight: 600; border: 1px solid #e2e8f0;">${row.label}</td>
+            <td style="padding: 9px 10px; text-align: right; font-weight: 700; font-family: 'Courier New', monospace; border: 1px solid #e2e8f0;">${fmt(row.val)}</td>
+            <td style="padding: 9px 10px; text-align: right; font-weight: 700; font-family: 'Courier New', monospace; border: 1px solid #e2e8f0;">${row.rel}</td>
+            <td style="padding: 9px 10px; border: 1px solid #e2e8f0;"><span style="display: inline-block; padding: 3px 10px; border-radius: 100px; font-size: 7.5pt; font-weight: 800; text-transform: uppercase; background: ${row.bColor}; color: ${row.tColor};">${row.badge}</span></td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+
+    <!-- ── 2. FINANCIAL ANALYSIS ──────────────────────────────────────────────── -->
+    <h2 style="font-size: 16pt; font-weight: 800; color: #1e3a8a; margin: 40px 0 20px; padding-bottom: 10px; border-bottom: 2px solid #eff6ff; page-break-before: always;">2. Financial Performance Overiview</h2>
+    <div style="background: #f0f7ff; border-left: 4px solid #3b82f6; border-radius: 6px; padding: 12px 15px; margin: 15px 0; color: #1e40af; font-size: 8.5pt; box-sizing: border-box;">
+      Consolidated financial position across all reporting groups. Values are formatted in Indian National Rupees (INR).
+    </div>
+    
+    <div style="display: flex; gap: 10px; margin: 25px 0; box-sizing: border-box;">
+      <div style="background: #0f172a; flex: 1; color: white; padding: 20px 15px; border-radius: 12px; text-align: center; box-sizing: border-box;">
+        <span style="font-size: 7.5pt; font-weight: 800; text-transform: uppercase; color: #94a3b8; display: block; margin-bottom: 8px;">GROSS COLLECTIONS</span>
+        <span style="font-size: 18pt; font-weight: 900;">${formatINR(fs.totalLoanRecovered)}</span>
+      </div>
+      <div style="background: #1e40af; flex: 1; color: white; padding: 20px 15px; border-radius: 12px; text-align: center; box-sizing: border-box;">
+        <span style="font-size: 7.5pt; font-weight: 800; text-transform: uppercase; color: #bfdbfe; display: block; margin-bottom: 8px;">MEMBER DEPOSITS</span>
+        <span style="font-size: 18pt; font-weight: 900;">${formatINR(fs.totalSavings)}</span>
+      </div>
+      <div style="background: #9f1239; flex: 1; color: white; padding: 20px 15px; border-radius: 12px; text-align: center; box-sizing: border-box;">
+        <span style="font-size: 7.5pt; font-weight: 800; text-transform: uppercase; color: #fecaca; display: block; margin-bottom: 8px;">LOANS DISBURSED</span>
+        <span style="font-size: 18pt; font-weight: 900;">${formatINR(fs.totalLoansTaken)}</span>
+      </div>
+    </div>
+
+    <table style="border-collapse: collapse; width: 100%; border: 1px solid #e2e8f0; margin-bottom: 25px;">
+      <thead><tr style="background: #1e3a8a; color: white;">
+        <th style="padding: 10px 8px; text-align: left; font-weight: 700; font-size: 8pt; text-transform: uppercase; border: 1px solid #e2e8f0;">Category</th>
+        <th style="padding: 10px 8px; text-align: left; font-weight: 700; font-size: 8pt; text-transform: uppercase; border: 1px solid #e2e8f0;">Current Value</th>
+        <th style="padding: 10px 8px; text-align: left; font-weight: 700; font-size: 8pt; text-transform: uppercase; border: 1px solid #e2e8f0;">Account Type</th>
+      </tr></thead>
+      <tbody>
+        <tr style="border-bottom: 1px solid #f1f5f9;"><td style="padding: 9px 10px; font-weight: 600; border: 1px solid #e2e8f0;">Loan Collections</td><td style="padding: 9px 10px; text-align: right; font-weight: 700; font-family: 'Courier New', monospace; color: #059669; border: 1px solid #e2e8f0;">${formatINR(fs.totalLoanRecovered)}</td><td style="padding: 9px 10px; border: 1px solid #e2e8f0;">Inflow</td></tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;"><td style="padding: 9px 10px; font-weight: 600; border: 1px solid #e2e8f0;">Savings Deposits</td><td style="padding: 9px 10px; text-align: right; font-weight: 700; font-family: 'Courier New', monospace; color: #1e40af; border: 1px solid #e2e8f0;">${formatINR(fs.totalSavings)}</td><td style="padding: 9px 10px; border: 1px solid #e2e8f0;">Deposit</td></tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;"><td style="padding: 9px 10px; font-weight: 600; border: 1px solid #e2e8f0;">Loans Sanctioned</td><td style="padding: 9px 10px; text-align: right; font-weight: 700; font-family: 'Courier New', monospace; color: #dc2626; border: 1px solid #e2e8f0;">-${formatINR(fs.totalLoansTaken)}</td><td style="padding: 9px 10px; border: 1px solid #e2e8f0;">Outflow</td></tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;"><td style="padding: 9px 10px; font-weight: 600; border: 1px solid #e2e8f0;">Late Surcharges</td><td style="padding: 9px 10px; text-align: right; font-weight: 700; font-family: 'Courier New', monospace; color: #d97706; border: 1px solid #e2e8f0;">${formatINR(fs.totalPenalties)}</td><td style="padding: 9px 10px; border: 1px solid #e2e8f0;">Income</td></tr>
+        <tr style="background: #f8fafc; font-weight: bold;">
+            <td style="padding: 9px 10px; border: 1px solid #e2e8f0;">NET SURPLUS</td>
+            <td style="padding: 9px 10px; text-align: right; font-size: 12pt; color: #0f172a; border: 1px solid #e2e8f0;">${formatINR((fs.totalLoanRecovered || 0) + (fs.totalSavings || 0) - (fs.totalLoansTaken || 0))}</td>
+            <td style="padding: 9px 10px; border: 1px solid #e2e8f0;">Portfolio Growth</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div style="background: #eff6ff; border-left: 4px solid #1e40af; border-radius: 6px; padding: 12px 15px; margin: 15px 0; color: #1e40af; font-size: 8.5pt; box-sizing: border-box;">
+       <strong>System Observations:</strong>
+       <ul style="margin: 5px 0 0 15px; padding: 0;">
+         <li>Recovery Efficiency: ${fs.totalLoansTaken > 0 ? ((fs.totalLoanRecovered / fs.totalLoansTaken) * 100).toFixed(1) + '%' : '100%'}.</li>
+         <li>Monthly contribution stability remains within healthy threshold.</li>
+       </ul>
+    </div>
+
+    <!-- ── 3. REGIONAL PERFORMANCE ────────────────────────────────────────────── -->
+    <h2 style="font-size: 16pt; font-weight: 800; color: #1e3a8a; margin: 40px 0 20px; padding-bottom: 10px; border-bottom: 2px solid #eff6ff; page-break-before: always;">3. Regional Performance (Top 10)</h2>
+    ${topCollections.length > 0 ? `
+    <table style="border-collapse: collapse; width: 100%; border: 1px solid #e2e8f0; margin-bottom: 25px;">
+      <thead><tr style="background: #1e3a8a; color: white;">
+        <th style="padding: 10px 8px; border: 1px solid #e2e8f0;">Rank</th>
+        <th style="padding: 10px 8px; border: 1px solid #e2e8f0;">Regional Details</th>
+        <th style="padding: 10px 8px; border: 1px solid #e2e8f0;">Volume</th>
+        <th style="padding: 10px 8px; border: 1px solid #e2e8f0;">Share (%)</th>
+      </tr></thead>
+      <tbody>
+        ${topCollections.map((d, i) => {
+            const total = (paymentData?.distributions?.totalCollections || []).reduce((a, b) => a + (b.value || 0), 0) || 1;
+            const share = (d.value / total) * 100;
+            return `<tr style="border-bottom: 1px solid #f1f5f9;">
+              <td style="padding: 9px 10px; border: 1px solid #e2e8f0;">${i + 1}</td>
+              <td style="padding: 9px 10px; font-weight: 600; border: 1px solid #e2e8f0;">${d.name}</td>
+              <td style="padding: 9px 10px; text-align: right; font-weight: 700; font-family: 'Courier New', monospace; color: #059669; border: 1px solid #e2e8f0;">${formatINR(d.value)}</td>
+              <td style="padding: 9px 10px; text-align: right; border: 1px solid #e2e8f0;">${share.toFixed(1)}%</td>
+            </tr>`;
+        }).join('')}
+      </tbody>
+    </table>` : '<div style="color: #94a3b8; font-size: 9pt; font-style: italic; padding: 20px;">No regional statistical distribution recorded.</div>'}
+
+    <!-- ── 4. RECOMMENDATIONS ──────────────────────────────────────────────────── -->
+    <h2 style="font-size: 16pt; font-weight: 800; color: #1e3a8a; margin: 40px 0 20px; padding-bottom: 10px; border-bottom: 2px solid #eff6ff;">4. Critical Recommendations</h2>
+    <table style="border-collapse: collapse; width: 100%; border: 1px solid #e2e8f0; margin-bottom: 25px;">
+      <thead><tr style="background: #1e3a8a; color: white;">
+        <th style="padding: 10px 8px; border: 1px solid #e2e8f0;">Action Item</th>
+        <th style="padding: 10px 8px; border: 1px solid #e2e8f0;">Unit Count</th>
+        <th style="padding: 10px 8px; border: 1px solid #e2e8f0;">Priority</th>
+      </tr></thead>
+      <tbody>
+        <tr style="border-bottom: 1px solid #f1f5f9;"><td style="padding: 9px 10px; font-weight: 600; border: 1px solid #e2e8f0;">Awaiting Field Upload</td><td style="padding: 9px 10px; text-align: right; font-weight: 700; font-family: 'Courier New', monospace; border: 1px solid #e2e8f0;">${fmt(shg.pending || 0)}</td><td style="padding: 9px 10px; text-align: center; border: 1px solid #e2e8f0;"><span style="display: inline-block; padding: 3px 10px; border-radius: 100px; font-size: 7.5pt; font-weight: 800; text-transform: uppercase; background: #fee2e2; color: #9f1239;">HIGH</span></td></tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;"><td style="padding: 9px 10px; font-weight: 600; border: 1px solid #e2e8f0;">Failed Processing Audit</td><td style="padding: 9px 10px; text-align: right; font-weight: 700; font-family: 'Courier New', monospace; border: 1px solid #e2e8f0;">${fmt(conv.failed || 0)}</td><td style="padding: 9px 10px; text-align: center; border: 1px solid #e2e8f0;"><span style="display: inline-block; padding: 3px 10px; border-radius: 100px; font-size: 7.5pt; font-weight: 800; text-transform: uppercase; background: #fee2e2; color: #9f1239;">URGENT</span></td></tr>
+      </tbody>
+    </table>
+
+    <div style="color: #94a3b8; font-size: 8pt; text-align: center; margin-top: 40px; border-top: 1px solid #f1f5f9; padding-top: 15px; box-sizing: border-box;">
+      <strong>OFFICIAL ANALYTICS RECORD</strong> <br/>
+      Generated by SHG Intelligence Engine &copy; ${new Date().getFullYear()} <br/>
+      Period: ${period} | Region: ${scope}
+    </div>
+</div>`;
+
+    const opt = {
+        margin: 10,
+        filename: `Official_SHG_Report_${period.replace(/\s+/g, '_')}.pdf`,
+        image: { type: 'jpeg', quality: 1.0 },
+        html2canvas: { 
+            scale: 2, 
+            useCORS: true,
+            logging: false,
+            backgroundColor: '#ffffff',
+            windowWidth: 800, 
+            scrollY: 0,
+            scrollX: 0
+        },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+
+    html2pdf().set(opt).from(html).save().catch(err => {
+        console.error('PDF library Error:', err);
+    });
+};
+
+
 
 // ─── DOCUMENT EXPORT (Rich HTML → .doc) ──────────────────────────────────────
 export const exportAnalyticsDoc = ({ summary, paymentData, paymentTrends, historyData, trends, filters }) => {

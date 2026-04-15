@@ -13,7 +13,7 @@ import {
 import InteractiveAPMap from '../components/InteractiveAPMap';
 import { API_BASE } from '../utils/apiConfig';
 import { exportPerformanceExcel, exportCumulativeExcel } from '../utils/excelGenerator';
-import { exportAnalyticsDoc, exportAnalyticsPPT } from '../utils/analyticsReportGenerator';
+import { exportAnalyticsDoc, exportAnalyticsPDF, exportAnalyticsPPT } from '../utils/analyticsReportGenerator';
 
 const formatIndianCurrency = (value) => {
     if (value === null || value === undefined) return '₹0';
@@ -567,6 +567,24 @@ const AnalyticsPage = ({ filterProps }) => {
         }
     };
 
+    const handleExportPDF = async () => {
+        setShowDownloadMenu(false);
+        setIsExporting('pdf');
+        showToast('loading', '⏳ Generating detailed PDF report...');
+        try {
+            await new Promise(r => setTimeout(r, 100));
+            exportAnalyticsPDF({ summary, paymentData, paymentTrends, historyData, trends, filters });
+            clearToast();
+            showToast('success', '✅ PDF report downloaded successfully!', 4000);
+        } catch (err) {
+            console.error('PDF export error:', err);
+            clearToast();
+            showToast('error', '❌ Failed to generate report. Please try again.', 5000);
+        } finally {
+            setIsExporting(null);
+        }
+    };
+
     return (
         <div className="min-h-screen text-white p-4 lg:p-8 animate-in fade-in duration-700 pb-16">
             {/* Toast Notification */}
@@ -630,7 +648,7 @@ const AnalyticsPage = ({ filterProps }) => {
                         ) : (
                             <Download className="w-4 h-4" />
                         )}
-                        {isExporting === 'doc' ? 'Generating Doc...' : isExporting === 'ppt' ? 'Building PPT...' : 'Download'}
+                        {isExporting === 'doc' ? 'Generating Doc...' : isExporting === 'pdf' ? 'Building PDF...' : isExporting === 'ppt' ? 'Building PPT...' : 'Download'}
                         {!isExporting && (
                             <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${showDownloadMenu ? 'rotate-180' : ''}`} />
                         )}
@@ -655,17 +673,32 @@ const AnalyticsPage = ({ filterProps }) => {
                         </p>
                     </div>
 
+                    {/* PDF Option */}
+                    <button
+                        onClick={handleExportPDF}
+                        className="w-full flex items-start gap-4 px-4 py-4 hover:bg-white/5 transition-all duration-200 group border-b border-white/5"
+                    >
+                        <div className="p-2.5 bg-rose-600/20 group-hover:bg-rose-600/40 rounded-xl transition-colors shrink-0 mt-0.5">
+                            <FileText className="w-5 h-5 text-rose-400 group-hover:text-rose-300" />
+                        </div>
+                        <div className="text-left">
+                            <p className="text-sm font-black text-white group-hover:text-rose-200 transition-colors">PDF Report</p>
+                            <p className="text-[11px] text-gray-400 mt-0.5 leading-relaxed">High-fidelity portable report — best for tablets, mobile & printing</p>
+                            <span className="inline-block mt-1.5 text-[9px] font-bold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-full uppercase tracking-wide">.pdf format</span>
+                        </div>
+                    </button>
+
                     {/* Document Option */}
                     <button
                         onClick={handleExportDoc}
                         className="w-full flex items-start gap-4 px-4 py-4 hover:bg-white/5 transition-all duration-200 group border-b border-white/5"
                     >
                         <div className="p-2.5 bg-indigo-600/20 group-hover:bg-indigo-600/40 rounded-xl transition-colors shrink-0 mt-0.5">
-                            <FileText className="w-5 h-5 text-indigo-400 group-hover:text-indigo-300" />
+                            <FileDown className="w-5 h-5 text-indigo-400 group-hover:text-indigo-300" />
                         </div>
                         <div className="text-left">
-                            <p className="text-sm font-black text-white group-hover:text-indigo-200 transition-colors">Document Report</p>
-                            <p className="text-[11px] text-gray-400 mt-0.5 leading-relaxed">Full written report — upload stats, regional contribution, financial summary &amp; pending actions</p>
+                            <p className="text-sm font-black text-white group-hover:text-indigo-200 transition-colors">Word Document</p>
+                            <p className="text-[11px] text-gray-400 mt-0.5 leading-relaxed">Editable text report — optimized for MS Word processing</p>
                             <span className="inline-block mt-1.5 text-[9px] font-bold text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded-full uppercase tracking-wide">.doc format</span>
                         </div>
                     </button>
@@ -676,11 +709,11 @@ const AnalyticsPage = ({ filterProps }) => {
                         className="w-full flex items-start gap-4 px-4 py-4 hover:bg-white/5 transition-all duration-200 group"
                     >
                         <div className="p-2.5 bg-violet-600/20 group-hover:bg-violet-600/40 rounded-xl transition-colors shrink-0 mt-0.5">
-                            <BarChart2 className="w-5 h-5 text-violet-400 group-hover:text-violet-300" />
+                            <Presentation className="w-5 h-5 text-violet-400 group-hover:text-violet-300" />
                         </div>
                         <div className="text-left">
                             <p className="text-sm font-black text-white group-hover:text-violet-200 transition-colors">Presentation (PPT)</p>
-                            <p className="text-[11px] text-gray-400 mt-0.5 leading-relaxed">9-slide deck with KPI cards, bar charts, trend analysis &amp; regional breakdown</p>
+                            <p className="text-[11px] text-gray-400 mt-0.5 leading-relaxed">Executive 9-slide deck with charts & visuals</p>
                             <span className="inline-block mt-1.5 text-[9px] font-bold text-violet-400 bg-violet-500/10 border border-violet-500/20 px-2 py-0.5 rounded-full uppercase tracking-wide">.pptx format</span>
                         </div>
                     </button>

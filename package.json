@@ -21,6 +21,7 @@
     "@tensorflow-models/mobilenet": "^2.1.1",
     "@tensorflow/tfjs": "^4.22.0",
     "axios": "^1.13.2",
+    "html2pdf.js": "^0.14.0",
     "lucide-react": "^0.548.0",
     "papaparse": "^5.5.3",
     "pptxgenjs": "^4.0.1",
