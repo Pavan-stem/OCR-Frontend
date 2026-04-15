@@ -710,9 +710,19 @@ export const exportAnalyticsPPT = async ({ summary, paymentData, paymentTrends, 
         const months = paymentTrends.slice(0, 10);
         const bW = 12.4 / Math.max(months.length, 1);
 
-        // Bars
+        // Bars + month dividers
         months.forEach((t, i) => {
             const x = 0.4 + i * bW;
+
+            // Alternating faint background band per month
+            if (i % 2 === 0) {
+                slide.addShape(pptx.ShapeType.rect, {
+                    x, y: barAreaY, w: bW, h: barH,
+                    fill: { color: 'FFFFFF', transparency: 96 },
+                    line: { transparency: 100 },
+                });
+            }
+
             const metrics = [
                 { key: 'collections', color: '10B981', offset: 0 },
                 { key: 'deposits', color: '6366F1', offset: bW * 0.22 },
@@ -727,10 +737,21 @@ export const exportAnalyticsPPT = async ({ summary, paymentData, paymentTrends, 
                     });
                 }
             });
+
+            // Month label
             slide.addText(t.month || `M${i + 1}`, {
                 x, y: barAreaY + barH + 0.05, w: bW, h: 0.4,
-                align: 'center', fontSize: 8, color: '64748B', fontFace: 'Calibri',
+                align: 'center', fontSize: 8, color: '94A3B8', fontFace: 'Calibri',
             });
+
+            // Vertical divider between months (skip last)
+            if (i < months.length - 1) {
+                slide.addShape(pptx.ShapeType.line, {
+                    x: x + bW, y: barAreaY,
+                    w: 0, h: barH + 0.45,
+                    line: { color: '334155', width: 0.8, dashType: 'dash' },
+                });
+            }
         });
 
         // Legend
