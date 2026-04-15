@@ -1478,11 +1478,23 @@ const Page2FinanceBarChart = ({ data, breakdown, distributions, month, year }) =
 
                                 const totalVal = distData.reduce((acc, cur) => acc + cur.value, 0);
 
+                                // Per-category color palettes anchored to each category's accent color
+                                const CAT_PALETTES = {
+                                    savingsReceived:    ['#6366f1','#818cf8','#a5b4fc','#4f46e5','#3730a3','#4338ca','#7c3aed','#8b5cf6','#6d28d9','#c7d2fe'],
+                                    fundsReceived:      ['#8b5cf6','#a78bfa','#c4b5fd','#7c3aed','#6d28d9','#9333ea','#a855f7','#c026d3','#d946ef','#e879f9'],
+                                    investments:        ['#ec4899','#f472b6','#f9a8d4','#db2777','#be185d','#e11d48','#f43f5e','#fb7185','#fda4af','#ff6b81'],
+                                    recoveriesReceived: ['#f43f5e','#fb7185','#fda4af','#e11d48','#be123c','#f97316','#fb923c','#fdba74','#ef4444','#dc2626'],
+                                    expenses:           ['#f59e0b','#fbbf24','#fcd34d','#d97706','#b45309','#f97316','#fb923c','#ea580c','#c2410c','#ef4444'],
+                                    incomesReceived:    ['#10b981','#34d399','#6ee7b7','#059669','#047857','#14b8a6','#2dd4bf','#06b6d4','#0891b2','#22c55e'],
+                                    loanRecoveriesPaid: ['#3b82f6','#60a5fa','#93c5fd','#2563eb','#1d4ed8','#0ea5e9','#38bdf8','#7dd3fc','#06b6d4','#0891b2'],
+                                };
+                                const catColors = CAT_PALETTES[catInfo.key] || COLORS;
+
                                 return (
                                     <div key={idx} className="flex flex-col items-center">
-                                        <div className="flex items-center gap-2 mb-2 w-full pb-2">
-                                            <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: catInfo.color }} />
-                                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter truncate">{catInfo.name}</span>
+                                        <div className="flex items-center gap-2 mb-2 w-full pb-2 border-b" style={{ borderColor: catInfo.color + '33' }}>
+                                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: catInfo.color }} />
+                                            <span className="text-[9px] font-black uppercase tracking-tighter truncate" style={{ color: catInfo.color }}>{catInfo.name}</span>
                                         </div>
                                         
                                         <div className="w-full aspect-square relative min-h-[120px]">
@@ -1497,7 +1509,7 @@ const Page2FinanceBarChart = ({ data, breakdown, distributions, month, year }) =
                                                         stroke="none"
                                                     >
                                                         {distData.map((entry, index) => (
-                                                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                                            <Cell key={`cell-${index}`} fill={catColors[index % catColors.length]} />
                                                         ))}
                                                     </Pie>
                                                     <Tooltip 
@@ -1509,7 +1521,7 @@ const Page2FinanceBarChart = ({ data, breakdown, distributions, month, year }) =
                                                                 const percent = ((value / totalVal) * 100).toFixed(1);
                                                                 return (
                                                                     <div className="bg-slate-900/95 backdrop-blur-md px-3 py-2 rounded-xl shadow-2xl border border-white/10 flex flex-col gap-0.5 items-start min-w-[120px]">
-                                                                        <span className="text-[8px] font-black text-indigo-400 uppercase tracking-widest">{name}</span>
+                                                                        <span className="text-[8px] font-black uppercase tracking-widest" style={{ color: catInfo.color }}>{name}</span>
                                                                         <span className="text-sm font-black text-white">{formatIndianCurrency(value)}</span>
                                                                         <span className="text-[8px] font-bold text-slate-400">{percent}% of Category</span>
                                                                     </div>
@@ -1522,7 +1534,7 @@ const Page2FinanceBarChart = ({ data, breakdown, distributions, month, year }) =
                                             </ResponsiveContainer>
                                             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-0">
                                                 <span className="text-[7px] font-black text-gray-400 uppercase leading-none">Total</span>
-                                                <span className="text-[10px] font-black text-gray-900 mt-1">{formatIndianCurrency(totalVal)}</span>
+                                                <span className="text-[10px] font-black mt-1" style={{ color: catInfo.color }}>{formatIndianCurrency(totalVal)}</span>
                                             </div>
                                         </div>
                                     </div>
