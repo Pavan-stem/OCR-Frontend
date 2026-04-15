@@ -361,12 +361,12 @@ const UsersTab = ({ filterProps }) => {
       <body>
         <table border="1" style="width: 100%;">
           <colgroup>
-            <col width="80"><col width="250"><col width="150"><col width="100"><col width="100"><col width="100"><col width="100"><col width="120">
+            <col width="80"><col width="250"><col width="150"><col width="100"><col width="100"><col width="100"><col width="120">
           </colgroup>
       `;
 
       // Main Header
-      html += `<tr><th colspan="8" bgcolor="${colors.header}" style="${titleStyle}">${headerTitle}</th></tr>`;
+      html += `<tr><th colspan="7" bgcolor="${colors.header}" style="${titleStyle}">${headerTitle}</th></tr>`;
 
       // Column Headers
       const subHeaderStyle = `bgcolor="${colors.subHeader}" style="${commonStyle} font-weight: bold;"`;
@@ -376,7 +376,6 @@ const UsersTab = ({ filterProps }) => {
         <th ${subHeaderStyle}>Mandal</th>
         <th ${subHeaderStyle}>Total SHGs</th>
         <th ${subHeaderStyle}>Uploaded</th>
-        <th ${subHeaderStyle}>Approved</th>
         <th ${subHeaderStyle}>Converted</th>
         <th ${subHeaderStyle}>Pending at VOA</th>
       </tr>`;
@@ -392,13 +391,12 @@ const UsersTab = ({ filterProps }) => {
           <td ${apmStyle}>${user.mandal || ''}</td>
           <td ${apmStyle}>${user.totalFiles || 0}</td>
           <td ${apmStyle}>${user.uploadedFiles || 0}</td>
-          <td ${apmStyle}>${apmPerf.uploads.approved || 0}</td>
           <td ${apmStyle}>${apmPerf.conversion.success || 0}</td>
           <td ${apmStyle}>${user.pendingFiles || 0}</td>
         </tr>`;
 
         // Empty spacing row
-        html += '<tr><td colspan="8" style="height: 10px; border: none;"></td></tr>';
+        html += '<tr><td colspan="7" style="height: 10px; border: none;"></td></tr>';
 
         ccs.forEach(cc => {
           const ccPerf = getPerf(cc);
@@ -410,7 +408,6 @@ const UsersTab = ({ filterProps }) => {
             <td ${ccStyle}>${cc.mandal || ''}</td>
             <td ${ccStyle}>${cc.totalFiles || 0}</td>
             <td ${ccStyle}>${cc.uploadedFiles || 0}</td>
-            <td ${ccStyle}>${ccPerf.uploads.approved || 0}</td>
             <td ${ccStyle}>${ccPerf.conversion.success || 0}</td>
             <td ${ccStyle}>${cc.pendingFiles || 0}</td>
           </tr>`;
@@ -426,12 +423,11 @@ const UsersTab = ({ filterProps }) => {
               <td ${voStyle}>${vo.mandal || ''}</td>
               <td ${voStyle}>${vo.totalFiles || 0}</td>
               <td ${voStyle}>${vo.uploadedFiles || 0}</td>
-              <td ${voStyle}>${voPerf.uploads.approved || 0}</td>
               <td ${voStyle}>${voPerf.conversion.success || 0}</td>
               <td ${pendingCell}>${vo.pendingFiles || 0}</td>
             </tr>`;
           });
-          html += '<tr><td colspan="8" style="height: 10px; border: none;"></td></tr>';
+          html += '<tr><td colspan="7" style="height: 10px; border: none;"></td></tr>';
         });
       } else {
         const topRow = user;
@@ -447,13 +443,12 @@ const UsersTab = ({ filterProps }) => {
           <td ${topStyle}>${topRow.mandal || ''}</td>
           <td ${topStyle}>${topRow.totalFiles || 0}</td>
           <td ${topStyle}>${topRow.uploadedFiles || 0}</td>
-          <td ${topStyle}>${topPerf.uploads.approved || 0}</td>
           <td ${topStyle}>${topPerf.conversion.success || 0}</td>
           <td ${topPendingStyle}>${topRow.pendingFiles || 0}</td>
         </tr>`;
 
         if (isCC && childrenList.length > 0) {
-          html += '<tr><td colspan="8" style="height: 10px; border: none;"></td></tr>';
+          html += '<tr><td colspan="7" style="height: 10px; border: none;"></td></tr>';
           childrenList.forEach(vo => {
             const voPerf = getPerf(vo);
             const voStyle = `style="${commonStyle}"`;
@@ -465,7 +460,6 @@ const UsersTab = ({ filterProps }) => {
               <td ${voStyle}>${vo.mandal || ''}</td>
               <td ${voStyle}>${vo.totalFiles || 0}</td>
               <td ${voStyle}>${vo.uploadedFiles || 0}</td>
-              <td ${voStyle}>${voPerf.uploads.approved || 0}</td>
               <td ${voStyle}>${voPerf.conversion.success || 0}</td>
               <td ${pendingCell}>${vo.pendingFiles || 0}</td>
             </tr>`;
