@@ -538,7 +538,7 @@ const AnalyticsPage = ({ filterProps }) => {
         showToast('loading', '⏳ Generating detailed analytics document...');
         try {
             await new Promise(r => setTimeout(r, 100));
-            exportAnalyticsDoc({ summary, paymentData, paymentTrends, historyData, trends, filters });
+            await exportAnalyticsDoc({ summary, paymentData, paymentTrends, historyData, trends, filters });
             clearToast();
             showToast('success', '✅ Analytics document downloaded successfully!', 4000);
         } catch (err) {
@@ -573,7 +573,7 @@ const AnalyticsPage = ({ filterProps }) => {
         showToast('loading', '⏳ Generating detailed PDF report...');
         try {
             await new Promise(r => setTimeout(r, 100));
-            exportAnalyticsPDF({ summary, paymentData, paymentTrends, historyData, trends, filters });
+            await exportAnalyticsPDF({ summary, paymentData, paymentTrends, historyData, trends, filters });
             clearToast();
             showToast('success', '✅ PDF report downloaded successfully!', 4000);
         } catch (err) {

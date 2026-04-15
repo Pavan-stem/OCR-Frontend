@@ -263,8 +263,9 @@ export const exportAnalyticsPDF = ({ summary, paymentData, paymentTrends, histor
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
     };
 
-    html2pdf().set(opt).from(html).save().catch(err => {
+    return html2pdf().set(opt).from(html).save().catch(err => {
         console.error('PDF library Error:', err);
+        throw err;
     });
 };
 
