@@ -3,7 +3,8 @@ import {
     Download, FileBarChart, ChartPie as PieChartIcon, Activity, Clock, CheckCircle,
     FileText, Filter, LayoutGrid, List, ChevronRight, AlertCircle,
     TrendingUp, Users, MapPin, Calendar, ArrowUpRight, ArrowDownRight,
-    Shield, User, ChevronDown, Loader2, Database, Landmark, BarChart2
+    Shield, User, ChevronDown, Loader2, Database, Landmark, BarChart2,
+    Presentation, FileDown
 } from 'lucide-react';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -12,6 +13,7 @@ import {
 import InteractiveAPMap from '../components/InteractiveAPMap';
 import { API_BASE } from '../utils/apiConfig';
 import { exportPerformanceExcel, exportCumulativeExcel } from '../utils/excelGenerator';
+import { exportAnalyticsDoc, exportAnalyticsPPT } from '../utils/analyticsReportGenerator';
 
 const formatIndianCurrency = (value) => {
     if (value === null || value === undefined) return '₹0';
@@ -163,6 +165,13 @@ const AnalyticsPage = ({ filterProps }) => {
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [refreshKey, setRefreshKey] = useState(0);
     const [isSSEConnected, setIsSSEConnected] = useState(false);
+
+    // Download Dropdown State
+    const [showDownloadMenu, setShowDownloadMenu] = useState(false);
+    const [isExporting, setIsExporting] = useState(null); // 'doc' | 'ppt' | null
+    const [dropdownPos, setDropdownPos] = useState({ top: 0, right: 0 });
+    const downloadButtonRef = useRef(null);
+    const downloadPanelRef = useRef(null);
 
     // Toast Notification State
     const [toast, setToast] = useState(null);
@@ -499,6 +508,65 @@ const AnalyticsPage = ({ filterProps }) => {
         }
     };
 
+    // Close download menu on outside click
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            const clickedButton = downloadButtonRef.current?.contains(e.target);
+            const clickedPanel  = downloadPanelRef.current?.contains(e.target);
+            if (!clickedButton && !clickedPanel) {
+                setShowDownloadMenu(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const toggleDownloadMenu = () => {
+        if (!showDownloadMenu && downloadButtonRef.current) {
+            const rect = downloadButtonRef.current.getBoundingClientRect();
+            setDropdownPos({
+                top: rect.bottom + 8,
+                right: window.innerWidth - rect.right,
+            });
+        }
+        setShowDownloadMenu(prev => !prev);
+    };
+
+    const handleExportDoc = async () => {
+        setShowDownloadMenu(false);
+        setIsExporting('doc');
+        showToast('loading', '⏳ Generating detailed analytics document...');
+        try {
+            await new Promise(r => setTimeout(r, 100));
+            exportAnalyticsDoc({ summary, paymentData, paymentTrends, historyData, trends, filters });
+            clearToast();
+            showToast('success', '✅ Analytics document downloaded successfully!', 4000);
+        } catch (err) {
+            console.error('Doc export error:', err);
+            clearToast();
+            showToast('error', '❌ Failed to generate document. Please try again.', 5000);
+        } finally {
+            setIsExporting(null);
+        }
+    };
+
+    const handleExportPPT = async () => {
+        setShowDownloadMenu(false);
+        setIsExporting('ppt');
+        showToast('loading', '⏳ Building PowerPoint presentation...');
+        try {
+            await exportAnalyticsPPT({ summary, paymentData, paymentTrends, historyData, filters });
+            clearToast();
+            showToast('success', '✅ PowerPoint presentation downloaded successfully!', 4000);
+        } catch (err) {
+            console.error('PPT export error:', err);
+            clearToast();
+            showToast('error', '❌ Failed to generate presentation. Please try again.', 5000);
+        } finally {
+            setIsExporting(null);
+        }
+    };
+
     return (
         <div className="min-h-screen text-white p-4 lg:p-8 animate-in fade-in duration-700 pb-16">
             {/* Toast Notification */}
@@ -524,7 +592,8 @@ const AnalyticsPage = ({ filterProps }) => {
                     </h2>
                 </div>
 
-                <div className="flex flex-nowrap items-center gap-2 w-full lg:w-auto pr-4">
+                <div className="flex flex-nowrap items-center gap-3 w-full lg:w-auto pr-4">
+                    {/* Tab Switcher */}
                     <div className="flex bg-white/5 backdrop-blur-xl p-1.5 rounded-2xl border border-white/10 shadow-2xl">
                         {[
                             { id: 'charts', icon: PieChartIcon, label: 'Performance Charts' },
@@ -542,8 +611,86 @@ const AnalyticsPage = ({ filterProps }) => {
                             </button>
                         ))}
                     </div>
+
+                    {/* Download Button — dropdown panel rendered at root level via fixed position */}
+                    <button
+                        ref={downloadButtonRef}
+                        onClick={toggleDownloadMenu}
+                        disabled={!!isExporting}
+                        className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs font-black transition-all duration-300 border shadow-lg
+                            ${ isExporting
+                                ? 'bg-indigo-700/50 border-indigo-500/30 text-indigo-300 cursor-not-allowed'
+                                : showDownloadMenu
+                                    ? 'bg-indigo-600 border-indigo-500 text-white shadow-indigo-500/30 scale-[1.02]'
+                                    : 'bg-white/5 border-white/10 text-gray-300 hover:bg-indigo-600 hover:border-indigo-500 hover:text-white hover:shadow-indigo-500/20'
+                            }`}
+                    >
+                        {isExporting ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                            <Download className="w-4 h-4" />
+                        )}
+                        {isExporting === 'doc' ? 'Generating Doc...' : isExporting === 'ppt' ? 'Building PPT...' : 'Download'}
+                        {!isExporting && (
+                            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${showDownloadMenu ? 'rotate-180' : ''}`} />
+                        )}
+                    </button>
                 </div>
             </div>
+
+            {/* Download Dropdown Panel — fixed position to escape backdrop-blur stacking context */}
+            {showDownloadMenu && !isExporting && (
+                <div
+                    ref={downloadPanelRef}
+                    className="fixed w-72 bg-[#0f1035] border border-white/10 rounded-2xl shadow-2xl shadow-black/60 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
+                    style={{ top: dropdownPos.top, right: dropdownPos.right, zIndex: 999999 }}
+                >
+                    {/* Header */}
+                    <div className="px-4 py-3 border-b border-white/5 bg-white/[0.02]">
+                        <p className="text-[10px] font-black text-indigo-400/80 uppercase tracking-[0.2em]">Export Report</p>
+                        <p className="text-[11px] text-gray-400 mt-0.5">
+                            {filters?.month && filters?.year
+                                ? `${new Date(0, parseInt(filters.month) - 1).toLocaleString('default', { month: 'long' })} ${filters.year}`
+                                : 'Current Period'}
+                        </p>
+                    </div>
+
+                    {/* Document Option */}
+                    <button
+                        onClick={handleExportDoc}
+                        className="w-full flex items-start gap-4 px-4 py-4 hover:bg-white/5 transition-all duration-200 group border-b border-white/5"
+                    >
+                        <div className="p-2.5 bg-indigo-600/20 group-hover:bg-indigo-600/40 rounded-xl transition-colors shrink-0 mt-0.5">
+                            <FileText className="w-5 h-5 text-indigo-400 group-hover:text-indigo-300" />
+                        </div>
+                        <div className="text-left">
+                            <p className="text-sm font-black text-white group-hover:text-indigo-200 transition-colors">Document Report</p>
+                            <p className="text-[11px] text-gray-400 mt-0.5 leading-relaxed">Full written report — upload stats, regional contribution, financial summary &amp; pending actions</p>
+                            <span className="inline-block mt-1.5 text-[9px] font-bold text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded-full uppercase tracking-wide">.doc format</span>
+                        </div>
+                    </button>
+
+                    {/* PPT Option */}
+                    <button
+                        onClick={handleExportPPT}
+                        className="w-full flex items-start gap-4 px-4 py-4 hover:bg-white/5 transition-all duration-200 group"
+                    >
+                        <div className="p-2.5 bg-violet-600/20 group-hover:bg-violet-600/40 rounded-xl transition-colors shrink-0 mt-0.5">
+                            <BarChart2 className="w-5 h-5 text-violet-400 group-hover:text-violet-300" />
+                        </div>
+                        <div className="text-left">
+                            <p className="text-sm font-black text-white group-hover:text-violet-200 transition-colors">Presentation (PPT)</p>
+                            <p className="text-[11px] text-gray-400 mt-0.5 leading-relaxed">9-slide deck with KPI cards, bar charts, trend analysis &amp; regional breakdown</p>
+                            <span className="inline-block mt-1.5 text-[9px] font-bold text-violet-400 bg-violet-500/10 border border-violet-500/20 px-2 py-0.5 rounded-full uppercase tracking-wide">.pptx format</span>
+                        </div>
+                    </button>
+
+                    {/* Footer hint */}
+                    <div className="px-4 py-2.5 bg-white/[0.015] border-t border-white/5">
+                        <p className="text-[9px] text-gray-600 text-center">Uses currently applied filters &amp; date range</p>
+                    </div>
+                </div>
+            )}
 
             {/* Role-Adaptive Filter Bar */}
             <div className="mb-10">
