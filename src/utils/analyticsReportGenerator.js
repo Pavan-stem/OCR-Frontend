@@ -6,6 +6,13 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'];
 
 const getMonthName = (m) => MONTHS[parseInt(m) - 1] || String(m);
+const DEBUG_ID_MAP = {
+    "101": "VO Savings",
+    "105": "VO Principal",
+    "109": "Bank Interest Paid",
+    "113": "Streenidhi Interest Paid"
+};
+
 
 const formatINR = (val) => {
     if (!val && val !== 0) return '₹0';
@@ -160,8 +167,43 @@ export const exportAnalyticsPDF = ({ summary, paymentData, paymentTrends, histor
        </ul>
     </div>
 
-    <!-- ── 3. REGIONAL PERFORMANCE ────────────────────────────────────────────── -->
-    <h2 style="font-size: 16pt; font-weight: 800; color: #1e3a8a; margin: 40px 0 20px; padding-bottom: 10px; border-bottom: 2px solid #eff6ff; page-break-before: always;">3. Regional Performance (Top 10)</h2>
+    </div>
+
+    <!-- ── 3. MANUAL LEDGER SUMMARY (Page 2) ────────────────────────────────── -->
+    <h2 style="font-size: 16pt; font-weight: 800; color: #1e3a8a; margin: 40px 0 20px; padding-bottom: 10px; border-bottom: 2px solid #eff6ff; page-break-before: always;">3. Manual Ledger Summary</h2>
+    <div style="background: #f0f7ff; border-left: 4px solid #3b82f6; border-radius: 6px; padding: 12px 15px; margin: 15px 0; color: #1e40af; font-size: 8.5pt; box-sizing: border-box;">
+      Specialized financial indicators from manual ledger records for ${period}.
+    </div>
+
+    <table style="border-collapse: collapse; width: 100%; border: 1px solid #e2e8f0; margin-bottom: 25px;">
+      <thead><tr style="background: #0f172a; color: white;">
+        <th style="padding: 10px 8px; text-align: left; font-weight: 700; font-size: 8pt; text-transform: uppercase; border: 1px solid #e2e8f0;">Category</th>
+        <th style="padding: 10px 8px; text-align: left; font-weight: 700; font-size: 8pt; text-transform: uppercase; border: 1px solid #e2e8f0;">Amount</th>
+      </tr></thead>
+      <tbody>
+        ${(() => {
+            const p2 = fs.page2Finance || {};
+            const items = [
+                { label: 'Savings Received', val: p2.savingsReceived, color: '#1e40af' },
+                { label: 'Funds Received', val: p2.fundsReceived, color: '#1e40af' },
+                { label: 'Group Investments', val: p2.investments, color: '#ca8a04' },
+                { label: 'Recoveries Received', val: p2.recoveriesReceived, color: '#059669' },
+                { label: 'Group Expenses', val: p2.expenses, color: '#dc2626' },
+                { label: 'Group Incomes', val: p2.incomesReceived, color: '#059669' },
+                { label: 'Loan Recoveries Paid', val: p2.loanRecoveriesPaid, color: '#dc2626' }
+            ];
+            return items.filter(i => i.val > 0 || i.val === 0).map(row => `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 9px 10px; font-weight: 600; border: 1px solid #e2e8f0;">${row.label}</td>
+                    <td style="padding: 9px 10px; text-align: right; font-weight: 700; font-family: 'Courier New', monospace; color: ${row.color}; border: 1px solid #e2e8f0;">${formatINR(row.val)}</td>
+                </tr>
+            `).join('');
+        })()}
+      </tbody>
+    </table>
+
+    <!-- ── 4. REGIONAL PERFORMANCE ────────────────────────────────────────────── -->
+    <h2 style="font-size: 16pt; font-weight: 800; color: #1e3a8a; margin: 40px 0 20px; padding-bottom: 10px; border-bottom: 2px solid #eff6ff; page-break-before: always;">4. Regional Performance (Top 10)</h2>
     ${topCollections.length > 0 ? `
     <table style="border-collapse: collapse; width: 100%; border: 1px solid #e2e8f0; margin-bottom: 25px;">
       <thead><tr style="background: #1e3a8a; color: white;">
@@ -184,8 +226,8 @@ export const exportAnalyticsPDF = ({ summary, paymentData, paymentTrends, histor
       </tbody>
     </table>` : '<div style="color: #94a3b8; font-size: 9pt; font-style: italic; padding: 20px;">No regional statistical distribution recorded.</div>'}
 
-    <!-- ── 4. RECOMMENDATIONS ──────────────────────────────────────────────────── -->
-    <h2 style="font-size: 16pt; font-weight: 800; color: #1e3a8a; margin: 40px 0 20px; padding-bottom: 10px; border-bottom: 2px solid #eff6ff;">4. Critical Recommendations</h2>
+    <!-- ── 5. RECOMMENDATIONS ──────────────────────────────────────────────────── -->
+    <h2 style="font-size: 16pt; font-weight: 800; color: #1e3a8a; margin: 40px 0 20px; padding-bottom: 10px; border-bottom: 2px solid #eff6ff;">5. Critical Recommendations</h2>
     <table style="border-collapse: collapse; width: 100%; border: 1px solid #e2e8f0; margin-bottom: 25px;">
       <thead><tr style="background: #1e3a8a; color: white;">
         <th style="padding: 10px 8px; border: 1px solid #e2e8f0;">Action Item</th>
@@ -472,8 +514,41 @@ ${summary ? `
   </td></tr>
 </table>
 
-<!-- ── 3. REGIONAL CONTRIBUTION ────────────────────────────────────────────── -->
-<h2>3. Regional Contribution Analysis</h2>
+<!-- ── 3. MANUAL LEDGER SUMMARY (Page 2) ────────────────────────────────── -->
+<h2>3. Manual Ledger Summary</h2>
+<div class="section-intro">
+  This section outlines specialized financial indicators from manual ledger records for <strong>${period}</strong>, covering collective savings, funds, investments, and operational expenses.
+</div>
+
+<table class="finance-table">
+  <thead><tr>
+    <th>Page 2 Financial Category</th><th>Amount</th><th>Type</th>
+  </tr></thead>
+  <tbody>
+    ${(() => {
+        const p2 = fs.page2Finance || {};
+        const items = [
+            { label: 'Savings Received', val: p2.savingsReceived, type: 'Inflow', color: 'text-indigo' },
+            { label: 'Funds Received', val: p2.fundsReceived, type: 'Inflow', color: 'text-indigo' },
+            { label: 'Group Investments', val: p2.investments, type: 'Asset', color: 'text-amber' },
+            { label: 'Recoveries Received', val: p2.recoveriesReceived, type: 'Inflow', color: 'text-emerald' },
+            { label: 'Group Expenses', val: p2.expenses, type: 'Outflow', color: 'text-rose' },
+            { label: 'Group Incomes', val: p2.incomesReceived, type: 'Income', color: 'text-emerald' },
+            { label: 'Loan Recoveries Paid', val: p2.loanRecoveriesPaid, type: 'Outflow', color: 'text-rose' }
+        ];
+        return items.filter(i => i.val > 0 || i.val === 0).map(row => `
+            <tr>
+                <td class="label">${row.label}</td>
+                <td class="num ${row.color}">${formatINR(row.val)}</td>
+                <td>${row.type}</td>
+            </tr>
+        `).join('');
+    })()}
+  </tbody>
+</table>
+
+<!-- ── 4. REGIONAL CONTRIBUTION ────────────────────────────────────────────── -->
+<h2>4. Regional Contribution Analysis</h2>
 <div class="section-intro">
   The following tables show the top contributing ${distKey || 'regions'} by financial category for ${period}. This helps identify which regions are leading in collections, deposits, and other key metrics.
 </div>
@@ -514,9 +589,9 @@ ${topDeposits.length > 0 ? `
   </tbody>
 </table>` : ''}
 
-<!-- ── 4. MONTHLY TRENDS ────────────────────────────────────────────────────── -->
+<!-- ── 5. MONTHLY TRENDS ────────────────────────────────────────────────────── -->
 ${paymentTrends && paymentTrends.length > 0 ? `
-<h2>4. Monthly Financial Trends</h2>
+<h2>5. Monthly Financial Trends</h2>
 <div class="section-intro">
   This section tracks financial activity month-over-month, helping identify growth patterns, seasonal peaks, and months requiring attention.
 </div>
@@ -548,9 +623,9 @@ ${paymentTrends && paymentTrends.length > 0 ? `
   </td></tr>
 </table>` : ''}
 
-<!-- ── 5. CUMULATIVE FINANCIAL SUMMARY ─────────────────────────────────────── -->
+<!-- ── 6. CUMULATIVE FINANCIAL SUMMARY ─────────────────────────────────────── -->
 ${processedHistory.length > 0 ? `
-<h2>5. Cumulative Financial Summary (Jan – ${getMonthName(filters?.month)} ${filters?.year})</h2>
+<h2>6. Cumulative Financial Summary (Jan – ${getMonthName(filters?.month)} ${filters?.year})</h2>
 <div class="section-intro">
   This table tracks the running financial balance from January through the selected period, showing cumulative inflow, outflow, and closing position each month.
 </div>
@@ -578,8 +653,8 @@ ${processedHistory.length > 0 ? `
   </tbody>
 </table>` : ''}
 
-<!-- ── 6. PENDING ACTIONS ──────────────────────────────────────────────────── -->
-<h2>6. Pending Actions &amp; Recommendations</h2>
+<!-- ── 7. PENDING ACTIONS ──────────────────────────────────────────────────── -->
+<h2>7. Pending Actions &amp; Recommendations</h2>
 <table>
   <thead><tr>
     <th>Action Item</th><th>Count</th><th>Priority</th>
@@ -738,25 +813,26 @@ export const exportAnalyticsPPT = async ({ summary, paymentData, paymentTrends, 
         const items = [
             { num: '01', title: 'Executive Summary', desc: 'Upload status, conversion overview, APM activity' },
             { num: '02', title: 'Financial Performance', desc: 'Collections, deposits, loans, penalties' },
-            { num: '03', title: 'Regional Contribution', desc: 'Top performing districts, mandals, villages' },
-            { num: '04', title: 'Monthly Trends', desc: 'Month-over-month financial activity analysis' },
-            { num: '05', title: 'Cumulative Summary', desc: 'Running balance from Jan to current month' },
-            { num: '06', title: 'Pending Actions', desc: 'Key follow-ups and recommendations' },
+            { num: '03', title: 'Manual Ledger Summary', desc: 'Specialized Page 2 financial indicators' },
+            { num: '04', title: 'Regional Contribution', desc: 'Top performing districts, mandals, villages' },
+            { num: '05', title: 'Monthly Trends', desc: 'Month-over-month financial activity analysis' },
+            { num: '06', title: 'Cumulative Summary', desc: 'Running balance from Jan to current month' },
+            { num: '07', title: 'Pending Actions', desc: 'Key follow-ups and recommendations' },
         ];
 
         items.forEach((item, i) => {
             const col = i % 2;
             const row = Math.floor(i / 2);
             const x = col === 0 ? 0.4 : 6.9;
-            const y = 1.5 + row * 1.75;
+            const y = 1.4 + row * 1.4;
 
             slide.addShape(pptx.ShapeType.rect, {
-                x, y, w: 5.9, h: 1.5,
+                x, y, w: 5.9, h: 1.25,
                 fill: { color: '1E3A8A', transparency: 20 }, line: { color: '4338CA', width: 1 }, rounding: true,
             });
-            slide.addText(item.num, { x: x + 0.2, y: y + 0.15, w: 0.7, h: 0.5, fontSize: 22, bold: true, color: '818CF8', fontFace: 'Calibri' });
-            slide.addText(item.title, { x: x + 0.95, y: y + 0.12, w: 4.7, h: 0.45, fontSize: 14, bold: true, color: WHITE, fontFace: 'Calibri' });
-            slide.addText(item.desc, { x: x + 0.95, y: y + 0.6, w: 4.7, h: 0.7, fontSize: 10, color: 'A5B4FC', fontFace: 'Calibri' });
+            slide.addText(item.num, { x: x + 0.2, y: y + 0.12, w: 0.7, h: 0.5, fontSize: 22, bold: true, color: '818CF8', fontFace: 'Calibri' });
+            slide.addText(item.title, { x: x + 0.95, y: y + 0.1, w: 4.7, h: 0.45, fontSize: 13, bold: true, color: WHITE, fontFace: 'Calibri' });
+            slide.addText(item.desc, { x: x + 0.95, y: y + 0.55, w: 4.7, h: 0.6, fontSize: 10, color: 'A5B4FC', fontFace: 'Calibri' });
         });
     }
 
@@ -872,11 +948,42 @@ export const exportAnalyticsPPT = async ({ summary, paymentData, paymentTrends, 
         slide.addText(`Recovery Rate: ${pct(fs.totalLoanRecovered, fs.totalLoansTaken)}`, { x: 9.6, y: 5.95, w: 3.6, h: 0.4, align: 'center', fontSize: 10, color: 'A5B4FC', fontFace: 'Calibri' });
     }
 
-    // ── SLIDE 5: REGIONAL CONTRIBUTION ──────────────────────────────────────
+    // ── SLIDE 5: MANUAL LEDGER SUMMARY (Page 2) ──────────────────────────────
     {
         const slide = pptx.addSlide();
         addBgRect(slide, '0F172A');
-        sectionLabel(slide, '03  ·  REGIONAL CONTRIBUTION');
+        sectionLabel(slide, '03  ·  MANUAL LEDGER SUMMARY');
+        slideTitle(slide, 'Specialized Financial Indicators');
+        divider(slide);
+
+        const p2 = fs.page2Finance || {};
+        const p2Items = [
+            { label: 'SAVINGS RECEIVED', val: formatINR(p2.savingsReceived), color: '1E3A8A', accent: 'A5B4FC' },
+            { label: 'FUNDS RECEIVED', val: formatINR(p2.fundsReceived), color: '4338CA', accent: 'C4B5FD' },
+            { label: 'INVESTMENTS', val: formatINR(p2.investments), color: '92400E', accent: 'FCD34D' },
+            { label: 'RECOVERIES REC.', val: formatINR(p2.recoveriesReceived), color: '065F46', accent: '6EE7B7' },
+            { label: 'EXPENSES', val: formatINR(p2.expenses), color: '9F1239', accent: 'FDA4AF' },
+            { label: 'INCOMES', val: formatINR(p2.incomesReceived), color: '115E59', accent: '99F6E4' },
+            { label: 'LOAN REC. PAID', val: formatINR(p2.loanRecoveriesPaid), color: '7F1D1D', accent: 'FECACA' },
+        ];
+
+        p2Items.forEach((k, i) => {
+            const row = Math.floor(i / 4);
+            const col = i % 4;
+            const x = 0.4 + col * 3.2;
+            const y = 1.5 + row * 2.2;
+            slide.addShape(pptx.ShapeType.rect, { x, y, w: 3, h: 2, fill: { color: k.color }, line: { transparency: 100 }, rounding: true });
+            slide.addText(k.label, { x, y: y + 0.15, w: 3, h: 0.35, align: 'center', fontSize: 9, bold: true, color: k.accent, charSpacing: 2, fontFace: 'Calibri' });
+            slide.addText(k.val, { x, y: y + 0.6, w: 3, h: 0.8, align: 'center', fontSize: 24, bold: true, color: WHITE, fontFace: 'Calibri' });
+            slide.addText('Monthly Record', { x, y: y + 1.45, w: 3, h: 0.4, align: 'center', fontSize: 10, color: k.accent, fontFace: 'Calibri' });
+        });
+    }
+
+    // ── SLIDE 6: REGIONAL CONTRIBUTION ──────────────────────────────────────
+    {
+        const slide = pptx.addSlide();
+        addBgRect(slide, '0F172A');
+        sectionLabel(slide, '04  ·  REGIONAL CONTRIBUTION');
         slideTitle(slide, `Top Regions — ${distKey ? distKey.charAt(0).toUpperCase() + distKey.slice(1) : 'Region'} Level`);
         divider(slide);
 
@@ -910,7 +1017,7 @@ export const exportAnalyticsPPT = async ({ summary, paymentData, paymentTrends, 
     if (paymentTrends && paymentTrends.length > 0) {
         const slide = pptx.addSlide();
         addBgRect(slide, '0F172A');
-        sectionLabel(slide, '04  ·  MONTHLY TRENDS');
+        sectionLabel(slide, '05  ·  MONTHLY TRENDS');
         slideTitle(slide, 'Financial Activity Over Time');
         divider(slide);
 
@@ -1011,7 +1118,7 @@ export const exportAnalyticsPPT = async ({ summary, paymentData, paymentTrends, 
 
         const slide = pptx.addSlide();
         addBgRect(slide, '0F172A');
-        sectionLabel(slide, '05  ·  CUMULATIVE FINANCIAL SUMMARY');
+        sectionLabel(slide, '06  ·  CUMULATIVE FINANCIAL SUMMARY');
         slideTitle(slide, `Running Balance — Jan to ${getMonthName(filters?.month)}`);
         divider(slide);
 
@@ -1055,7 +1162,7 @@ export const exportAnalyticsPPT = async ({ summary, paymentData, paymentTrends, 
     {
         const slide = pptx.addSlide();
         addBgRect(slide, '0F172A');
-        sectionLabel(slide, '06  ·  PENDING ACTIONS & RECOMMENDATIONS');
+        sectionLabel(slide, '07  ·  PENDING ACTIONS & RECOMMENDATIONS');
         slideTitle(slide, 'Key Follow-Ups');
         divider(slide);
 
