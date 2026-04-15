@@ -431,6 +431,7 @@ export const exportAnalyticsPPT = async ({ summary, paymentData, paymentTrends, 
     const cc = summary?.ccActions || {};
     const lb = fs.loanRecoveryBreakdown || {};
     const dists = paymentData?.distributions || {};
+    const distKey = paymentData?.distKey || 'region';
 
     // Theme
     const INDIGO = '4338CA';
@@ -560,9 +561,9 @@ export const exportAnalyticsPPT = async ({ summary, paymentData, paymentTrends, 
         // KPI Cards Row 1
         const kpis = [
             { label: 'TOTAL SHGs', val: fmt(shg.total || 0), sub: 'Registered', color: '4338CA', accent: 'A5B4FC' },
-            { label: 'UPLOADED', val: fmt(shg.uploaded || 0), sub: pct(shg.uploaded, shg.total), color: '065F46', accent: '6EE7B7' },
-            { label: 'PENDING', val: fmt(shg.pending || 0), sub: pct(shg.pending, shg.total), color: '92400E', accent: 'FCD34D' },
-            { label: 'APM APPROVED', val: fmt(cc.approved || 0), sub: 'Verified', color: '5B21B6', accent: 'C4B5FD' },
+            { label: 'UPLOADED', val: fmt(shg.uploaded || 0), sub: pct(shg.uploaded, shg.total) + ' of Total', color: '065F46', accent: '6EE7B7' },
+            { label: 'PENDING', val: fmt(shg.pending || 0), sub: pct(shg.pending, shg.total) + ' Remaining', color: '92400E', accent: 'FCD34D' },
+            { label: 'CONVERTED', val: fmt(conv.converted || 0), sub: pct(conv.converted, shg.uploaded) + ' Rate', color: '5B21B6', accent: 'C4B5FD' },
         ];
         kpis.forEach((k, i) => {
             const x = 0.4 + i * 3.2;
@@ -643,12 +644,12 @@ export const exportAnalyticsPPT = async ({ summary, paymentData, paymentTrends, 
 
         const lbTotal = lbItems.reduce((a, [, v]) => a + (v || 0), 0);
         lbItems.slice(0, 6).forEach(([label, val], i) => {
-            const barW = lbTotal > 0 ? (val / lbTotal) * 6 : 0;
+            const barW = lbTotal > 0 ? (val / lbTotal) * 4.8 : 0;
             const y = 4.0 + i * 0.52;
             slide.addText(label, { x: 0.4, y, w: 2.0, h: 0.45, fontSize: 9.5, color: 'CBD5E1', fontFace: 'Calibri' });
-            slide.addShape(pptx.ShapeType.rect, { x: 2.5, y: y + 0.07, w: 5.5, h: 0.28, fill: { color: '1E293B' }, line: { transparency: 100 }, rounding: true });
+            slide.addShape(pptx.ShapeType.rect, { x: 2.5, y: y + 0.07, w: 4.8, h: 0.28, fill: { color: '1E293B' }, line: { transparency: 100 }, rounding: true });
             slide.addShape(pptx.ShapeType.rect, { x: 2.5, y: y + 0.07, w: Math.max(0.05, barW), h: 0.28, fill: { color: '10B981' }, line: { transparency: 100 }, rounding: true });
-            slide.addText(formatINR(val), { x: 8.1, y, w: 1.8, h: 0.45, align: 'right', fontSize: 9.5, bold: true, color: '6EE7B7', fontFace: 'Calibri' });
+            slide.addText(formatINR(val), { x: 7.4, y, w: 2.0, h: 0.45, align: 'right', fontSize: 9.5, bold: true, color: '6EE7B7', fontFace: 'Calibri' });
         });
 
         // Net Position
@@ -676,12 +677,12 @@ export const exportAnalyticsPPT = async ({ summary, paymentData, paymentTrends, 
             slide.addText(title, { x, y: 1.4, w: 6, h: 0.3, fontSize: 9, bold: true, color, charSpacing: 3, fontFace: 'Calibri' });
             const total = items.reduce((a, b) => a + (b.value || 0), 0);
             items.forEach((d, i) => {
-                const barW = total > 0 ? (d.value / total) * 4.5 : 0;
+                const barW = total > 0 ? (d.value / total) * 3.0 : 0;
                 const y = 1.8 + i * 0.68;
-                slide.addText(`${i + 1}. ${d.name || '—'}`, { x, y, w: 2.4, h: 0.6, fontSize: 10, color: 'CBD5E1', fontFace: 'Calibri' });
-                slide.addShape(pptx.ShapeType.rect, { x: x + 2.5, y: y + 0.15, w: 4.5, h: 0.28, fill: { color: '1E293B' }, line: { transparency: 100 }, rounding: true });
-                slide.addShape(pptx.ShapeType.rect, { x: x + 2.5, y: y + 0.15, w: Math.max(0.05, barW), h: 0.28, fill: { color }, line: { transparency: 100 }, rounding: true });
-                slide.addText(`${formatINR(d.value)} (${pct(d.value, total)})`, { x: x + 2.6, y: y + 0.42, w: 4.3, h: 0.2, fontSize: 8, color: '64748B', fontFace: 'Calibri' });
+                slide.addText(`${i + 1}. ${d.name || '\u2014'}`, { x, y, w: 2.3, h: 0.45, fontSize: 10, color: 'CBD5E1', fontFace: 'Calibri' });
+                slide.addShape(pptx.ShapeType.rect, { x: x + 2.4, y: y + 0.08, w: 3.0, h: 0.26, fill: { color: '1E293B' }, line: { transparency: 100 }, rounding: true });
+                slide.addShape(pptx.ShapeType.rect, { x: x + 2.4, y: y + 0.08, w: Math.max(0.05, barW), h: 0.26, fill: { color }, line: { transparency: 100 }, rounding: true });
+                slide.addText(`${formatINR(d.value)}  (${pct(d.value, total)})`, { x: x + 2.4, y: y + 0.38, w: 3.0, h: 0.22, fontSize: 7.5, color: '94A3B8', fontFace: 'Calibri' });
             });
         };
 
