@@ -2875,7 +2875,7 @@ const UsersTab = ({ filterProps }) => {
                                     <span className="text-base font-black text-gray-900 leading-none" title="Total">{u.totalFiles || 0}</span>
                                     <div className="border-l border-gray-100 pl-4">
                                       <span className="text-base font-black text-indigo-500 tracking-tighter" title="Percentage Complete">
-                                        {u.totalFiles > 0 ? Math.round(((u.uploadedFiles || 0) / u.totalFiles) * 100) : 0}%
+                                        {u.totalFiles > 0 ? (((u.uploadedFiles || 0) / u.totalFiles) * 100).toFixed(1) : 0}%
                                       </span>
                                     </div>
                                   </div>
@@ -3187,7 +3187,7 @@ const UsersTab = ({ filterProps }) => {
                                         <div className="flex justify-between items-center mb-1 px-1">
                                           <span className="text-[7px] font-black text-gray-400 uppercase">Uploads</span>
                                           <span className="text-[9px] font-black text-indigo-500">
-                                            {u.totalFiles > 0 ? Math.round(((u.uploadedFiles || 0) / u.totalFiles) * 100) : 0}% Done
+                                            {u.totalFiles > 0 ? (((u.uploadedFiles || 0) / u.totalFiles) * 100).toFixed(1) : 0}% Done
                                           </span>
                                         </div>
                                         <div className="flex gap-4 justify-center items-center py-1">
@@ -3196,7 +3196,7 @@ const UsersTab = ({ filterProps }) => {
                                           <div className="flex items-baseline gap-1 border-l border-gray-100 pl-3">
                                             <div className="text-sm font-black text-black">{u.totalFiles || 0}</div>
                                             <div className="text-[9px] font-black text-indigo-500">
-                                              ({u.totalFiles > 0 ? Math.round(((u.uploadedFiles || 0) / u.totalFiles) * 100) : 0}%)
+                                              ({u.totalFiles > 0 ? (((u.uploadedFiles || 0) / u.totalFiles) * 100).toFixed(1) : 0}%)
                                             </div>
                                           </div>
                                         </div>
