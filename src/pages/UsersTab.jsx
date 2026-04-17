@@ -658,8 +658,10 @@ const UsersTab = ({ filterProps }) => {
       const pageUploads = Object.values(group.pages);
       const statuses = pageUploads.map(p => p.status || 'pending');
 
-      if (statuses.includes('pending') || statuses.includes('rejected')) {
+      if (statuses.includes('pending')) {
         sections.pending.push(group);
+      } else if (statuses.includes('rejected')) {
+        sections.rejected.push(group);
       } else {
         sections.validated.push(group);
       }
