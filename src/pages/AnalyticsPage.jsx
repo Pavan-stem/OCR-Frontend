@@ -689,7 +689,7 @@ const AnalyticsPage = ({ filterProps }) => {
                     </button>
 
                     {/* Document Option */}
-                    <button
+                    {/* <button
                         onClick={handleExportDoc}
                         className="w-full flex items-start gap-4 px-4 py-4 hover:bg-white/5 transition-all duration-200 group border-b border-white/5"
                     >
@@ -701,7 +701,7 @@ const AnalyticsPage = ({ filterProps }) => {
                             <p className="text-[11px] text-gray-400 mt-0.5 leading-relaxed">Editable text report — optimized for MS Word processing</p>
                             <span className="inline-block mt-1.5 text-[9px] font-bold text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded-full uppercase tracking-wide">.doc format</span>
                         </div>
-                    </button>
+                    </button> */}
 
                     {/* PPT Option */}
                     <button
