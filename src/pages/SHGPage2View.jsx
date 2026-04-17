@@ -97,7 +97,8 @@ export default function SHGPage2View({ tableData, isEditing, onCellEdit, related
         '6': 97,  // Streenidhi Tenni
         '7': 101, // Unnathi SCSP
         '8': 105, // Unnathi TSP
-        '9': 109  // CIF
+        '9': 109, // CIF
+        '10': 113 // VO Internal Loan (Mapped to "vo అంతర్గత ఋణం కు చెల్లింపు")
       };
 
       Object.entries(mappings).forEach(([p1Col, p2Id]) => {
@@ -128,7 +129,7 @@ export default function SHGPage2View({ tableData, isEditing, onCellEdit, related
 
     // If linked data exists, these 6 IDs are NO LONGER editable in Page 2
     if (relatedPage1Totals) {
-      [89, 93, 97, 101, 105, 109].forEach(id => baseIds.delete(id));
+      [89, 93, 97, 101, 105, 109, 113].forEach(id => baseIds.delete(id));
     }
 
     return baseIds;
