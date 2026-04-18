@@ -51,6 +51,11 @@ const SHGUploadSection = ({
   const [showSmartCamera, setShowSmartCamera] = useState(false);
   const [cameraTarget, setCameraTarget] = useState({ id: null, name: null });
   const [permanentlyUploadedFiles, setPermanentlyUploadedFiles] = useState([]);
+  const [viewerImages, setViewerImages] = useState([]);
+  const [currentViewerIndex, setCurrentViewerIndex] = useState(0);
+
+  // Determine if current period is after the 2-page requirement threshold (Feb 2026)
+  const isAfterFeb2026 = (parseInt(selectedYear) > 2026) || (parseInt(selectedYear) === 2026 && parseInt(selectedMonth) > 2);
   const [currentlyViewingId, setCurrentlyViewingId] = useState(null);
   const [activeTab, setActiveTab] = useState('upload'); // 'upload' or 'conversion'
   const [conversions, setConversions] = useState({ success: [], failed: [] });
@@ -1300,6 +1305,24 @@ const SHGUploadSection = ({
       return false;
     }
 
+    // After Feb 2026, we strongly encourage both pages if neither is on server yet
+    if (isAfterFeb2026 && (!hasP1 || !hasP2)) {
+      const targetId = shgId?.toString().toLowerCase();
+      const serverPages = permanentlyUploadedFiles.filter(u => {
+        const uId = (u.shgID || u.shgId || u.metadata?.shgID || u.metadata?.shgId || '').toString().toLowerCase();
+        return uId === targetId || uId.includes(targetId) || targetId.includes(uId);
+      }).map(u => parseInt(u.page || u.metadata?.page || 0));
+
+      const missingP1 = !hasP1 && !serverPages.includes(1);
+      const missingP2 = !hasP2 && !serverPages.includes(2);
+
+      if (missingP1 || missingP2) {
+        const confirmMsg = t?.('upload.bothPagesRequiredAfterFeb2026') || 
+          "After February 2026, both Page 1 and Page 2 are required for a complete SHG upload. You can upload one now, but it will stay pending until the second page is added. Proceed?";
+        if (!window.confirm(confirmMsg)) return false;
+      }
+    }
+
     if (uploadStatus[shgId]?.uploaded && !hasP1 && !hasP2) {
       alert(t?.('upload.alreadyUploaded') || 'This file is already uploaded.');
       return false;
@@ -1399,6 +1422,19 @@ const SHGUploadSection = ({
   });
 
   const uploadedShgs = filteredShgData.filter(shg => {
+    const targetId = shg.shgId?.toString().toLowerCase();
+    
+    // Check if both pages are required and present on server
+    if (isAfterFeb2026) {
+      const serverPages = permanentlyUploadedFiles.filter(u => {
+        const uId = (u.shgID || u.shgId || u.metadata?.shgID || u.metadata?.shgId || '').toString().toLowerCase();
+        return uId === targetId || uId.includes(targetId) || targetId.includes(uId);
+      }).map(u => parseInt(u.page || u.metadata?.page || 0));
+      
+      const hasBothPagesOnServer = serverPages.includes(1) && serverPages.includes(2);
+      if (!hasBothPagesOnServer) return false;
+    }
+
     const isPermanentlyUploaded = serverProgress?.uploadedShgIds?.includes(shg.shgId) || uploadStatus[shg.shgId]?.uploaded === true;
     return isPermanentlyUploaded;
   });
