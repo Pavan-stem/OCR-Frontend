@@ -826,7 +826,7 @@ const AnalyticsPage = ({ filterProps }) => {
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                         <TrendChart data={trends} />
-                        <DistributionCharts summary={summary} />
+                        <DistributionCharts summary={summary} month={filters.month} year={filters.year} />
                     </div>
                 </div>
             )}
@@ -1409,17 +1409,26 @@ const MiniPaymentPie = ({ data, color, level, metricLabel }) => {
     );
 };
 
-const UploadCompletionPieChart = ({ conversion }) => {
+const UploadCompletionPieChart = ({ conversion, month, year }) => {
     if (!conversion) return null;
 
     const { bothPagesCount = 0, page1OnlyCount = 0, page2OnlyCount = 0 } = conversion;
     const total = bothPagesCount + page1OnlyCount + page2OnlyCount;
 
-    const data = [
+    const currYear = parseInt(year);
+    const currMonth = parseInt(month);
+    const isAfterFeb2026 = (currYear > 2026) || (currYear === 2026 && currMonth > 2);
+
+    const data = isAfterFeb2026 ? [
         { name: 'Complete (P1+P2)', value: bothPagesCount, color: '#10b981', label: 'సంఘం వివరాలు మరియు ఫైనాన్సియల్ లెడ్జర్ అప్లోడ్ అయినవి' },
         { name: 'Page 2 Pending', value: page1OnlyCount, color: '#f59e0b', label: 'ఫైనాన్సియల్ లెడ్జర్ అప్లోడ్ కావాల్సి ఉంది' },
         { name: 'Page 1 Pending', value: page2OnlyCount, color: '#6366f1', label: 'సంఘం వివరాలు అప్లోడ్ కావాల్సి ఉంది' }
-    ].filter(d => d.value > 0 || total === 0);
+    ] : [
+        { name: 'Complete (Page 1)', value: bothPagesCount + page1OnlyCount, color: '#10b981', label: 'సంఘం వివరాలు అప్లోడ్ అయినవి (Feb 2026 నిబంధన)' },
+        { name: 'Page 1 Pending', value: page2OnlyCount, color: '#6366f1', label: 'సంఘం వివరాలు అప్లోడ్ కావాల్సి ఉంది' }
+    ];
+
+    const filteredData = data.filter(d => d.value > 0 || total === 0);
 
     return (
         <div className="space-y-4">
@@ -1428,13 +1437,13 @@ const UploadCompletionPieChart = ({ conversion }) => {
                 <ResponsiveContainer width="100%" height="100%">
                     <PieChart margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
                         <Pie
-                            data={data.length > 0 ? data : [{ name: 'No Data', value: 1, color: '#f1f5f9' }]}
+                            data={filteredData.length > 0 ? filteredData : [{ name: 'No Data', value: 1, color: '#f1f5f9' }]}
                             innerRadius={60}
                             outerRadius={70}
                             paddingAngle={5}
                             dataKey="value"
                         >
-                            {data.map((entry, index) => (
+                            {filteredData.map((entry, index) => (
                                 <Cell key={`cell-${index}`} fill={entry.color} />
                             ))}
                         </Pie>
@@ -1457,7 +1466,7 @@ const UploadCompletionPieChart = ({ conversion }) => {
                 </ResponsiveContainer>
             </div>
             <div className="flex flex-col gap-2">
-                {data.map(d => (
+                {filteredData.map(d => (
                     <div key={d.name} className="flex items-center justify-between px-4 py-2 bg-gray-50 rounded-xl group hover:bg-white transition-all shadow-sm">
                         <div className="flex items-center gap-2">
                             <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: d.color }} />
@@ -1738,7 +1747,7 @@ const Page2FinanceBarChart = ({ data, breakdown, distributions, month, year }) =
     );
 };
 
-const DistributionCharts = ({ summary }) => {
+const DistributionCharts = ({ summary, month, year }) => {
     if (!summary) return null;
 
     const pieData = [
@@ -1817,7 +1826,7 @@ const DistributionCharts = ({ summary }) => {
                 </div>
 
                 {/* New Upload Completion Pie Chart */}
-                <UploadCompletionPieChart conversion={summary.conversion} />
+                <UploadCompletionPieChart conversion={summary.conversion} month={month} year={year} />
             </div>
         </div>
     );
