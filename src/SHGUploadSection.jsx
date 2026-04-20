@@ -1,7 +1,7 @@
 // SHGUploadSection.jsx
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Upload, CheckCircle, X, FileText, Search, AlertCircle, FilePenLine, Filter, RotateCw, RotateCcw, Camera, AlertTriangle, Activity, ScanLine, Lock, Unlock } from 'lucide-react';
+import { Upload, CheckCircle, X, FileText, Search, AlertCircle, FilePenLine, Filter, RotateCw, RotateCcw, Camera, AlertTriangle, Activity, ScanLine, Lock, Unlock, ChevronDown } from 'lucide-react';
 import { API_BASE } from './utils/apiConfig';
 import { analyzeImage } from './utils/imageQualityCheck';
 import SmartCamera from './smartcamera';
@@ -1554,49 +1554,54 @@ const SHGUploadSection = ({
                 <span className="ml-2 text-[10px] bg-white/20 px-2 py-0.5 rounded-full">{t?.('upload.currentPastOnly') || 'Current & Past Only'}</span>
               )}
             </label>
-            <select
-              value={selectedMonth}
-              onChange={(e) => {
-                const now = new Date();
-                const currentMonth = now.getUTCMonth() + 1;
-                // Default mode only allows current month and below. If restricted, respect the restricted month.
-                const maxMonth = restriction?.mode === 'restricted' ? parseInt(restriction.month) : currentMonth;
-                const currentYear = now.getFullYear();
-                const selectedM = parseInt(e.target.value);
-                const selectedY = parseInt(selectedYear);
+            <div className="relative group">
+              <select
+                value={selectedMonth}
+                onChange={(e) => {
+                  const now = new Date();
+                  const currentMonth = now.getUTCMonth() + 1;
+                  // Default mode only allows current month and below. If restricted, respect the restricted month.
+                  const maxMonth = restriction?.mode === 'restricted' ? parseInt(restriction.month) : currentMonth;
+                  const currentYear = now.getFullYear();
+                  const selectedM = parseInt(e.target.value);
+                  const selectedY = parseInt(selectedYear);
 
-                if (user?.role?.toLowerCase() === 'vo') {
-                  if (selectedY > currentYear || (selectedY === currentYear && selectedM > maxMonth)) return;
-                }
-                onMonthChange?.(e.target.value);
-              }}
-              disabled={restriction?.mode === 'restricted'}
-              className={`w-full px-3 sm:px-4 py-2 sm:py-3 border-2 border-white/30 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-white bg-white/95 appearance-none cursor-pointer font-semibold text-sm sm:text-base ${restriction?.mode === 'restricted' ? 'opacity-60 cursor-not-allowed' : ''}`}
-            >
-              <option value="">{t?.('upload.selectMonth') || 'Select Month'}</option>
-              {[
-                { val: "01", label: t?.('months.january') || 'January' },
-                { val: "02", label: t?.('months.february') || 'February' },
-                { val: "03", label: t?.('months.march') || 'March' },
-                { val: "04", label: t?.('months.april') || 'April' },
-                { val: "05", label: t?.('months.may') || 'May' },
-                { val: "06", label: t?.('months.june') || 'June' },
-                { val: "07", label: t?.('months.july') || 'July' },
-                { val: "08", label: t?.('months.august') || 'August' },
-                { val: "09", label: t?.('months.september') || 'September' },
-                { val: "10", label: t?.('months.october') || 'October' },
-                { val: "11", label: t?.('months.november') || 'November' },
-                { val: "12", label: t?.('months.december') || 'December' }
-              ].map(m => {
-                const now = new Date();
-                const currentMonth = now.getUTCMonth() + 1;
-                const maxMonth = restriction?.mode === 'restricted' ? parseInt(restriction.month) : currentMonth;
-                const isFuture = parseInt(selectedYear) > now.getFullYear() ||
-                  (parseInt(selectedYear) === now.getFullYear() && parseInt(m.val) > maxMonth);
-                const disabled = user?.role?.toLowerCase() === 'vo' && isFuture;
-                return <option key={m.val} value={m.val} disabled={disabled}>{m.label} {disabled ? `(${t?.('upload.locked') || 'Locked'})` : ''}</option>;
-              })}
-            </select>
+                  if (user?.role?.toLowerCase() === 'vo') {
+                    if (selectedY > currentYear || (selectedY === currentYear && selectedM > maxMonth)) return;
+                  }
+                  onMonthChange?.(e.target.value);
+                }}
+                disabled={restriction?.mode === 'restricted'}
+                className={`w-full px-3 sm:px-4 py-2 sm:py-3 border-2 border-white/30 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-white bg-white/95 appearance-none cursor-pointer font-semibold text-sm sm:text-base ${restriction?.mode === 'restricted' ? 'opacity-60 cursor-not-allowed' : ''} pr-10`}
+              >
+                <option value="">{t?.('upload.selectMonth') || 'Select Month'}</option>
+                {[
+                  { val: "01", label: t?.('months.january') || 'January' },
+                  { val: "02", label: t?.('months.february') || 'February' },
+                  { val: "03", label: t?.('months.march') || 'March' },
+                  { val: "04", label: t?.('months.april') || 'April' },
+                  { val: "05", label: t?.('months.may') || 'May' },
+                  { val: "06", label: t?.('months.june') || 'June' },
+                  { val: "07", label: t?.('months.july') || 'July' },
+                  { val: "08", label: t?.('months.august') || 'August' },
+                  { val: "09", label: t?.('months.september') || 'September' },
+                  { val: "10", label: t?.('months.october') || 'October' },
+                  { val: "11", label: t?.('months.november') || 'November' },
+                  { val: "12", label: t?.('months.december') || 'December' }
+                ].map(m => {
+                  const now = new Date();
+                  const currentMonth = now.getUTCMonth() + 1;
+                  const maxMonth = restriction?.mode === 'restricted' ? parseInt(restriction.month) : currentMonth;
+                  const isFuture = parseInt(selectedYear) > now.getFullYear() ||
+                    (parseInt(selectedYear) === now.getFullYear() && parseInt(m.val) > maxMonth);
+                  const disabled = user?.role?.toLowerCase() === 'vo' && isFuture;
+                  return <option key={m.val} value={m.val} disabled={disabled}>{m.label} {disabled ? `(${t?.('upload.locked') || 'Locked'})` : ''}</option>;
+                })}
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-focus-within:text-indigo-600 transition-colors">
+                <ChevronDown size={18} />
+              </div>
+            </div>
           </div>
 
           {/* Year Dropdown */}
@@ -1609,20 +1614,25 @@ const SHGUploadSection = ({
               )}
               {t?.('upload.year') || 'Year'} <span className="text-yellow-300">*</span>
             </label>
-            <select
-              value={selectedYear}
-              onChange={(e) => onYearChange?.(e.target.value)}
-              disabled={restriction?.mode === 'restricted'}
-              className={`w-full px-3 sm:px-4 py-2 sm:py-3 border-2 border-white/30 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-white bg-white/95 appearance-none cursor-pointer font-semibold text-sm sm:text-base ${restriction?.mode === 'restricted' ? 'opacity-60 cursor-not-allowed' : ''}`}
-            >
-              <option value="">{t?.('upload.selectYear') || 'Select Year'}</option>
-              {Array.from({ length: 5 }, (_, i) => {
-                const y = new Date().getFullYear() - 1 + i;
-                const isFutureYear = y > new Date().getFullYear();
-                const disabled = user?.role?.toLowerCase() === 'vo' && isFutureYear;
-                return <option key={y} value={y} disabled={disabled}>{y} {disabled ? `(${t?.('upload.locked') || 'Locked'})` : ''}</option>;
-              })}
-            </select>
+            <div className="relative group">
+              <select
+                value={selectedYear}
+                onChange={(e) => onYearChange?.(e.target.value)}
+                disabled={restriction?.mode === 'restricted'}
+                className={`w-full px-3 sm:px-4 py-2 sm:py-3 border-2 border-white/30 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-white bg-white/95 appearance-none cursor-pointer font-semibold text-sm sm:text-base ${restriction?.mode === 'restricted' ? 'opacity-60 cursor-not-allowed' : ''} pr-10`}
+              >
+                <option value="">{t?.('upload.selectYear') || 'Select Year'}</option>
+                {Array.from({ length: 5 }, (_, i) => {
+                  const y = new Date().getFullYear() - 1 + i;
+                  const isFutureYear = y > new Date().getFullYear();
+                  const disabled = user?.role?.toLowerCase() === 'vo' && isFutureYear;
+                  return <option key={y} value={y} disabled={disabled}>{y} {disabled ? `(${t?.('upload.locked') || 'Locked'})` : ''}</option>;
+                })}
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-focus-within:text-indigo-600 transition-colors">
+                <ChevronDown size={18} />
+              </div>
+            </div>
           </div>
 
           {/* Stats Cards */}

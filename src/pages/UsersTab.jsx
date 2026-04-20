@@ -2674,27 +2674,37 @@ const UsersTab = ({ filterProps }) => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="text-xs font-black text-gray-500 ml-1 uppercase">Month</label>
-                    <select
-                      value={filterMonth || String(new Date().getMonth() + 1).padStart(2, '0')}
-                      onChange={(e) => onMonthChange(e.target.value)}
-                      className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 hover:bg-white"
-                    >
-                      {['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'].map(m => (
-                        <option key={m} value={m}>{['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][parseInt(m) - 1]}</option>
-                      ))}
-                    </select>
+                    <div className="relative group">
+                      <select
+                        value={filterMonth || String(new Date().getMonth() + 1).padStart(2, '0')}
+                        onChange={(e) => onMonthChange(e.target.value)}
+                        className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 hover:bg-white pr-12"
+                      >
+                        {['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'].map(m => (
+                          <option key={m} value={m}>{['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][parseInt(m) - 1]}</option>
+                        ))}
+                      </select>
+                      <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-focus-within:text-indigo-600 transition-colors">
+                        <ChevronDown className="w-4 h-4" />
+                      </div>
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-black text-gray-500 ml-1 uppercase">Year</label>
-                    <select
-                      value={filterYear || new Date().getFullYear()}
-                      onChange={(e) => onYearChange(e.target.value)}
-                      className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 hover:bg-white"
-                    >
-                      {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map(y => (
-                        <option key={y} value={y}>{y}</option>
-                      ))}
-                    </select>
+                    <div className="relative group">
+                      <select
+                        value={filterYear || new Date().getFullYear()}
+                        onChange={(e) => onYearChange(e.target.value)}
+                        className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 hover:bg-white pr-12"
+                      >
+                        {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map(y => (
+                          <option key={y} value={y}>{y}</option>
+                        ))}
+                      </select>
+                      <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-focus-within:text-indigo-600 transition-colors">
+                        <ChevronDown className="w-4 h-4" />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2712,40 +2722,55 @@ const UsersTab = ({ filterProps }) => {
                     <>
                       <div className="space-y-2">
                         <label className="text-xs font-black text-gray-500 ml-1 uppercase">District</label>
-                        <select
-                          value={selectedDistrict}
-                          onChange={(e) => onDistrictChange(e.target.value)}
-                          className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 hover:bg-white"
-                        >
-                          <option value="all">All Districts</option>
-                          {districts.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
-                        </select>
+                        <div className="relative group">
+                          <select
+                            value={selectedDistrict}
+                            onChange={(e) => onDistrictChange(e.target.value)}
+                            className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 hover:bg-white pr-12"
+                          >
+                            <option value="all">All Districts</option>
+                            {districts.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+                          </select>
+                          <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-focus-within:text-indigo-600 transition-colors">
+                            <ChevronDown className="w-4 h-4" />
+                          </div>
+                        </div>
                       </div>
                       <div className="space-y-2">
                         <label className="text-xs font-black text-gray-500 ml-1 uppercase">Mandal</label>
-                        <select
-                          value={selectedMandal}
-                          onChange={(e) => onMandalChange(e.target.value)}
-                          disabled={selectedDistrict === 'all'}
-                          className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <option value="all">All Mandals</option>
-                          {mandals.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
-                        </select>
+                        <div className="relative group">
+                          <select
+                            value={selectedMandal}
+                            onChange={(e) => onMandalChange(e.target.value)}
+                            disabled={selectedDistrict === 'all'}
+                            className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed pr-12"
+                          >
+                            <option value="all">All Mandals</option>
+                            {mandals.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                          </select>
+                          <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-focus-within:text-indigo-600 transition-colors">
+                            <ChevronDown className="w-4 h-4" />
+                          </div>
+                        </div>
                       </div>
                     </>
                   )}
                   <div className="space-y-2">
                     <label className="text-xs font-black text-gray-500 ml-1 uppercase">Village</label>
-                    <select
-                      value={selectedVillage}
-                      onChange={(e) => onVillageChange(e.target.value)}
-                      disabled={selectedMandal === 'all'}
-                      className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <option value="all">All Villages</option>
-                      {villages.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
-                    </select>
+                    <div className="relative group">
+                      <select
+                        value={selectedVillage}
+                        onChange={(e) => onVillageChange(e.target.value)}
+                        disabled={selectedMandal === 'all'}
+                        className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed pr-12"
+                      >
+                        <option value="all">All Villages</option>
+                        {villages.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
+                      </select>
+                      <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-focus-within:text-indigo-600 transition-colors">
+                        <ChevronDown className="w-4 h-4" />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
