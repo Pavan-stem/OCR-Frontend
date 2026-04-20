@@ -62,6 +62,7 @@ const SHGUploadCard = ({
     selectedMonth,
     selectedYear,
     isAfterFeb2026,
+    pageSyncStatus = { 1: false, 2: false },
 }) => {
     const fileInputRefs = useRef({ page1: null, page2: null });
     const nativeCameraInputRefs = useRef({ page1: null, page2: null });
@@ -429,17 +430,43 @@ const SHGUploadCard = ({
                             <p className={`text-xs ${idBadgeClass} font-mono tracking-tighter rounded-md px-1.5 py-0.5`}>
                                 {shg.shgId}
                             </p>
-                            {/* Page status chips */}
-                            {(p1AcceptedOnServer || p1Rejected) && (
-                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-md shadow-sm flex items-center gap-1 ${p1AcceptedOnServer ? 'bg-blue-700/80 text-white' : 'bg-rose-600/90 text-white'}`}>
-                                    Page 1 {p1AcceptedOnServer ? '✓' : '✗'}
-                                </span>
-                            )}
-                            {(p2AcceptedOnServer || p2Rejected) && (
-                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-md shadow-sm flex items-center gap-1 ${p2AcceptedOnServer ? 'bg-blue-700/80 text-white' : 'bg-rose-600/90 text-white'}`}>
-                                    Page 2 {p2AcceptedOnServer ? '✓' : '✗'}
-                                </span>
-                            )}
+                            {/* Page status indicators */}
+                            <div className="flex items-center gap-1.5 ml-1">
+                                {[1, 2].map(pageNum => {
+                                    const isSynced = pageSyncStatus[pageNum];
+                                    const isAccepted = pageNum === 1 ? p1AcceptedOnServer : p2AcceptedOnServer;
+                                    const isRejected = pageNum === 1 ? p1Rejected : p2Rejected;
+                                    const localFile = pageNum === 1 ? filesData.page1 : filesData.page2;
+                                    const isValidated = pageNum === 1 ? page1Validated : page2Validated;
+                                    
+                                    const exists = isAccepted || localFile || isRejected;
+                                    
+                                    let bgColor = 'bg-slate-200 text-slate-400'; // Missing
+                                    if (isSynced) {
+                                        bgColor = 'bg-emerald-500 text-white'; // Saved/Synced
+                                    } else if (isRejected) {
+                                        bgColor = 'bg-rose-500 text-white'; // Rejected
+                                    } else if (exists) {
+                                        bgColor = 'bg-amber-500 text-white'; // Pending/Validated locally
+                                    }
+
+                                    return (
+                                        <span 
+                                            key={pageNum}
+                                            className={`text-[10px] font-black w-5 h-5 flex items-center justify-center rounded shadow-sm transition-colors ${bgColor}`}
+                                            title={isSynced ? 'Saved to DB' : (exists ? 'Pending/Validated' : 'Missing')}
+                                        >
+                                            P{pageNum}
+                                        </span>
+                                    );
+                                })}
+
+                                {isReadyToSubmit && (
+                                    <span className="text-[9px] font-black px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 border border-emerald-200 uppercase tracking-tight animate-pulse">
+                                        {t?.('upload.bothPagesReady') || 'Both Pages Ready'}
+                                    </span>
+                                )}
+                            </div>
                         </div>
                     </div>
                     {(isFullyAccepted || isReadyToSubmit || canSubmitPartial || isFullyRejected) && (

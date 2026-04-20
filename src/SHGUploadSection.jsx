@@ -9,6 +9,13 @@ import SHGUploadCard from './components/SHGUploadCard';
 import { processDocumentAndValidate, stitchImages } from './utils/documentProcessor';
 import SHGConversionEditView from './pages/SHGConversionEditView';
 
+const padSHGId = (id) => {
+  if (!id) return id;
+  const s = String(id).trim();
+  if (/^\d+$/.test(s)) return s.padStart(18, '0');
+  return s;
+};
+
 const SHGUploadSection = ({
   selectedMonth,
   selectedYear,
@@ -266,7 +273,7 @@ const SHGUploadSection = ({
     const groups = {};
     const items = [...(conversions.success || []), ...(conversions.failed || [])];
     items.forEach(item => {
-      const shgId = item.shgID || item.shgId;
+      const shgId = padSHGId(item.shgID || item.shgId);
       if (!shgId) return;
       if (!groups[shgId]) {
         groups[shgId] = {
@@ -1483,6 +1490,13 @@ const SHGUploadSection = ({
       handleValidateFile(shgId, pageIndex);
     };
 
+    const currentShgId = padSHGId(shg.shgId);
+    const conversionGroup = groupedConversions.find(g => padSHGId(g.shgID || g.shgId) === currentShgId);
+    const pageSyncStatus = {
+      1: !!(conversionGroup?.pages[1]?.isSynced || conversionGroup?.pages[1]?.is_synced || conversionGroup?.pages[1]?.status === 'synced' || conversionGroup?.pages[1]?.status === 'synced_to_db'),
+      2: !!(conversionGroup?.pages[2]?.isSynced || conversionGroup?.pages[2]?.is_synced || conversionGroup?.pages[2]?.status === 'synced' || conversionGroup?.pages[2]?.status === 'synced_to_db')
+    };
+
     return (
       <SHGUploadCard
         key={shg.shgId}
@@ -1502,6 +1516,7 @@ const SHGUploadSection = ({
         // should be rendered. When true, the card must hide the button.
         page1Validated={page1Validated}
         page2Validated={page2Validated}
+        pageSyncStatus={pageSyncStatus}
         // ─────────────────────────────────────────────────────────────────
         onOpenCamera={(shgId, shgName, page) => {
           setCameraTarget({ id: shgId, name: shgName, page });
@@ -1991,9 +2006,13 @@ const SHGUploadSection = ({
                             <span className="text-[10px] font-black text-indigo-600/60 bg-indigo-50 px-2 py-0.5 rounded-lg uppercase tracking-wider">{group.shgID}</span>
                             <div className="flex gap-1.5 items-center">
                               <div className="flex gap-1">
-                                {Object.keys(group.pages).map(p => (
-                                  <span key={p} className="text-[9px] font-black bg-indigo-600 text-white px-1.5 py-0.5 rounded shadow-sm">P{p}</span>
-                                ))}
+                                {Object.keys(group.pages).map(p => {
+                                  const item = group.pages[p];
+                                  const isSynced = !!(item?.isSynced || item?.is_synced || item?.status === 'synced' || item?.status === 'synced_to_db');
+                                  return (
+                                    <span key={p} className={`text-[9px] font-black ${isSynced ? 'bg-emerald-600' : 'bg-amber-500'} text-white px-1.5 py-0.5 rounded shadow-sm transition-colors`}>P{p}</span>
+                                  );
+                                })}
                                 {!group.pages[1] && <span className="text-[9px] font-black bg-red-100 text-red-600 px-1.5 py-0.5 rounded border border-red-200">P1 Missing</span>}
                                 {!group.pages[2] && <span className="text-[9px] font-black bg-red-100 text-red-600 px-1.5 py-0.5 rounded border border-red-200">P2 Missing</span>}
                               </div>

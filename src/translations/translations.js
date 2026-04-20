@@ -165,6 +165,7 @@ export const translations = {
             noConversionsMessage: "Converted records for this period will appear here once processed.",
             saved: "Saved",
             unsaved: "Unsaved",
+            bothPagesReady: "Both Pages Ready for Upload",
         },
  
         // Conversion Edit View
@@ -462,6 +463,7 @@ export const translations = {
             noConversionsMessage: "ప్రాసెస్ చేసిన తర్వాత ఈ కాలానికి సంబంధించిన కన్వర్ట్ అయిన రికార్డులు ఇక్కడ కనిపిస్తాయి.",
             saved: "సేవ్ చేయబడింది",
             unsaved: "సేవ్ చేయబడలేదు",
+            bothPagesReady: "రెండు పేజీలు అప్‌లోడ్ చేయడానికి సిద్ధంగా ఉన్నాయి",
         },
 
         // Conversion Edit View - Telugu
