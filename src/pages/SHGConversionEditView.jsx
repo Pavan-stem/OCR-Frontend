@@ -75,7 +75,9 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
   const [page1Data, setPage1Data] = useState(null);
   const [page2Data, setPage2Data] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [error, setError] = useState(null);
+  const [saveSuccess, setSaveSuccess] = useState(null); // { pageNum: number, message: string }
   const [confirmReject, setConfirmReject] = useState(null); // { pageNum: number }
 
   useEffect(() => {
@@ -146,9 +148,11 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
   }, [page1Data]);
 
   const handleSave = async () => {
-    if (saving) return;
+    if (saving || isSyncing) return;
+    setSaveSuccess(null);
 
-    if (duplicateMBKIds.length > 0) {
+    // Validation for duplicate MBK IDs only applies to Page 1
+    if (activePageTab === 1 && duplicateMBKIds.length > 0) {
       const errorMsg = t?.('conversion.duplicateMBKIdError');
       alert(errorMsg === 'conversion.duplicateMBKIdError' || !errorMsg
         ? 'Duplicate MBK IDs detected! Please ensure all Member MBK IDs are unique before saving.'
@@ -159,43 +163,72 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
     setSaving(true);
     try {
       const token = localStorage.getItem('token');
+      const uploadId = shgGroup.pages[activePageTab].uploadId;
+      const pageData = activePageTab === 1 ? page1Data : page2Data;
 
-      // Save Page 1
-      const p1Res = await fetch(`${API_BASE}/api/conversion/detail/${shgGroup.pages[1].uploadId}`, {
+      // STEP 1: Save corrections
+      const res = await fetch(`${API_BASE}/api/conversion/detail/${uploadId}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          table_data: page1Data.table_data,
-          shgID: page1Data.shgID
+          table_data: pageData.table_data,
+          shgID: pageData.shgID
         })
       });
 
-      // Save Page 2
-      const p2Res = await fetch(`${API_BASE}/api/conversion/detail/${shgGroup.pages[2].uploadId}`, {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          table_data: page2Data.table_data,
-          shgID: page2Data.shgID
-        })
-      });
+      const result = await res.json();
 
-      const r1 = await p1Res.json();
-      const r2 = await p2Res.json();
+      if (result.success) {
+        // STEP 2: Automatic Sync to Payments (Database)
+        setIsSyncing(true);
+        try {
+          const syncRes = await fetch(`${API_BASE}/api/conversion/sync-payments/${uploadId}`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          const syncResult = await syncRes.json();
 
-      if (r1.success && r2.success) {
-        onSaveSuccess?.();
+          if (syncResult.success) {
+            // Update local state to reflect synced status
+            if (activePageTab === 1) {
+              setPage1Data(prev => ({ ...prev, isSynced: true }));
+            } else {
+              setPage2Data(prev => ({ ...prev, isSynced: true }));
+            }
+
+            setSaveSuccess({
+              pageNum: activePageTab,
+              message: t?.('conversion.saveSyncSuccess') || `Page ${activePageTab} saved and sent to DB!`
+            });
+          } else {
+            console.warn('Save succeeded but Sync failed:', syncResult.message);
+            setSaveSuccess({
+              pageNum: activePageTab,
+              message: `Page ${activePageTab} saved, but failed to send to DB.`
+            });
+          }
+        } catch (syncErr) {
+          console.error('Error syncing after save:', syncErr);
+        } finally {
+          setIsSyncing(false);
+        }
+
+        // Notify parent to refresh list in background BUT stay open
+        onSaveSuccess?.(true);
+
+        // Auto-clear success message after 3 seconds
+        setTimeout(() => setSaveSuccess(null), 3000);
       } else {
-        alert(t?.('conversion.saveFailed') || 'Failed to save some changes');
+        alert(result.message || t?.('conversion.saveFailed') || 'Failed to save changes');
       }
     } catch (err) {
-      console.error('Error saving data:', err);
+      console.error('Error in save/sync flow:', err);
       alert(t?.('conversion.networkError') || 'Save failed due to network error');
     } finally {
       setSaving(false);
@@ -307,19 +340,62 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
             <div className="text-center flex-1 min-w-0">
               <h2 className="text-sm sm:text-lg font-black text-white leading-tight truncate px-2">{shgGroup.shgName}</h2>
               <span className="text-[8px] sm:text-[10px] font-black tracking-wider sm:tracking-widest text-indigo-200 uppercase block mt-0.5">{shgIdForPage1}</span>
-              <div className="flex items-center justify-center gap-1.5 mt-2 bg-emerald-500/20 py-1 px-3 rounded-full border border-emerald-500/30 w-fit mx-auto backdrop-blur-sm">
-                <CheckCircle size={10} className="text-emerald-400" />
-                <span className="text-[8px] font-black text-emerald-200 uppercase tracking-tighter">
-                  {t?.('conversion.bothPagesVerified') || 'Both Pages Verified & Ready'}
-                </span>
+              <div className="flex flex-col items-center gap-1">
+                <div className="flex items-center justify-center gap-1.5 bg-emerald-500/20 py-1 px-3 rounded-full border border-emerald-500/30 w-fit mx-auto backdrop-blur-sm">
+                  <CheckCircle size={10} className="text-emerald-400" />
+                  <span className="text-[8px] font-black text-emerald-200 uppercase tracking-tighter">
+                    {t?.('conversion.bothPagesVerified') || 'Both Pages Verified & Ready'}
+                  </span>
+                </div>
+                  <div className="flex flex-col gap-1">
+                    <div className="flex gap-1 items-center">
+                      {(activePageTab === 1 ? page1Data?.isSynced : page2Data?.isSynced) ? (
+                        <div className="flex items-center gap-1.5 bg-emerald-600/20 px-2 py-1 rounded-full border border-emerald-500/30">
+                          <CheckCircle className="w-3 h-3 text-emerald-400" />
+                          <span className="text-[9px] font-black text-emerald-400 uppercase tracking-wider">
+                            Page {activePageTab} {t?.('upload.saved') || 'Sent to DB'}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 bg-amber-500/10 px-2 py-1 rounded-full border border-amber-500/20">
+                          <AlertCircle className="w-3 h-3 text-amber-400" />
+                          <span className="text-[9px] font-black text-amber-400 uppercase tracking-wider">
+                            Page {activePageTab} {t?.('upload.unsaved') || 'Pending'}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    {/* Small summary of both pages */}
+                    <div className="flex gap-1 opacity-60 ml-0.5">
+                      {page1Data?.isSynced && (
+                         <div className="w-2 h-2 rounded-full bg-emerald-500" title="P1 Sent"></div>
+                      )}
+                      {page2Data?.isSynced && (
+                         <div className="w-2 h-2 rounded-full bg-emerald-500" title="P2 Sent"></div>
+                      )}
+                    </div>
+                  </div>
               </div>
             </div>
             <button
               onClick={handleSave}
-              disabled={saving}
-              className="p-2 sm:p-3 bg-white text-indigo-600 rounded-xl sm:rounded-2xl shadow-xl hover:bg-indigo-50 transition-all font-black disabled:opacity-50"
+              disabled={saving || isSyncing}
+              className={`p-2 sm:p-3 rounded-xl sm:rounded-2xl shadow-xl transition-all font-black disabled:opacity-50 flex items-center gap-2 ${
+                saveSuccess?.pageNum === activePageTab 
+                  ? 'bg-emerald-500 text-white' 
+                  : 'bg-white text-indigo-600 hover:bg-indigo-50 border border-indigo-100'
+              }`}
             >
-              {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+              {saving || isSyncing ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <>
+                  <Save className="w-5 h-5" />
+                  <span className="text-[10px] hidden sm:inline uppercase tracking-widest">
+                    {t?.('common.save') || 'Save'}
+                  </span>
+                </>
+              )}
             </button>
           </div>
 

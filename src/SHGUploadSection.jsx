@@ -296,8 +296,8 @@ const SHGUploadSection = ({
       }
     });
 
-    // Filter: ONLY show SHGs that have BOTH Page 1 and Page 2 converted/present
-    return Object.values(groups).filter(group => group.pages[1] && group.pages[2]);
+    // Filter: Show SHGs that have at least one page converted/present
+    return Object.values(groups).filter(group => group.pages[1] || group.pages[2]);
   };
 
   const groupedConversions = getGroupedConversions();
@@ -1515,6 +1515,7 @@ const SHGUploadSection = ({
         onViewPermanentlyUploadedFile={handleViewPermanentlyUploadedFile}
         selectedMonth={selectedMonth}
         selectedYear={selectedYear}
+        isAfterFeb2026={isAfterFeb2026}
       />
     );
   };
@@ -1697,8 +1698,8 @@ const SHGUploadSection = ({
             shgGroup={editingSHG}
             onBack={() => setEditingSHG(null)}
             t={t}
-            onSaveSuccess={() => {
-              setEditingSHG(null);
+            onSaveSuccess={(stayOpen) => {
+              if (!stayOpen) setEditingSHG(null);
               fetchConversions();
               fetchUploadProgress();
             }}
@@ -1993,9 +1994,11 @@ const SHGUploadSection = ({
                                 {Object.keys(group.pages).map(p => (
                                   <span key={p} className="text-[9px] font-black bg-indigo-600 text-white px-1.5 py-0.5 rounded shadow-sm">P{p}</span>
                                 ))}
+                                {!group.pages[1] && <span className="text-[9px] font-black bg-red-100 text-red-600 px-1.5 py-0.5 rounded border border-red-200">P1 Missing</span>}
+                                {!group.pages[2] && <span className="text-[9px] font-black bg-red-100 text-red-600 px-1.5 py-0.5 rounded border border-red-200">P2 Missing</span>}
                               </div>
-                              <span className="text-[8px] font-black text-emerald-600 uppercase tracking-tighter bg-emerald-50 px-1.5 py-0.5 rounded">
-                                {t?.('upload.bothPagesReady') || 'Both Pages Ready'}
+                              <span className={`text-[8px] font-black uppercase tracking-tighter px-1.5 py-0.5 rounded ${group.pages[1] && group.pages[2] ? 'text-emerald-600 bg-emerald-50' : 'text-amber-600 bg-amber-50'}`}>
+                                {group.pages[1] && group.pages[2] ? (t?.('upload.bothPagesReady') || 'Both Pages Ready') : (t?.('upload.incompleteSHG') || 'Incomplete SHG')}
                               </span>
                             </div>
                           </div>

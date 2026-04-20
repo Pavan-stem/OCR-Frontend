@@ -61,6 +61,7 @@ const SHGUploadCard = ({
     historyUploads = [],
     selectedMonth,
     selectedYear,
+    isAfterFeb2026,
 }) => {
     const fileInputRefs = useRef({ page1: null, page2: null });
     const nativeCameraInputRefs = useRef({ page1: null, page2: null });
@@ -83,11 +84,21 @@ const SHGUploadCard = ({
     const isPartialUpload = (p1AcceptedOnServer || p2AcceptedOnServer) && (p1Rejected || p2Rejected);
     const isFullyAccepted = isPermanentlyUploaded && !p1Rejected && !p2Rejected;
 
+    const canSubmitFull = !isPartialUpload && (
+        // Allow if BOTH are validated, OR if at least one is validated and we're not strictly blocking
+        (page1Validated || p1AcceptedOnServer) && (page2Validated || p2AcceptedOnServer)
+    );
+
+    // If not strictly blocking, we can allow submission if at least one local page is validated
+    const canSubmitAny = (filesData.page1 && page1Validated) || (filesData.page2 && page2Validated);
+
     const canSubmitPartial = isPartialUpload && (
         (p1Rejected && page1Validated && filesData.page1) ||
         (p2Rejected && page2Validated && filesData.page2)
     );
-    const canSubmitFull = !isPartialUpload && page1Validated && page2Validated;
+
+    // We'll use canSubmitAny for the button state if the user doesn't want hard blocking
+    const canSubmit = isPartialUpload ? canSubmitPartial : canSubmitAny;
 
     // ── Completion States ───────────────────────────────────────────────
     const hasFiles = !!filesData.page1 || !!filesData.page2;
@@ -97,6 +108,39 @@ const SHGUploadCard = ({
     const isPending = !hasFiles && !hasAnyAccepted && !p1Rejected && !p2Rejected;
     const isFullyRejected = (p1Rejected && p2Rejected) && !hasFiles;
     const isHalfPending = !isReadyToSubmit && !isFullyAccepted && !isPartialUpload && !isFullyRejected && (hasFiles || hasAnyAccepted);
+
+    // ── Detailed Alert Logic ───────────────────────────────────────────
+    const getStatusMessage = () => {
+        if (isPartialUpload) {
+            const p1Needs = p1Rejected && (!filesData.page1 || !page1Validated);
+            const p2Needs = p2Rejected && (!filesData.page2 || !page2Validated);
+            if (p1Needs && p2Needs) return "Page 1 & 2 need to be re-uploaded and validated.";
+            if (p1Needs) return "Page 1 needs to be re-uploaded and validated.";
+            if (p2Needs) return "Page 2 needs to be re-uploaded and validated.";
+            return "Validate the re-uploaded page before submitting.";
+        }
+
+        if (isAfterFeb2026) {
+            const hasP1 = p1AcceptedOnServer || (filesData.page1 && page1Validated);
+            const hasP2 = p2AcceptedOnServer || (filesData.page2 && page2Validated);
+
+            const p1Missing = !p1AcceptedOnServer && !filesData.page1;
+            const p2Missing = !p2AcceptedOnServer && !filesData.page2;
+            const p1NotValidated = filesData.page1 && !page1Validated;
+            const p2NotValidated = filesData.page2 && !page2Validated;
+
+            if (p1Missing && p2Missing) return "Page 1 & Page 2 are missing.";
+            if (p1Missing && p2NotValidated) return "Page 1 missing, Page 2 needs validation.";
+            if (p2Missing && p1NotValidated) return "Page 2 missing, Page 1 needs validation.";
+            if (p1Missing) return "Page 1 is missing.";
+            if (p2Missing) return "Page 2 is missing.";
+            if (p1NotValidated && p2NotValidated) return "Both pages need validation.";
+            if (p1NotValidated) return "Page 1 needs validation.";
+            if (p2NotValidated) return "Page 2 needs validation.";
+        }
+
+        return t?.('upload.dualValidationRequired') || 'Both documents must be validated before uploading.';
+    };
 
     // ── Visual Theme Configuration ──────────────────────────────────────
     const headerAccent = isFullyAccepted
@@ -350,8 +394,6 @@ const SHGUploadCard = ({
         );
     };
 
-    const canSubmit = canSubmitFull || canSubmitPartial;
-
     return (
         <div className={`relative bg-white rounded-xl shadow-md border-2 transition-all duration-500 ${cardBorderClass}`}>
 
@@ -537,9 +579,7 @@ const SHGUploadCard = ({
                                     <div className="flex items-center justify-center gap-1.5 mt-3 text-red-500">
                                         <AlertTriangle size={14} />
                                         <p className="text-[11px] font-bold">
-                                            {isPartialUpload
-                                                ? 'Validate the replacement page before uploading.'
-                                                : (t?.('upload.dualValidationRequired') || 'Both documents must be validated before uploading.')}
+                                            {getStatusMessage()}
                                         </p>
                                     </div>
                                 )}
