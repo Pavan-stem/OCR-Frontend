@@ -1939,27 +1939,30 @@ const SHGUploadSection = ({
         /* Conversion Edit Tab Content */
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
           {/* Search Bar for Conversions */}
-          <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg p-3 sm:p-4 border-2 border-gray-200">
+          <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200">
             <div className="relative group">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 group-focus-within:text-emerald-600 transition-colors" size={18} />
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-all duration-300" size={20} />
               <input
                 type="text"
-                placeholder={t?.('upload.searchConversions') || 'Search converted SHGs...'}
+                placeholder={t?.('upload.searchConversions') || 'Search converted SHGs by Name or ID...'}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 sm:py-3 border-2 border-gray-300 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm sm:text-base"
+                className="w-full pl-12 pr-5 py-3.5 sm:py-4 bg-slate-50/50 border border-slate-200/60 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500/50 focus:bg-white transition-all text-sm sm:text-base font-medium placeholder:text-slate-400"
               />
             </div>
           </div>
 
           <div className="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden">
-            <div className="bg-gray-50/50 px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-              <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-700">
-                {t?.('upload.convertedResults') || 'Converted SHG Results'} ({groupedConversions.length})
-              </h3>
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-emerald-600 rounded-full animate-pulse"></div>
-                <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-widest">
+            <div className="bg-slate-50/80 px-6 py-5 border-b border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-1 h-5 bg-emerald-500 rounded-full"></div>
+                <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-slate-800">
+                  {t?.('upload.convertedResults') || 'Converted SHG Results'} <span className="ml-1 text-slate-400 font-medium">({groupedConversions.length})</span>
+                </h3>
+              </div>
+              <div className="flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-100 transition-all">
+                <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+                <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">
                   {t?.('upload.realTimeSync') || 'Real-time sync'}
                 </span>
               </div>
@@ -1995,48 +1998,49 @@ const SHGUploadSection = ({
                     group.shgID?.toString().toLowerCase().includes(searchTerm.toLowerCase())
                   )
                   .map((group, idx) => (
-                    <div key={idx} className="p-4 sm:p-6 hover:bg-gray-50/50 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 group">
-                      <div className="flex items-start gap-4">
-                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg shrink-0 transition-transform group-hover:scale-110 ${group.isSynced ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
-                          {group.isSynced ? <CheckCircle size={24} /> : <AlertTriangle size={24} />}
+                    <div key={idx} className="p-4 sm:p-5 hover:bg-white transition-all duration-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 last:border-b-0">
+                      <div className="flex items-start gap-3 sm:gap-4 flex-1 min-w-0">
+                        <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0 transition-transform duration-300 ${group.isSynced ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-rose-50 text-rose-600 border border-rose-100'}`}>
+                          {group.isSynced ? <CheckCircle size={20} className="sm:hidden" /> : <AlertTriangle size={20} className="sm:hidden" />}
+                          {group.isSynced ? <CheckCircle size={24} className="hidden sm:block" /> : <AlertTriangle size={24} className="hidden sm:block" />}
                         </div>
-                        <div className="min-w-0">
-                          <h4 className="text-base font-black text-gray-900 leading-tight truncate">{group.shgName}</h4>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-[10px] font-black text-indigo-600/60 bg-indigo-50 px-2 py-0.5 rounded-lg uppercase tracking-wider">{group.shgID}</span>
+                        <div className="min-w-0 flex-1">
+                          <h4 className="text-sm sm:text-base font-bold text-slate-900 leading-tight tracking-tight break-words sm:truncate">{group.shgName}</h4>
+                          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                            <span className="text-[9px] sm:text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg uppercase tracking-wide border border-slate-200/50">{group.shgID}</span>
                             <div className="flex gap-1.5 items-center">
                               <div className="flex gap-1">
                                 {Object.keys(group.pages).map(p => {
                                   const item = group.pages[p];
                                   const isSynced = !!(item?.isSynced || item?.is_synced || item?.status === 'synced' || item?.status === 'synced_to_db');
                                   return (
-                                    <span key={p} className={`text-[9px] font-black ${isSynced ? 'bg-emerald-600' : 'bg-amber-500'} text-white px-1.5 py-0.5 rounded shadow-sm transition-colors`}>P{p}</span>
+                                    <span key={p} className={`text-[8px] sm:text-[9px] font-black ${isSynced ? 'bg-emerald-50 text-emerald-600 border border-emerald-500/20' : 'bg-amber-50 text-amber-600 border border-amber-500/20'} px-1.5 py-0.5 rounded transition-all`}>P{p}</span>
                                   );
                                 })}
-                                {!group.pages[1] && <span className="text-[9px] font-black bg-red-100 text-red-600 px-1.5 py-0.5 rounded border border-red-200">P1 Missing</span>}
-                                {!group.pages[2] && <span className="text-[9px] font-black bg-red-100 text-red-600 px-1.5 py-0.5 rounded border border-red-200">P2 Missing</span>}
+                                {!group.pages[1] && <span className="text-[8px] sm:text-[9px] font-bold bg-rose-50 text-rose-600 px-1.5 py-0.5 rounded border border-rose-100/50">P1 MISSING</span>}
+                                {!group.pages[2] && <span className="text-[8px] sm:text-[9px] font-bold bg-rose-50 text-rose-600 px-1.5 py-0.5 rounded border border-rose-100/50">P2 MISSING</span>}
                               </div>
-                              <span className={`text-[8px] font-black uppercase tracking-tighter px-1.5 py-0.5 rounded ${group.pages[1] && group.pages[2] ? 'text-emerald-600 bg-emerald-50' : 'text-amber-600 bg-amber-50'}`}>
-                                {group.pages[1] && group.pages[2] ? (t?.('upload.bothPagesReady') || 'Both Pages Ready') : (t?.('upload.incompleteSHG') || 'Incomplete SHG')}
+                              <span className={`text-[8px] sm:text-[9px] font-bold uppercase tracking-tight px-1.5 py-0.5 rounded flex items-center gap-1 ${group.pages[1] && group.pages[2] ? 'text-emerald-600 bg-emerald-50/50 border border-emerald-100' : 'text-amber-600 bg-amber-50/50 border border-amber-100'}`}>
+                                <div className={`w-1 h-1 rounded-full ${group.pages[1] && group.pages[2] ? 'bg-emerald-500' : 'bg-amber-500'}`}></div>
+                                {group.pages[1] && group.pages[2] ? (t?.('upload.bothPagesReady') || 'Both Ready') : (t?.('upload.incompleteSHG') || 'Incomplete')}
                               </span>
                             </div>
                           </div>
-                          <div className="mt-2 flex items-center gap-2">
-                            <div className={`px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest shadow-sm border ${group.isSynced
+                          <div className="mt-2.5 flex items-center gap-2">
+                            <div className={`px-2.5 py-1 rounded-lg text-[9px] sm:text-[10px] font-bold uppercase tracking-wider border flex items-center gap-1.5 ${group.isSynced
                               ? 'bg-emerald-600 text-white border-emerald-500'
-                              : 'bg-red-600 text-white border-red-500 animate-pulse'
+                              : 'bg-rose-600 text-white border-rose-500'
                               }`}>
-                              {group.isSynced
-                                ? t?.('upload.saved') || 'Saved'
-                                : t?.('upload.unsaved') || 'Unsaved'}
+                              {group.isSynced ? <CheckCircle size={10} /> : <AlertTriangle size={10} />}
+                              {group.isSynced ? t?.('upload.saved') || 'Saved' : t?.('upload.unsaved') || 'Unsaved'}
                             </div>
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3 self-end sm:self-center">
+                      <div className="flex items-center justify-end sm:justify-start gap-3">
                         <button
                           onClick={() => setEditingSHG(group)}
-                          className="px-6 py-3 bg-white border-2 border-gray-200 hover:border-indigo-600 text-gray-600 hover:text-indigo-600 rounded-xl font-black text-xs uppercase tracking-widest transition-all shadow-sm hover:shadow-md active:scale-95"
+                          className="w-full sm:w-auto px-6 py-2.5 bg-white border border-slate-200 hover:border-indigo-500 text-slate-600 hover:text-indigo-600 rounded-xl font-bold text-xs uppercase tracking-widest transition-all hover:bg-indigo-50/30"
                         >
                           {t?.('common.edit') || 'Edit'}
                         </button>
