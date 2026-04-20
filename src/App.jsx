@@ -520,8 +520,8 @@ export default function EnhancedTableOCRSystem() {
       } catch (e) {
         // Fallback: detect from current path
         const currentPath = window.location.pathname;
-        if (currentPath.startsWith('/Test')) {
-          basePath = '/Test';
+        if (currentPath.startsWith('/SMD')) {
+          basePath = '/SMD';
         } else {
           const pathParts = currentPath.split('/').filter(p => p);
           if (pathParts.length > 0) {
