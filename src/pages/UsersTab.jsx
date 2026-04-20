@@ -1,47 +1,46 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Edit, Trash2, FileSymlink, Filter, Loader2, X, Shield, User, MapPin, Phone, Lock, Unlock, CheckCircle, Search, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, FileText, Calendar, AlertCircle, AlertTriangle, Settings, Power, Clock, Download, Eye, EyeOff, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import { API_BASE } from '../utils/apiConfig';
 import { formatDateTime } from '../utils/dateUtils';
-const REJECTION_REASONS = [
-  "Follow guidelines",
-  "Table was cut off",
-  "There are dark shadows",
-  "table wasn't visible",
-  "wrong table",
-  "There was too much blur",
-  "There was background noise use plane background",
-  "Table was bent",
-  "Table was rotated",
-  "Wrong Image"
-];
+const REJECTION_REASONS = [];
 
 // Helper Component for Grouped Uploads in Admin View
-const AdminUploadCard = ({ group, status, currentUserRole, uploading, handleQuickStatusUpdate, openStatusModal, openImageViewer, downloadImage }) => {
+const AdminUploadCard = ({ group, currentUserRole, uploading, handleQuickStatusUpdate, openStatusModal, openImageViewer, downloadImage }) => {
   const [pageIndex, setPageIndex] = React.useState(1);
   const pages = Object.keys(group.pages).map(Number).sort((a, b) => a - b);
   const currentPage = group.pages[pageIndex] || group.pages[pages[0]];
   const hasMultiplePages = pages.length > 1;
 
-  const borderColor = status === 'pending' ? 'border-orange-300' : status === 'rejected' ? 'border-red-300' : 'border-green-300';
-  const bgColor = status === 'pending' ? 'bg-orange-50' : status === 'rejected' ? 'bg-red-50' : 'bg-green-50';
-  const badgeColor = status === 'pending' ? 'bg-orange-200 text-orange-800' : status === 'rejected' ? 'bg-red-200 text-red-800' : 'bg-green-200 text-green-800';
+  // Use the status of the CURRENTLY SELECTED page
+  const status = currentPage?.status || 'pending';
+  const borderColor = status === 'pending' ? 'border-orange-300' : 'border-green-300';
+  const bgColor = status === 'pending' ? 'bg-orange-50' : 'bg-green-50';
+  const badgeColor = status === 'pending' ? 'bg-orange-200 text-orange-800' : 'bg-green-200 text-green-800';
+
+  const getStatusColor = (s) => {
+    if (s === 'validated') return 'bg-emerald-500';
+    return 'bg-orange-500';
+  };
 
   return (
     <div className={`relative border-2 ${borderColor} ${bgColor} rounded-2xl p-4 transition-all hover:shadow-lg hover:border-indigo-400 flex flex-col`}>
-      {/* Page Tabs */}
+      {/* Page Tabs with status dots */}
       {hasMultiplePages && (
         <div className="flex gap-1 mb-3">
-          {pages.map(p => (
-            <button
-              key={p}
-              onClick={() => setPageIndex(p)}
-              className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase transition-all ${pageIndex === p ? 'bg-indigo-600 text-white' : 'bg-white/50 text-gray-600 border border-gray-200'}`}
-            >
-              P{p}
-            </button>
-          ))}
+          {pages.map(p => {
+            const pageStatus = group.pages[p]?.status || 'pending';
+            return (
+              <button
+                key={p}
+                onClick={() => setPageIndex(p)}
+                className={`relative px-3 py-1 rounded-lg text-[9px] font-black uppercase transition-all ${pageIndex === p ? 'bg-indigo-600 text-white' : 'bg-white/50 text-gray-600 border border-gray-200'}`}
+              >
+                P{p}
+                <div className={`absolute -top-1 -right-1 w-2 h-2 rounded-full border border-white ${getStatusColor(pageStatus)} shadow-sm`}></div>
+              </button>
+            );
+          })}
           <div className="ml-auto text-[8px] font-bold text-gray-400 uppercase self-center">
             {pages.length} Pages
           </div>
@@ -63,9 +62,11 @@ const AdminUploadCard = ({ group, status, currentUserRole, uploading, handleQuic
           <h4 className="font-bold text-sm text-gray-900 truncate">{currentPage.shgName}</h4>
           <p className="text-[10px] text-gray-600">ID: '{currentPage.shgID}</p>
         </div>
-        <span className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase ${badgeColor}`}>
-          {status}
-        </span>
+        <div className="flex flex-col items-end gap-1">
+          <span className={`px-2 py-1 rounded-lg text-[10px] font-black uppercase ${badgeColor}`}>
+            {status}
+          </span>
+        </div>
       </div>
 
       <div className="space-y-1.5 text-[11px] mb-3 flex-1 overflow-hidden">
@@ -73,55 +74,58 @@ const AdminUploadCard = ({ group, status, currentUserRole, uploading, handleQuic
           <Calendar className="w-3 h-3" />
           <span>{formatDateTime(currentPage.uploadTimestamp)}</span>
         </div>
-        {status === 'rejected' && currentPage.rejectionReason && (
-          <div className="bg-white/60 rounded-lg p-2 border-l-4 border-red-500">
-            <p className="text-[9px] font-black text-red-600 mb-0.5">Reason:</p>
-            <p className="text-[10px] text-gray-800 line-clamp-2 leading-tight">{currentPage.rejectionReason}</p>
-          </div>
-        )}
         <div className="text-gray-400 truncate opacity-60" title={currentPage.originalFilename}>
           {currentPage.originalFilename}
         </div>
       </div>
 
-      <div className="flex gap-2 mt-auto">
+      <div className="flex flex-col gap-2 mt-auto">
+        {/* Main View All Button */}
         <button
           onClick={() => openImageViewer(Object.values(group.pages))}
-          className="px-3 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl font-black text-[10px] transition-all shadow-sm flex items-center justify-center gap-1"
+          className="w-full px-3 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white rounded-xl font-black text-[10px] transition-all shadow-sm flex items-center justify-center gap-1"
         >
-          <Eye size={12} /> View {hasMultiplePages ? 'All' : ''}
+          <Eye size={12} /> View Document Package
         </button>
 
-        {status === 'pending' && currentUserRole !== 'admin - apm' && (
-          <>
+        {/* Page Specific Actions */}
+        <div className="flex gap-2">
+          {status === 'pending' && currentUserRole !== 'admin - apm' && (
             <button
-              onClick={async () => {
-                // Bulk approve all pages in this group
-                for (const up of Object.values(group.pages)) {
-                  await handleQuickStatusUpdate(up, 'validated');
-                }
-              }}
+              onClick={() => handleQuickStatusUpdate(currentPage, 'validated')}
               disabled={uploading}
               className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-[10px] transition-all shadow-sm flex items-center justify-center gap-1"
+              title={`Approve Page ${currentPage.page || 1}`}
             >
-              <CheckCircle size={12} /> Approve
+              <CheckCircle size={12} /> Approve P{currentPage.page || 1}
             </button>
+          )}
+
+          {(status === 'validated') && currentUserRole !== 'admin - apm' && (
             <button
               onClick={() => openStatusModal(currentPage)}
-              disabled={uploading}
-              className="flex-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl font-black text-[10px] transition-all shadow-sm flex items-center justify-center gap-1"
+              className="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-[10px] transition-all shadow-sm flex items-center justify-center gap-1"
             >
-              <X size={12} /> Reject
+              <Settings size={12} /> Page Details
             </button>
-          </>
-        )}
+          )}
+        </div>
 
-        {(status === 'rejected' || status === 'validated') && currentUserRole !== 'admin - apm' && (
+        {/* Bulk Approve option if multiple pages and at least one is pending */}
+        {hasMultiplePages && pages.some(p => group.pages[p]?.status === 'pending') && currentUserRole !== 'admin - apm' && (
           <button
-            onClick={() => openStatusModal(currentPage)}
-            className="flex-1 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-[10px] transition-all shadow-sm"
+            onClick={async () => {
+              for (const p of pages) {
+                const up = group.pages[p];
+                if (up.status === 'pending') {
+                  await handleQuickStatusUpdate(up, 'validated');
+                }
+              }
+            }}
+            disabled={uploading}
+            className="w-full py-1 text-[9px] font-black text-emerald-600 hover:text-emerald-700 transition-all uppercase tracking-widest border border-emerald-200 border-dashed rounded-lg bg-emerald-50/50"
           >
-            Details
+            Mark both as approved
           </button>
         )}
       </div>
@@ -357,12 +361,12 @@ const UsersTab = ({ filterProps }) => {
       <body>
         <table border="1" style="width: 100%;">
           <colgroup>
-            <col width="80"><col width="250"><col width="150"><col width="100"><col width="100"><col width="100"><col width="100"><col width="120">
+            <col width="80"><col width="250"><col width="150"><col width="100"><col width="100"><col width="100"><col width="120">
           </colgroup>
       `;
 
       // Main Header
-      html += `<tr><th colspan="8" bgcolor="${colors.header}" style="${titleStyle}">${headerTitle}</th></tr>`;
+      html += `<tr><th colspan="7" bgcolor="${colors.header}" style="${titleStyle}">${headerTitle}</th></tr>`;
 
       // Column Headers
       const subHeaderStyle = `bgcolor="${colors.subHeader}" style="${commonStyle} font-weight: bold;"`;
@@ -372,7 +376,6 @@ const UsersTab = ({ filterProps }) => {
         <th ${subHeaderStyle}>Mandal</th>
         <th ${subHeaderStyle}>Total SHGs</th>
         <th ${subHeaderStyle}>Uploaded</th>
-        <th ${subHeaderStyle}>Approved</th>
         <th ${subHeaderStyle}>Converted</th>
         <th ${subHeaderStyle}>Pending at VOA</th>
       </tr>`;
@@ -388,13 +391,12 @@ const UsersTab = ({ filterProps }) => {
           <td ${apmStyle}>${user.mandal || ''}</td>
           <td ${apmStyle}>${user.totalFiles || 0}</td>
           <td ${apmStyle}>${user.uploadedFiles || 0}</td>
-          <td ${apmStyle}>${apmPerf.uploads.approved || 0}</td>
           <td ${apmStyle}>${apmPerf.conversion.success || 0}</td>
           <td ${apmStyle}>${user.pendingFiles || 0}</td>
         </tr>`;
 
         // Empty spacing row
-        html += '<tr><td colspan="8" style="height: 10px; border: none;"></td></tr>';
+        html += '<tr><td colspan="7" style="height: 10px; border: none;"></td></tr>';
 
         ccs.forEach(cc => {
           const ccPerf = getPerf(cc);
@@ -406,7 +408,6 @@ const UsersTab = ({ filterProps }) => {
             <td ${ccStyle}>${cc.mandal || ''}</td>
             <td ${ccStyle}>${cc.totalFiles || 0}</td>
             <td ${ccStyle}>${cc.uploadedFiles || 0}</td>
-            <td ${ccStyle}>${ccPerf.uploads.approved || 0}</td>
             <td ${ccStyle}>${ccPerf.conversion.success || 0}</td>
             <td ${ccStyle}>${cc.pendingFiles || 0}</td>
           </tr>`;
@@ -422,12 +423,11 @@ const UsersTab = ({ filterProps }) => {
               <td ${voStyle}>${vo.mandal || ''}</td>
               <td ${voStyle}>${vo.totalFiles || 0}</td>
               <td ${voStyle}>${vo.uploadedFiles || 0}</td>
-              <td ${voStyle}>${voPerf.uploads.approved || 0}</td>
               <td ${voStyle}>${voPerf.conversion.success || 0}</td>
               <td ${pendingCell}>${vo.pendingFiles || 0}</td>
             </tr>`;
           });
-          html += '<tr><td colspan="8" style="height: 10px; border: none;"></td></tr>';
+          html += '<tr><td colspan="7" style="height: 10px; border: none;"></td></tr>';
         });
       } else {
         const topRow = user;
@@ -443,13 +443,12 @@ const UsersTab = ({ filterProps }) => {
           <td ${topStyle}>${topRow.mandal || ''}</td>
           <td ${topStyle}>${topRow.totalFiles || 0}</td>
           <td ${topStyle}>${topRow.uploadedFiles || 0}</td>
-          <td ${topStyle}>${topPerf.uploads.approved || 0}</td>
           <td ${topStyle}>${topPerf.conversion.success || 0}</td>
           <td ${topPendingStyle}>${topRow.pendingFiles || 0}</td>
         </tr>`;
 
         if (isCC && childrenList.length > 0) {
-          html += '<tr><td colspan="8" style="height: 10px; border: none;"></td></tr>';
+          html += '<tr><td colspan="7" style="height: 10px; border: none;"></td></tr>';
           childrenList.forEach(vo => {
             const voPerf = getPerf(vo);
             const voStyle = `style="${commonStyle}"`;
@@ -461,7 +460,6 @@ const UsersTab = ({ filterProps }) => {
               <td ${voStyle}>${vo.mandal || ''}</td>
               <td ${voStyle}>${vo.totalFiles || 0}</td>
               <td ${voStyle}>${vo.uploadedFiles || 0}</td>
-              <td ${voStyle}>${voPerf.uploads.approved || 0}</td>
               <td ${voStyle}>${voPerf.conversion.success || 0}</td>
               <td ${pendingCell}>${vo.pendingFiles || 0}</td>
             </tr>`;
@@ -635,24 +633,41 @@ const UsersTab = ({ filterProps }) => {
   };
 
   const groupedUserUploads = React.useMemo(() => {
-    const groups = {
-      pending: {},
-      validated: {},
-      rejected: {}
-    };
+    // 1. Group all uploads by shgID regardless of status
+    const shgGroups = {};
 
     userUploads.forEach(u => {
-      const status = u.status || 'pending';
-      if (!groups[status]) groups[status] = {};
-      if (!groups[status][u.shgID]) groups[status][u.shgID] = { pages: {} };
-      groups[status][u.shgID].pages[u.page || 1] = u;
+      if (!shgGroups[u.shgID]) {
+        shgGroups[u.shgID] = {
+          shgID: u.shgID,
+          shgName: u.shgName,
+          pages: {}
+        };
+      }
+      shgGroups[u.shgID].pages[u.page || 1] = u;
     });
 
-    return {
-      pending: Object.values(groups.pending),
-      validated: Object.values(groups.validated),
-      rejected: Object.values(groups.rejected)
+    // 2. Assign each SHG group to a section based on "most pending" status
+    const sections = {
+      pending: [],
+      rejected: [],
+      validated: []
     };
+
+    Object.values(shgGroups).forEach(group => {
+      const pageUploads = Object.values(group.pages);
+      const statuses = pageUploads.map(p => p.status || 'pending');
+
+      if (statuses.includes('pending')) {
+        sections.pending.push(group);
+      } else if (statuses.includes('rejected')) {
+        sections.rejected.push(group);
+      } else {
+        sections.validated.push(group);
+      }
+    });
+
+    return sections;
   }, [userUploads]);
 
   // Location data states (local to tab for better control)
@@ -703,14 +718,22 @@ const UsersTab = ({ filterProps }) => {
     clusterID: '',
     clusterName: '',
     userID: '',
-    userName: ''
+    userName: '',
+    assignedCC: '',   // CC clusterID to assign this VO to
+    shgList: []       // [{shgID, shgName}] for shg_master_data
   });
+
+  // CC dropdown list state (auto-loaded when district+mandal change for VO role)
+  const [ccList, setCcList] = useState([]);
+  const [ccListLoading, setCcListLoading] = useState(false);
 
   // Modal-specific location states to avoid overriding global filters
   const [modalMandals, setModalMandals] = useState([]);
   const [modalVillages, setModalVillages] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [shgListLoading, setShgListLoading] = useState(false);
+  const [deletedShgIds, setDeletedShgIds] = useState([]);
 
   const [maintenanceStatus, setMaintenanceStatus] = useState({ is_active: false, message: 'Server is under maintenance', end_time: null });
   const [lastSynced, setLastSynced] = useState(new Date());
@@ -725,6 +748,10 @@ const UsersTab = ({ filterProps }) => {
   const [gateMessage, setGateMessage] = useState('');
   const [isGateCollapsed, setIsGateCollapsed] = useState(true);
   // [MOVED TO PROPS]: expandedRows, loadingNodes
+
+  // VO Upload Access States
+  // [CLEANUP]: Unified into direct toggle logic
+  const [updatingAccessId, setUpdatingAccessId] = useState(null);
 
   // Helper to update children in a nested tree
   const updateTreeWithChildren = (parentId, children) => {
@@ -758,6 +785,35 @@ const UsersTab = ({ filterProps }) => {
     return null;
   };
 
+  const fetchNodeBranch = async (userId, userRole) => {
+    setLoadingNodes(prev => new Set(prev).add(userId));
+    try {
+      const token = localStorage.getItem('token');
+      const params = new URLSearchParams();
+      params.append('parentId', userId);
+      params.append('parentRole', userRole);
+      if (filterMonth) params.append('month', filterMonth);
+      if (filterYear) params.append('year', filterYear);
+      if (debouncedSearchTerm) params.append('search', debouncedSearchTerm);
+
+      const res = await fetch(`${API_BASE}/api/users?${params.toString()}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success && data.users) {
+        updateTreeWithChildren(userId, data.users);
+      }
+    } catch (err) {
+      console.error("Fetch Branch Error:", err);
+    } finally {
+      setLoadingNodes(prev => {
+        const next = new Set(prev);
+        next.delete(userId);
+        return next;
+      });
+    }
+  };
+
   const toggleRow = async (user) => {
     const userId = typeof user === 'string' ? user : user._id;
     const isExpanding = !expandedRows.has(userId);
@@ -766,32 +822,7 @@ const UsersTab = ({ filterProps }) => {
       const hasChildren = (user.ccs && user.ccs.length > 0) || (user.vos && user.vos.length > 0);
 
       if (!hasChildren) {
-        setLoadingNodes(prev => new Set(prev).add(userId));
-        try {
-          const token = localStorage.getItem('token');
-          const params = new URLSearchParams();
-          params.append('parentId', userId);
-          params.append('parentRole', user.role);
-          if (filterMonth) params.append('month', filterMonth);
-          if (filterYear) params.append('year', filterYear);
-          if (debouncedSearchTerm) params.append('search', debouncedSearchTerm);
-
-          const res = await fetch(`${API_BASE}/api/users?${params.toString()}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-          });
-          const data = await res.json();
-          if (data.success && data.users) {
-            updateTreeWithChildren(userId, data.users);
-          }
-        } catch (err) {
-          console.error("Lazy Load Error:", err);
-        } finally {
-          setLoadingNodes(prev => {
-            const next = new Set(prev);
-            next.delete(userId);
-            return next;
-          });
-        }
+        await fetchNodeBranch(userId, user.role);
       }
     }
 
@@ -905,6 +936,34 @@ const UsersTab = ({ filterProps }) => {
     }
   }, [formData.district, formData.mandal]);
 
+  // Load CC list when district+mandal change (for VO assignment)
+  useEffect(() => {
+    if (formData.role === 'VO' && formData.district && formData.mandal) {
+      const fetchCCList = async () => {
+        setCcListLoading(true);
+        try {
+          const token = localStorage.getItem('token');
+          const params = new URLSearchParams();
+          params.append('district', formData.district);
+          params.append('mandal', formData.mandal);
+          const res = await fetch(`${API_BASE}/api/cc-list?${params.toString()}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await res.json();
+          if (data.success) setCcList(data.ccs || []);
+          else setCcList([]);
+        } catch {
+          setCcList([]);
+        } finally {
+          setCcListLoading(false);
+        }
+      };
+      fetchCCList();
+    } else {
+      setCcList([]);
+    }
+  }, [formData.district, formData.mandal, formData.role]);
+
   useEffect(() => {
     localStorage.setItem(PAGE_KEY, page);
     setPageInput(String(page));
@@ -962,14 +1021,19 @@ const UsersTab = ({ filterProps }) => {
         `${API_BASE}/api/sse/stream/${connectionId}`
       );
 
-      const handleTreeRefresh = (event) => {
+      const handleTreeRefresh = async (event) => {
         try {
           const message = JSON.parse(event.data);
 
           if (message.type === 'tree_refresh') {
             console.log('📡 Received tree_refresh event:', message);
 
-            fetchUsers({ isBackground: true });
+            // 1. Refresh basic tree state in background
+            await fetchUsers({ isBackground: true });
+            
+            // 2. Surgical stats sync (refresh numbers)
+            // This ensures Case 1 (APM/CC) and Case 2 (VO) stats update immediately
+            await syncVisibleStats();
 
             console.log(`✅ Tree refreshed due to: ${message.reason}`);
           }
@@ -1209,95 +1273,95 @@ const UsersTab = ({ filterProps }) => {
     }
   };
 
+  const syncVisibleStats = async () => {
+    if (!serverStatus.active) return;
+    // 1. Collect all visible IDs from the current tree
+    const visibleIds = [];
+    const collectIds = (list) => {
+      if (!list) return;
+      list.forEach(u => {
+        visibleIds.push(u._id);
+        const children = u.ccs || u.vos;
+        if (children) collectIds(children);
+      });
+    };
+    collectIds(usersRef.current);
+
+    if (visibleIds.length === 0) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${API_BASE}/api/users/sync-stats`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userIds: visibleIds,
+          month: filterMonth,
+          year: filterYear
+        })
+      });
+      const data = await res.json();
+      if (data.success && data.stats) {
+        // 2. Surgical "In-Place" Update
+        setUsers(prevUsers => {
+          const updateStatsRecursive = (list) => {
+            if (!list) return [];
+            return list.map(u => {
+              const newStats = data.stats[String(u._id)];
+              const updatedUser = newStats ? {
+                ...u,
+                totalFiles: newStats.stats?.total ?? u.totalFiles,
+                uploadedFiles: newStats.stats?.uploaded ?? u.uploadedFiles,
+                pendingFiles: newStats.stats?.pending ?? u.pendingFiles,
+                performanceStats: newStats.performance ? {
+                  uploads: {
+                    approved: newStats.performance.uploads?.approved ?? 0,
+                    pending: newStats.performance.uploads?.pending ?? 0
+                  },
+                  conversion: {
+                    success: newStats.performance.conversion?.success ?? 0,
+                    failed: newStats.performance.conversion?.failed ?? 0,
+                    pending: newStats.performance.conversion?.pending ?? 0,
+                    processing: newStats.performance.conversion?.processing ?? 0
+                  }
+                } : u.performanceStats
+              } : u;
+
+              const children = u.ccs || u.vos;
+              if (children) {
+                if (u.ccs) return { ...updatedUser, ccs: updateStatsRecursive(u.ccs) };
+                if (u.vos) return { ...updatedUser, vos: updateStatsRecursive(u.vos) };
+              }
+              return updatedUser;
+            });
+          };
+          return updateStatsRecursive(prevUsers);
+        });
+      }
+    } catch (err) {
+      console.error('Error syncing stats:', err);
+    }
+  };
+
   useEffect(() => {
     fetchUsers();
     fetchUserCounts();
+    // Immediate deep sync when filters change to avoid "Data Ghosting"
+    syncVisibleStats();
   }, [serverStatus.active, page, limit, debouncedSearchTerm, selectedDistrict, selectedMandal, selectedVillage, filterMonth, filterYear]);
 
   // Periodic refresh for users list (to update online status dots & stats)
   useEffect(() => {
     if (!serverStatus.active) return;
 
-    const syncVisibleStats = async () => {
-      // 1. Collect all visible IDs from the current tree
-      const visibleIds = [];
-      const collectIds = (list) => {
-        if (!list) return;
-        list.forEach(u => {
-          visibleIds.push(u._id);
-          const children = u.ccs || u.vos;
-          if (children) collectIds(children);
-        });
-      };
-      collectIds(usersRef.current);
-
-      if (visibleIds.length === 0) return;
-
-      try {
-        const token = localStorage.getItem('token');
-        const res = await fetch(`${API_BASE}/api/users/sync-stats`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            userIds: visibleIds,
-            month: filterMonth,
-            year: filterYear
-          })
-        });
-        const data = await res.json();
-        if (data.success && data.stats) {
-          // 2. Surgical "In-Place" Update
-          setUsers(prevUsers => {
-            const updateStatsRecursive = (list) => {
-              if (!list) return [];
-              return list.map(u => {
-                const newStats = data.stats[String(u._id)];
-                const updatedUser = newStats ? {
-                  ...u,
-                  stats: newStats.stats,
-                  performance: newStats.performance,
-                  totalFiles: newStats.stats?.total ?? u.totalFiles,
-                  uploadedFiles: newStats.stats?.uploaded ?? u.uploadedFiles,
-                  pendingFiles: newStats.stats?.pending ?? u.pendingFiles,
-                  performanceStats: newStats.performance ? {
-                    uploads: {
-                      approved: newStats.performance.uploads?.approved ?? 0,
-                      rejected: newStats.performance.uploads?.rejected ?? 0,
-                      pending: newStats.performance.uploads?.pending ?? 0
-                    },
-                    conversion: {
-                      success: newStats.performance.conversion?.success ?? 0,
-                      failed: newStats.performance.conversion?.failed ?? 0,
-                      pending: newStats.performance.conversion?.pending ?? 0,
-                      processing: newStats.performance.conversion?.processing ?? 0
-                    }
-                  } : u.performanceStats
-                } : u;
-
-                const children = u.ccs || u.vos;
-                if (children) {
-                  if (u.ccs) return { ...updatedUser, ccs: updateStatsRecursive(u.ccs) };
-                  if (u.vos) return { ...updatedUser, vos: updateStatsRecursive(u.vos) };
-                }
-                return updatedUser;
-              });
-            };
-            return updateStatsRecursive(prevUsers);
-          });
-        }
-      } catch (err) {
-        console.error('Error syncing stats:', err);
-      }
-    };
-
     const interval = setInterval(() => {
       // Refresh counts and surgical sync
       fetchUserCounts();
       syncVisibleStats();
-    }, 15000); // More frequent (15s) since it's lightweight
+    }, 15000); // 15s sync
 
     return () => clearInterval(interval);
   }, [serverStatus.active, filterMonth, filterYear]);
@@ -1384,7 +1448,7 @@ const UsersTab = ({ filterProps }) => {
     }
   };
 
-  // Approval Gate Functions
+  // Conversion Gate Functions
   useEffect(() => {
     fetchGateStatus();
     const interval = setInterval(fetchGateStatus, 15000); // Sync every 15s
@@ -1444,9 +1508,90 @@ const UsersTab = ({ filterProps }) => {
       }
     } catch (err) {
       console.error('Error toggling gate:', err);
-      alert('Error toggling approval gate');
+      alert('Error toggling conversion gate');
     } finally {
       setIsTogglingGate(false);
+    }
+  };
+
+  const handleToggleUploadAccess = async (targetUser) => {
+    if (updatingAccessId) return;
+
+    setUpdatingAccessId(targetUser._id);
+    try {
+      const token = localStorage.getItem('token');
+      const currentMode = targetUser.uploadAccessMode || 'default';
+      const newMode = currentMode === 'default' ? 'restricted' : 'default';
+
+      const payload = {
+        userId: targetUser._id,
+        mode: newMode,
+        month: filterMonth,
+        year: filterYear,
+        applyToBranch: !targetUser.role?.toLowerCase().includes('vo') // APM/CC always apply to branch
+      };
+
+      const res = await fetch(`${API_BASE}/api/admin/vo/upload-access`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        // Direct local state update for both individual VO and branch-level toggles (CC/APM)
+        setUsers(prevUsers => {
+          const updateInBranch = (list, forceMode = null) => {
+            if (!list) return [];
+            return list.map(u => {
+              // Should we force this node to the new mode? (e.g. child of a toggled CC)
+              if (forceMode) {
+                const updated = {
+                  ...u,
+                  uploadAccessMode: forceMode.mode,
+                  restrictedMonth: forceMode.month,
+                  restrictedYear: forceMode.year
+                };
+                if (u.ccs) updated.ccs = updateInBranch(u.ccs, forceMode);
+                if (u.vos) updated.vos = updateInBranch(u.vos, forceMode);
+                return updated;
+              }
+
+              // Is this the target node?
+              if (u._id === targetUser._id) {
+                const updated = {
+                  ...u,
+                  uploadAccessMode: payload.mode,
+                  restrictedMonth: payload.month,
+                  restrictedYear: payload.year
+                };
+                // If applying to branch, force all children to follow the same state
+                if (payload.applyToBranch) {
+                  if (u.ccs) updated.ccs = updateInBranch(u.ccs, { mode: payload.mode, month: payload.month, year: payload.year });
+                  if (u.vos) updated.vos = updateInBranch(u.vos, { mode: payload.mode, month: payload.month, year: payload.year });
+                }
+                return updated;
+              }
+
+              // Otherwise continue searching
+              const updated = { ...u };
+              if (u.ccs) updated.ccs = updateInBranch(u.ccs);
+              if (u.vos) updated.vos = updateInBranch(u.vos);
+              return updated;
+            });
+          };
+          return updateInBranch(prevUsers);
+        });
+      } else {
+        alert(data.message || 'Failed to update access');
+      }
+    } catch (err) {
+      console.error('Toggle Access Error:', err);
+    } finally {
+      setUpdatingAccessId(null);
     }
   };
 
@@ -1581,7 +1726,7 @@ const UsersTab = ({ filterProps }) => {
 
       // Construct final role
       const finalRole = formData.isDeveloper ? `${formData.role} - Developer` : formData.role;
-      const { isDeveloper, ...submitData } = { ...formData, role: finalRole };
+      const { isDeveloper, assignedCC, shgList, ...submitData } = { ...formData, role: finalRole };
 
       const res = await fetch(`${API_BASE}/api/users`, {
         method: 'POST',
@@ -1593,15 +1738,82 @@ const UsersTab = ({ filterProps }) => {
       });
       const data = await res.json();
       if (data.success) {
+        // --- Post-creation: CC-VO mapping ---
+        if (formData.role === 'VO' && assignedCC && formData.voID) {
+          try {
+            await fetch(`${API_BASE}/api/cc-vo-mapping`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+              body: JSON.stringify({ ccID: assignedCC, voID: formData.voID })
+            });
+          } catch (mappingErr) {
+            console.warn('CC-VO mapping failed (non-critical):', mappingErr);
+          }
+        }
+
+        // --- Post-creation: SHG master data ---
+        if (formData.role === 'VO' && shgList && shgList.length > 0) {
+          try {
+            const shgsPayload = shgList
+              .filter(s => s.shgID && s.shgName)
+              .map(s => ({
+                shgID: s.shgID,
+                shgName: s.shgName,
+                voID: formData.voID,
+                voName: formData.voName,
+                district: formData.district,
+                mandal: formData.mandal,
+                village: formData.village,
+                month: 1,
+                year: 2025
+              }));
+            if (shgsPayload.length > 0) {
+              await fetch(`${API_BASE}/api/shg-master`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ shgs: shgsPayload })
+              });
+            }
+          } catch (shgErr) {
+            console.warn('SHG master data failed (non-critical):', shgErr);
+          }
+        }
+
         setShowAddModal(false);
         setFormData({
           voName: '', phone: '', password: '', role: 'VO', isDeveloper: false,
           district: '', mandal: '', village: '',
           voID: '', voaName: '',
           clusterID: '', clusterName: '',
-          userID: '', userName: ''
+          userID: '', userName: '',
+          assignedCC: '', shgList: []
         });
-        fetchUsers();
+        setCcList([]);
+
+        // 🔄 Optimized Refersh: Find parent and refresh only that branch
+        let refreshedBranch = false;
+        if (formData.role === 'VO' && formData.assignedCC) {
+          // Find the CC node in the tree to refresh its branch
+          const findAndRefresh = (list) => {
+            if (!list) return false;
+            for (const node of list) {
+              if (node.clusterID === formData.assignedCC || node.voID === formData.assignedCC) {
+                fetchNodeBranch(node._id, node.role);
+                return true;
+              }
+              const children = node.ccs || node.vos;
+              if (children && findAndRefresh(children)) return true;
+            }
+            return false;
+          };
+          refreshedBranch = findAndRefresh(users);
+        }
+
+        if (!refreshedBranch) {
+          fetchUsers(); // Fallback to full refresh
+        }
+
+        fetchUserCounts();
       } else {
         alert(data.error || 'Failed to create user');
       }
@@ -1620,7 +1832,7 @@ const UsersTab = ({ filterProps }) => {
 
       // Construct final role
       const finalRole = formData.isDeveloper ? `${formData.role} - Developer` : formData.role;
-      const { isDeveloper, ...submitData } = { ...formData, role: finalRole };
+      const { isDeveloper, shgList, ...submitData } = { ...formData, role: finalRole };
 
       const res = await fetch(`${API_BASE}/api/users/${currentUser._id}`, {
         method: 'PUT',
@@ -1632,6 +1844,68 @@ const UsersTab = ({ filterProps }) => {
       });
       const data = await res.json();
       if (data.success) {
+        // --- Sync SHG Master Data ---
+        if (formData.role === 'VO') {
+          // 1. Handle Deletions
+          for (const shgId of deletedShgIds) {
+            try {
+              await fetch(`${API_BASE}/api/shg-master/${shgId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+              });
+            } catch (err) { console.warn(`Failed to delete SHG ${shgId}:`, err); }
+          }
+
+          // 2. Handle Updates & New Entries
+          const newShgs = [];
+          for (const shg of formData.shgList) {
+            if (shg._id) {
+              // Existing SHG -> Update
+              try {
+                await fetch(`${API_BASE}/api/shg-master/${shg._id}`, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                  body: JSON.stringify({
+                    'SHG Name': shg['SHG Name'] || shg.shgName,
+                    'endMonth': shg.endMonth,
+                    'endYear': shg.endYear
+                  })
+                });
+              } catch (err) { console.warn(`Failed to update SHG ${shg._id}:`, err); }
+            } else {
+              // New SHG -> Queue for batch create
+              newShgs.push(shg);
+            }
+          }
+
+          if (newShgs.length > 0) {
+            try {
+              const shgsPayload = newShgs
+                .filter(s => s.shgID && s.shgName)
+                .map(s => ({
+                  shgID: s.shgID,
+                  shgName: s.shgName,
+                  voID: formData.voID,
+                  voName: formData.voName,
+                  district: formData.district,
+                  mandal: formData.mandal,
+                  village: formData.village,
+                  month: 1,
+                  year: 2025,
+                  endMonth: s.endMonth || null,
+                  endYear: s.endYear || null
+                }));
+              if (shgsPayload.length > 0) {
+                await fetch(`${API_BASE}/api/shg-master`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                  body: JSON.stringify({ shgs: shgsPayload })
+                });
+              }
+            } catch (err) { console.warn('Failed to add new SHGs:', err); }
+          }
+        }
+
         setShowEditModal(false);
         fetchUsers();
       } else {
@@ -1654,11 +1928,93 @@ const UsersTab = ({ filterProps }) => {
       });
       const data = await res.json();
       if (data.success) {
-        fetchUsers();
+        // --- OPTIMIZED FRONTEND REMOVAL ---
+
+        let deletedUser = null;
+        let parentId = null;
+
+        // 🔍 Step 1: Find user and parent before removing
+        const findAndTrace = (list, pid = null) => {
+          if (!list) return false;
+          for (const u of list) {
+            if (u._id === userId) {
+              deletedUser = u;
+              parentId = pid;
+              return true;
+            }
+            const children = u.ccs || u.vos;
+            if (children && findAndTrace(children, u._id)) return true;
+          }
+          return false;
+        };
+
+        findAndTrace(users);
+        if (!deletedUser) {
+          deletedUser = staffUsers.find(u => u._id === userId);
+          // Note: Staff users are root level in this context
+        }
+
+        if (!deletedUser) {
+          // Fallback if local lookup fails
+          fetchUsers();
+          return;
+        }
+
+        // Determine role for count decrement
+        const rawRole = (deletedUser.role || '').toLowerCase();
+        let roleKey = 'vo';
+        if (rawRole.includes('apm')) roleKey = 'apm';
+        else if (rawRole.includes('cc')) roleKey = 'cc';
+
+        // 🔄 Step 2: Recursive remove and stats decrement
+        const removeFromTree = (list) => {
+          if (!list) return [];
+          return list
+            .filter(u => u._id !== userId)
+            .map(u => {
+              const updatedNode = { ...u };
+
+              // Recurse into children
+              if (u.ccs) updatedNode.ccs = removeFromTree(u.ccs);
+              if (u.vos) updatedNode.vos = removeFromTree(u.vos);
+
+              // 📊 Subtract stats from parent node
+              if (u._id === parentId && (deletedUser.totalFiles || deletedUser.uploadedFiles)) {
+                // Main display fields
+                updatedNode.totalFiles = Math.max(0, (u.totalFiles || 0) - (deletedUser.totalFiles || 0));
+                updatedNode.uploadedFiles = Math.max(0, (u.uploadedFiles || 0) - (deletedUser.uploadedFiles || 0));
+                updatedNode.pendingFiles = Math.max(0, (u.pendingFiles || 0) - (deletedUser.pendingFiles || 0));
+
+                // Deep stats object
+                if (u.stats) {
+                  updatedNode.stats = {
+                    ...u.stats,
+                    total: Math.max(0, (u.stats.total || 0) - (deletedUser.totalFiles || 0)),
+                    uploaded: Math.max(0, (u.stats.uploaded || 0) - (deletedUser.uploadedFiles || 0)),
+                    pending: Math.max(0, (u.stats.pending || 0) - (deletedUser.pendingFiles || 0))
+                  };
+                }
+              }
+
+              return updatedNode;
+            });
+        };
+
+        // 🚀 Step 3: Apply State Updates
+        setUsers(prev => removeFromTree(prev));
+        setStaffUsers(prev => prev.filter(u => u._id !== userId));
+        setTotalUsers(prev => Math.max(0, prev - 1));
+        setUserCounts(prev => ({
+          ...prev,
+          [roleKey]: Math.max(0, (prev[roleKey] || 0) - 1)
+        }));
+        fetchUserCounts(); // 🔄 Also refresh from server to ensure filter consistency
+
       } else {
         alert(data.error || 'Failed to delete user');
       }
     } catch (err) {
+      console.error('Delete User error:', err);
       alert('Error deleting user');
     }
   };
@@ -1690,10 +2046,36 @@ const UsersTab = ({ filterProps }) => {
       clusterID: user.clusterID || '',
       clusterName: user.clusterName || '',
       userID: user.userID || '',
-      userName: user.userName || user.voName || ''
+      userName: user.userName || user.voName || '',
+      assignedCC: '',
+      shgList: []
     });
+    setDeletedShgIds([]);
     setShowPassword(false);
+    setCcList([]);
     setShowEditModal(true);
+
+    // Fetch SHGs if it's a VO
+    if (baseRole === 'VO' && user.voID) {
+      const fetchVOShgs = async () => {
+        setShgListLoading(true);
+        try {
+          const token = localStorage.getItem('token');
+          const res = await fetch(`${API_BASE}/api/shg-master/vo/${user.voID}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          const data = await res.json();
+          if (data.success) {
+            setFormData(prev => ({ ...prev, shgList: data.shgs || [] }));
+          }
+        } catch (err) {
+          console.error('Failed to fetch SHGs:', err);
+        } finally {
+          setShgListLoading(false);
+        }
+      };
+      fetchVOShgs();
+    }
   };
 
   const openAddModal = () => {
@@ -1725,9 +2107,12 @@ const UsersTab = ({ filterProps }) => {
       clusterID: '',
       clusterName: '',
       userID: '',
-      userName: ''
+      userName: '',
+      assignedCC: '',
+      shgList: []
     });
     setShowPassword(false);
+    setCcList([]);
     setShowAddModal(true);
   };
 
@@ -1859,7 +2244,7 @@ const UsersTab = ({ filterProps }) => {
     setUploading(true);
     try {
       const token = localStorage.getItem('token');
-      
+
       let url;
       let method;
       let bodyData;
@@ -2126,7 +2511,7 @@ const UsersTab = ({ filterProps }) => {
           </div>
         )}
 
-        {/* Approval Gate Controls - Admin/Dev Only */}
+        {/* Conversion Gate Controls - Admin/Dev Only */}
         {isDeveloperUser && (
           <div className="bg-white rounded-3xl p-4 sm:p-6 shadow-md border border-gray-100">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -2136,7 +2521,7 @@ const UsersTab = ({ filterProps }) => {
                 </div>
                 <div>
                   <h3 className="text-sm sm:text-base font-black text-gray-900 flex items-center gap-2">
-                    Approval Gate
+                    Conversion Gate
                     <span className={`text-xs font-black px-2 py-1 rounded-full ${gateStatus.isOpen
                       ? 'bg-emerald-100 text-emerald-700'
                       : 'bg-red-100 text-red-700'
@@ -2146,7 +2531,7 @@ const UsersTab = ({ filterProps }) => {
                   </h3>
                   <p className="text-[10px] sm:text-xs text-gray-400 font-bold uppercase tracking-wider mt-0.5">
                     {gateStatus.lastUpdatedAt
-                      ? `Last updated by ${gateStatus.lastUpdatedBy} at ${new Date(gateStatus.lastUpdatedAt).toLocaleTimeString()}`
+                      ? `Last updated by ${gateStatus.lastUpdatedByName || gateStatus.lastUpdatedBy} at ${new Date(gateStatus.lastUpdatedAt).toLocaleTimeString()}`
                       : 'Gate status'}
                   </p>
                 </div>
@@ -2207,6 +2592,8 @@ const UsersTab = ({ filterProps }) => {
             )}
           </div>
         )}
+
+        {/* VO Upload Access Gateway - Admin/APM/CC/Dev */}
 
         <div className={`grid gap-6 ${currentUserRole.includes('admin - cc')
           ? 'grid-cols-1 hidden'
@@ -2287,27 +2674,37 @@ const UsersTab = ({ filterProps }) => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label className="text-xs font-black text-gray-500 ml-1 uppercase">Month</label>
-                    <select
-                      value={filterMonth || String(new Date().getMonth() + 1).padStart(2, '0')}
-                      onChange={(e) => onMonthChange(e.target.value)}
-                      className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 hover:bg-white"
-                    >
-                      {['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'].map(m => (
-                        <option key={m} value={m}>{['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][parseInt(m) - 1]}</option>
-                      ))}
-                    </select>
+                    <div className="relative group">
+                      <select
+                        value={filterMonth || String(new Date().getMonth() + 1).padStart(2, '0')}
+                        onChange={(e) => onMonthChange(e.target.value)}
+                        className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 hover:bg-white pr-12"
+                      >
+                        {['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'].map(m => (
+                          <option key={m} value={m}>{['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][parseInt(m) - 1]}</option>
+                        ))}
+                      </select>
+                      <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-focus-within:text-indigo-600 transition-colors">
+                        <ChevronDown className="w-4 h-4" />
+                      </div>
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <label className="text-xs font-black text-gray-500 ml-1 uppercase">Year</label>
-                    <select
-                      value={filterYear || new Date().getFullYear()}
-                      onChange={(e) => onYearChange(e.target.value)}
-                      className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 hover:bg-white"
-                    >
-                      {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map(y => (
-                        <option key={y} value={y}>{y}</option>
-                      ))}
-                    </select>
+                    <div className="relative group">
+                      <select
+                        value={filterYear || new Date().getFullYear()}
+                        onChange={(e) => onYearChange(e.target.value)}
+                        className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 hover:bg-white pr-12"
+                      >
+                        {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map(y => (
+                          <option key={y} value={y}>{y}</option>
+                        ))}
+                      </select>
+                      <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-focus-within:text-indigo-600 transition-colors">
+                        <ChevronDown className="w-4 h-4" />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2325,40 +2722,55 @@ const UsersTab = ({ filterProps }) => {
                     <>
                       <div className="space-y-2">
                         <label className="text-xs font-black text-gray-500 ml-1 uppercase">District</label>
-                        <select
-                          value={selectedDistrict}
-                          onChange={(e) => onDistrictChange(e.target.value)}
-                          className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 hover:bg-white"
-                        >
-                          <option value="all">All Districts</option>
-                          {districts.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
-                        </select>
+                        <div className="relative group">
+                          <select
+                            value={selectedDistrict}
+                            onChange={(e) => onDistrictChange(e.target.value)}
+                            className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 hover:bg-white pr-12"
+                          >
+                            <option value="all">All Districts</option>
+                            {districts.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
+                          </select>
+                          <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-focus-within:text-indigo-600 transition-colors">
+                            <ChevronDown className="w-4 h-4" />
+                          </div>
+                        </div>
                       </div>
                       <div className="space-y-2">
                         <label className="text-xs font-black text-gray-500 ml-1 uppercase">Mandal</label>
-                        <select
-                          value={selectedMandal}
-                          onChange={(e) => onMandalChange(e.target.value)}
-                          disabled={selectedDistrict === 'all'}
-                          className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          <option value="all">All Mandals</option>
-                          {mandals.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
-                        </select>
+                        <div className="relative group">
+                          <select
+                            value={selectedMandal}
+                            onChange={(e) => onMandalChange(e.target.value)}
+                            disabled={selectedDistrict === 'all'}
+                            className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed pr-12"
+                          >
+                            <option value="all">All Mandals</option>
+                            {mandals.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+                          </select>
+                          <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-focus-within:text-indigo-600 transition-colors">
+                            <ChevronDown className="w-4 h-4" />
+                          </div>
+                        </div>
                       </div>
                     </>
                   )}
                   <div className="space-y-2">
                     <label className="text-xs font-black text-gray-500 ml-1 uppercase">Village</label>
-                    <select
-                      value={selectedVillage}
-                      onChange={(e) => onVillageChange(e.target.value)}
-                      disabled={selectedMandal === 'all'}
-                      className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <option value="all">All Villages</option>
-                      {villages.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
-                    </select>
+                    <div className="relative group">
+                      <select
+                        value={selectedVillage}
+                        onChange={(e) => onVillageChange(e.target.value)}
+                        disabled={selectedMandal === 'all'}
+                        className="w-full appearance-none bg-gray-50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all font-bold text-gray-700 hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed pr-12"
+                      >
+                        <option value="all">All Villages</option>
+                        {villages.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
+                      </select>
+                      <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-focus-within:text-indigo-600 transition-colors">
+                        <ChevronDown className="w-4 h-4" />
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2484,20 +2896,14 @@ const UsersTab = ({ filterProps }) => {
                                 {(uIsAdmin || uIsDev) ? (
                                   <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest italic">N/A</span>
                                 ) : (
-                                  <div className="flex flex-col gap-2">
-                                    <div className="flex justify-center items-center gap-4">
-                                      <div className="flex flex-col items-center">
-                                        <span className="text-xs font-black text-green-600 leading-none">{u.uploadedFiles || 0}</span>
-                                        <span className="text-[8px] font-black text-green-600/60 uppercase tracking-tighter mt-1">Uploaded</span>
-                                      </div>
-                                      <div className="flex flex-col items-center">
-                                        <span className="text-xs font-black text-orange-500 leading-none">{u.pendingFiles || 0}</span>
-                                        <span className="text-[8px] font-black text-orange-400 uppercase tracking-tighter mt-1">Pending</span>
-                                      </div>
-                                      <div className="flex flex-col items-center">
-                                        <span className="text-xs font-black text-black leading-none">{u.totalFiles || 0}</span>
-                                        <span className="text-[8px] font-black text-gray-400 uppercase tracking-tighter mt-1">Total</span>
-                                      </div>
+                                  <div className="flex justify-center items-center gap-6">
+                                    <span className="text-base font-black text-emerald-600 leading-none" title="Uploaded">{u.uploadedFiles || 0}</span>
+                                    <span className="text-base font-black text-orange-500 leading-none" title="Pending">{u.pendingFiles || 0}</span>
+                                    <span className="text-base font-black text-gray-900 leading-none" title="Total">{u.totalFiles || 0}</span>
+                                    <div className="border-l border-gray-100 pl-4">
+                                      <span className="text-base font-black text-indigo-500 tracking-tighter" title="Percentage Complete">
+                                        {u.totalFiles > 0 ? (((u.uploadedFiles || 0) / u.totalFiles) * 100).toFixed(1) : 0}%
+                                      </span>
                                     </div>
                                   </div>
                                 )}
@@ -2507,47 +2913,36 @@ const UsersTab = ({ filterProps }) => {
                                   <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest italic">N/A</span>
                                 ) : (
                                   <div className="flex flex-col gap-2">
-                                    <div className="flex justify-center items-center gap-4">
-                                      <div className="flex flex-col items-center">
-                                        <span className="text-xs font-black text-green-600 leading-none">{perf.uploads.approved}</span>
-                                        <span className="text-[8px] font-black text-green-600/60 uppercase tracking-tighter mt-1">Approved</span>
-                                      </div>
-                                      <div className="flex flex-col items-center">
-                                        <span className="text-xs font-black text-red-600 leading-none">{perf.uploads.rejected}</span>
-                                        <span className="text-[8px] font-black text-red-400 uppercase tracking-tighter mt-1">Rejected</span>
-                                      </div>
-                                      <div className="flex flex-col items-center">
-                                        <span className="text-xs font-black text-orange-500 leading-none">{perf.uploads.pending}</span>
-                                        <span className="text-[8px] font-black text-orange-400 uppercase tracking-tighter mt-1">Pending</span>
-                                      </div>
-                                    </div>
-                                  </div>
-                                )}
-                              </td>
-                              <td className="px-4 py-6 text-center border-r border-gray-50">
-                                {(uIsAdmin || uIsDev) ? (
-                                  <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest italic">N/A</span>
-                                ) : (
-                                  <div className="flex flex-col gap-2">
-                                    <div className="flex justify-center items-center gap-4">
-                                      <div className="flex flex-col items-center">
-                                        <span className="text-xs font-black text-green-600 leading-none">{perf.conversion.success}</span>
-                                        <span className="text-[8px] font-black text-green-600/60 uppercase tracking-tighter mt-1">Success</span>
-                                      </div>
-                                      <div className="flex flex-col items-center">
-                                        <span className="text-xs font-black text-red-600 leading-none">{perf.conversion.failed}</span>
-                                        <span className="text-[8px] font-black text-red-400 uppercase tracking-tighter mt-1">Failed</span>
-                                      </div>
-                                      <div className="flex flex-col items-center">
-                                        <span className="text-xs font-black text-orange-500 leading-none">{perf.conversion.pending + perf.conversion.processing}</span>
-                                        <span className="text-[8px] font-black text-orange-400 uppercase tracking-tighter mt-1">In Que</span>
-                                      </div>
+                                    <div className="flex justify-center items-center gap-6">
+                                      <span className="text-base font-black text-emerald-600 leading-none" title="Success">{perf.conversion.success}</span>
+                                      <span className="text-base font-black text-red-600 leading-none" title="Failed">{perf.conversion.failed}</span>
+                                      <span className="text-base font-black text-orange-500 leading-none" title="In Queue">{perf.conversion.pending + perf.conversion.processing}</span>
                                     </div>
                                   </div>
                                 )}
                               </td>
                               <td className="px-4 py-6 whitespace-nowrap text-right">
                                 <div className="flex justify-end gap-2 transition-opacity">
+                                  {(isDeveloperUser || currentUserRole.includes('admin') || currentUserRole.includes('apm') || currentUserRole.includes('cc')) && (
+                                    <button
+                                      id={`select-access-${u._id}`}
+                                      onClick={() => handleToggleUploadAccess(u)}
+                                      disabled={updatingAccessId === u._id}
+                                      className={`p-1.5 rounded-lg transition-all shadow-sm ${u.uploadAccessMode === 'restricted'
+                                          ? 'bg-orange-600 text-white shadow-orange-200'
+                                          : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-100'
+                                        }`}
+                                      title={u.uploadAccessMode === 'restricted' ? "Upload Access: LOCKED (Click to release)" : "Upload Access: OPEN (Click to lock to current month)"}
+                                    >
+                                      {updatingAccessId === u._id ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                      ) : u.uploadAccessMode === 'restricted' ? (
+                                        <Lock className="w-4 h-4" />
+                                      ) : (
+                                        <Unlock className="w-4 h-4" />
+                                      )}
+                                    </button>
+                                  )}
                                   {(uIsAPM || uIsCC) && (
                                     <button
                                       onClick={() => downloadSummaryExcel(u)}
@@ -2596,11 +2991,30 @@ const UsersTab = ({ filterProps }) => {
 
                         return (
                           <div className="mb-10 last:mb-0">
-                            {/* Section Title removed per user request */}
+                            {/* Statistics Legend */}
+                            <div className="mb-4 flex flex-wrap items-center justify-end gap-6 px-4 py-3 bg-gray-50/50 rounded-2xl border border-gray-100/50 backdrop-blur-sm">
+                              <div className="flex items-center gap-2">
+                                <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.3)]"></div>
+                                <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Uploaded / Success</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <div className="w-2.5 h-2.5 rounded-full bg-orange-500 shadow-[0_0_8px_rgba(245,158,11,0.3)]"></div>
+                                <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Pending / In Queue</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <div className="w-2.5 h-2.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.3)]"></div>
+                                <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Failed / Rejection</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <div className="w-2.5 h-2.5 rounded-full bg-gray-900 shadow-[0_0_8px_rgba(17,24,39,0.2)]"></div>
+                                <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Total baseline</span>
+                              </div>
+                            </div>
+
                             <table className="w-full text-left border-collapse min-w-[1000px]">
                               <thead>
                                 <tr className="bg-indigo-700 text-white">
-                                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest border-r border-white/10 w-[35%]">
+                                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest border-r border-white/10 w-[40%]">
                                     {currentUserRole.includes('admin - apm')
                                       ? 'CC Profile'
                                       : currentUserRole.includes('admin - cc')
@@ -2608,16 +3022,13 @@ const UsersTab = ({ filterProps }) => {
                                         : 'APM Profile'
                                     }
                                   </th>
-                                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest border-r border-white/10 text-center w-[18%]">
-                                    Uploads (U/P/T)
+                                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest border-r border-white/10 text-center w-[25%]" title="Upload Status (U/P/T / %)">
+                                    Upload Status (U/P/T / %)
                                   </th>
-                                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest border-r border-white/10 text-center w-[18%]">
-                                    Approvals (A/R/P)
+                                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest border-r border-white/10 text-center w-[20%]">
+                                    Conversion (S/F/Q)
                                   </th>
-                                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest border-r border-white/10 text-center w-[18%]">
-                                    Conversion
-                                  </th>
-                                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest text-right w-[11%]">Actions</th>
+                                  <th className="px-4 py-6 text-[10px] font-black uppercase tracking-widest text-right w-[15%]">Actions</th>
                                 </tr>
                               </thead>
                               <tbody key={page} className="divide-y divide-gray-100">
@@ -2743,7 +3154,7 @@ const UsersTab = ({ filterProps }) => {
                         const uIsVO = uRoleLower.startsWith('vo') || uRoleLower === 'none' || !u.role;
 
                         const perf = u.performanceStats || {
-                          uploads: { approved: 0, rejected: 0, pending: 0 },
+                          uploads: { approved: 0, pending: 0 },
                           conversion: { success: 0, failed: 0, pending: 0, processing: 0 }
                         };
 
@@ -2802,20 +3213,19 @@ const UsersTab = ({ filterProps }) => {
                                       <div className="bg-white p-2 rounded-2xl border border-gray-100 text-center">
                                         <div className="flex justify-between items-center mb-1 px-1">
                                           <span className="text-[7px] font-black text-gray-400 uppercase">Uploads</span>
-                                          <span className="text-[9px] font-black text-black">{u.totalFiles}</span>
+                                          <span className="text-[9px] font-black text-indigo-500">
+                                            {u.totalFiles > 0 ? (((u.uploadedFiles || 0) / u.totalFiles) * 100).toFixed(1) : 0}% Done
+                                          </span>
                                         </div>
-                                        <div className="flex gap-1 justify-between">
-                                          <div className="flex-1"><div className="text-[10px] font-black text-green-600">{u.uploadedFiles}</div><div className="text-[5px] font-bold text-gray-400">U</div></div>
-                                          <div className="flex-1"><div className="text-[10px] font-black text-orange-500">{u.pendingFiles}</div><div className="text-[5px] font-bold text-gray-400">P</div></div>
-                                          <div className="flex-1"><div className="text-[10px] font-black text-black">{u.totalFiles}</div><div className="text-[5px] font-bold text-gray-400">T</div></div>
-                                        </div>
-                                      </div>
-                                      <div className="bg-white p-2 rounded-2xl border border-gray-100 text-center">
-                                        <div className="flex justify-between items-center mb-1 px-1"><span className="text-[7px] font-black text-gray-400 uppercase">Approvals</span><span className="text-[9px] font-black text-green-600">{perf.uploads.approved}</span></div>
-                                        <div className="flex gap-1 justify-between">
-                                          <div className="flex-1"><div className="text-[10px] font-black text-green-600">{perf.uploads.approved}</div><div className="text-[5px] font-bold text-green-600/60">A</div></div>
-                                          <div className="flex-1"><div className="text-[10px] font-black text-red-600">{perf.uploads.rejected}</div><div className="text-[5px] font-bold text-red-400">R</div></div>
-                                          <div className="flex-1"><div className="text-[10px] font-black text-orange-500">{perf.uploads.pending}</div><div className="text-[5px] font-bold text-orange-400">P</div></div>
+                                        <div className="flex gap-4 justify-center items-center py-1">
+                                          <div className="text-sm font-black text-emerald-600">{u.uploadedFiles || 0}</div>
+                                          <div className="text-sm font-black text-orange-500">{u.pendingFiles || 0}</div>
+                                          <div className="flex items-baseline gap-1 border-l border-gray-100 pl-3">
+                                            <div className="text-sm font-black text-black">{u.totalFiles || 0}</div>
+                                            <div className="text-[9px] font-black text-indigo-500">
+                                              ({u.totalFiles > 0 ? (((u.uploadedFiles || 0) / u.totalFiles) * 100).toFixed(1) : 0}%)
+                                            </div>
+                                          </div>
                                         </div>
                                       </div>
                                     </div>
@@ -2823,17 +3233,10 @@ const UsersTab = ({ filterProps }) => {
                                       <div className="flex justify-between items-center mb-1 px-1">
                                         <span className="text-[7px] font-black text-gray-400 uppercase">Conversion</span>
                                       </div>
-                                      <div className="flex justify-between gap-1">
-                                        {[
-                                          { label: 'Success', val: perf.conversion.success, color: 'text-green-600' },
-                                          { label: 'Failed', val: perf.conversion.failed, color: 'text-red-600' },
-                                          { label: 'In Que', val: perf.conversion.pending + perf.conversion.processing, color: 'text-orange-500' }
-                                        ].map(item => (
-                                          <div key={item.label} className="text-center flex-1 bg-gray-50 rounded-lg p-1">
-                                            <div className={`text-[10px] font-black ${item.color}`}>{item.val}</div>
-                                            <div className="text-[5px] font-black text-gray-400 uppercase leading-none">{item.label}</div>
-                                          </div>
-                                        ))}
+                                      <div className="flex justify-center gap-6 py-1">
+                                        <div className="text-sm font-black text-emerald-600">{perf.conversion.success}</div>
+                                        <div className="text-sm font-black text-red-600">{perf.conversion.failed}</div>
+                                        <div className="text-sm font-black text-orange-500">{perf.conversion.pending + perf.conversion.processing}</div>
                                       </div>
                                     </div>
                                   </div>
@@ -3013,12 +3416,14 @@ const UsersTab = ({ filterProps }) => {
                               />
                             </div>
 
-                            {formData.role === 'Admin' && (
+                            {(formData.role === 'Admin' || (formData.role === 'VO' && formData.isDeveloper)) && (
                               <div className="space-y-2">
-                                <label className="text-[10px] font-black text-gray-400 ml-1 uppercase">Primary Contact / Login</label>
+                                <label className="text-[10px] font-black text-gray-400 ml-1 uppercase">
+                                  {formData.role === 'VO' ? 'Phone (for login)' : 'Primary Contact / Login'}
+                                </label>
                                 <input
                                   type="text"
-                                  required
+                                  required={formData.role === 'Admin'}
                                   value={formData.phone}
                                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                                   className="w-full bg-gray-50/50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
@@ -3176,30 +3581,220 @@ const UsersTab = ({ filterProps }) => {
                                 <h4 className="text-sm font-black text-gray-900 uppercase tracking-tight">Role Specific Identification</h4>
                               </div>
 
-                              {formData.role === 'VO' && (
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                  <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-gray-400 ml-1 uppercase">Official VO ID (15 Digits)</label>
-                                    <input
-                                      type="text" required maxLength={15} minLength={15}
-                                      value={formData.voID}
-                                      onChange={(e) => setFormData({ ...formData, voID: e.target.value.replace(/\D/g, '') })}
-                                      className="w-full bg-gray-50/50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
-                                      placeholder="15-digit ID"
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-gray-400 ml-1 uppercase">Representative VOA Name</label>
-                                    <input
-                                      type="text" required
-                                      value={formData.voaName}
-                                      onChange={(e) => setFormData({ ...formData, voaName: e.target.value })}
-                                      className="w-full bg-gray-50/50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
-                                      placeholder="VOA Full Name"
-                                    />
-                                  </div>
-                                </div>
-                              )}
+                              {formData.role === 'VO' && (() => {
+                                // Developer: 4-digit VO ID; normal: 15-digit
+                                const devMode = isDeveloperUser && formData.isDeveloper;
+                                const voIdMin = devMode ? 4 : 15;
+                                const voIdMax = devMode ? 4 : 15;
+                                const voIdLabel = devMode ? 'VO ID (4 Digits – Dev)' : 'Official VO ID (15 Digits)';
+                                const voIdPlaceholder = devMode ? '4-digit test ID' : '15-digit ID';
+                                // SHG IDs: developer = 9 digits, normal = 18 digits
+                                const shgIdLen = devMode ? 9 : 18;
+                                return (
+                                  <>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                      <div className="space-y-2">
+                                        <label className="text-[10px] font-black text-gray-400 ml-1 uppercase">{voIdLabel}</label>
+                                        <input
+                                          type="text"
+                                          required
+                                          maxLength={voIdMax}
+                                          minLength={voIdMin}
+                                          disabled={showEditModal} // Don't allow changing VO ID for existing VO
+                                          value={formData.voID}
+                                          onChange={(e) => setFormData({ ...formData, voID: e.target.value.replace(/\D/g, '') })}
+                                          className="w-full bg-gray-50/50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all disabled:opacity-60"
+                                          placeholder={voIdPlaceholder}
+                                        />
+                                      </div>
+                                      <div className="space-y-2">
+                                        <label className="text-[10px] font-black text-gray-400 ml-1 uppercase">Representative VOA Name</label>
+                                        <input
+                                          type="text" required
+                                          value={formData.voaName}
+                                          onChange={(e) => setFormData({ ...formData, voaName: e.target.value })}
+                                          className="w-full bg-gray-50/50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
+                                          placeholder="VOA Full Name"
+                                        />
+                                      </div>
+                                    </div>
+
+                                    {/* CC Assignment Dropdown */}
+                                    {showAddModal && (
+                                      <div className="space-y-2 mt-4">
+                                        <label className="text-[10px] font-black text-gray-400 ml-1 uppercase flex items-center gap-2">
+                                          Assign to CC
+                                          {ccListLoading && <span className="text-indigo-400 animate-pulse">Loading...</span>}
+                                        </label>
+                                        <div className="relative">
+                                          <select
+                                            value={formData.assignedCC}
+                                            onChange={(e) => setFormData({ ...formData, assignedCC: e.target.value })}
+                                            className="w-full appearance-none bg-gray-50/50 border-2 border-gray-100 rounded-2xl px-5 py-3.5 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white focus:outline-none transition-all"
+                                            disabled={ccListLoading || !formData.mandal}
+                                          >
+                                            <option value="">{formData.mandal ? (ccList.length === 0 && !ccListLoading ? 'No CCs in this mandal' : 'Select CC (optional)') : 'Select mandal first'}</option>
+                                            {ccList.map(cc => (
+                                              <option key={cc._id} value={cc.clusterID}>
+                                                {cc.voName}{cc.clusterID ? ` (${cc.clusterID})` : ''}
+                                              </option>
+                                            ))}
+                                          </select>
+                                          <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* SHG List Entry & Management */}
+                                    <div className="mt-6 pt-6 border-t border-gray-100 space-y-3">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                          <div className="w-7 h-7 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-600">
+                                            <User className="w-4 h-4" />
+                                          </div>
+                                          <div className="flex flex-col">
+                                            <h4 className="text-sm font-black text-gray-900 uppercase tracking-tight">
+                                              SHG Management
+                                            </h4>
+                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">
+                                              {showEditModal ? 'Edit existing and add new SHGs' : 'Add initial SHG list (optional)'}
+                                            </span>
+                                          </div>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => setFormData(prev => ({ ...prev, shgList: [...prev.shgList, { shgID: '', shgName: '', endMonth: null, endYear: null }] }))}
+                                          className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 text-white text-xs font-black rounded-xl hover:bg-emerald-700 transition-all shadow-sm"
+                                        >
+                                          <Plus className="w-3.5 h-3.5" /> Add SHG
+                                        </button>
+                                      </div>
+
+                                      {shgListLoading ? (
+                                        <div className="flex flex-col items-center py-8 bg-gray-50 rounded-2xl border border-dashed border-gray-200 gap-2">
+                                          <Loader2 className="w-6 h-6 text-indigo-500 animate-spin" />
+                                          <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">Loading associated SHGs...</p>
+                                        </div>
+                                      ) : formData.shgList.length === 0 ? (
+                                        <p className="text-[11px] text-gray-400 font-bold text-center py-6 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
+                                          No SHGs associated yet. Click "Add SHG" to begin.
+                                        </p>
+                                      ) : (
+                                        <div className="space-y-3">
+                                          {formData.shgList.map((shg, idx) => (
+                                            <div key={shg._id || idx} className="bg-white p-4 rounded-3xl border border-gray-100 shadow-sm space-y-4 animate-in fade-in slide-in-from-top-1 duration-200">
+                                              <div className="flex items-center justify-between gap-3">
+                                                <div className="flex items-center gap-3 flex-1 min-w-0">
+                                                  <div className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 text-[10px] font-black shrink-0">
+                                                    {idx + 1}
+                                                  </div>
+                                                  <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2">
+                                                      <span className="text-[8px] font-black text-gray-400 uppercase tracking-tighter">SHG ID:</span>
+                                                      <span className="text-[10px] font-black text-indigo-600 truncate">
+                                                        {shg.shgID || shg['SHG ID'] || 'NEW'}
+                                                      </span>
+                                                    </div>
+                                                    <input
+                                                      type="text"
+                                                      placeholder="SHG Name"
+                                                      value={shg.shgName || shg['SHG Name'] || ''}
+                                                      onChange={(e) => {
+                                                        const updated = [...formData.shgList];
+                                                        updated[idx] = { ...updated[idx], shgName: e.target.value, 'SHG Name': e.target.value };
+                                                        setFormData(prev => ({ ...prev, shgList: updated }));
+                                                      }}
+                                                      className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 focus:outline-none transition-all mt-1"
+                                                    />
+                                                  </div>
+                                                </div>
+
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    const warnMsg = shg._id ? 'WARNING: This will permanently delete this SHG from the master list. Are you sure?' : 'Remove this SHG from the list?';
+                                                    if (!window.confirm(warnMsg)) return;
+
+                                                    if (shg._id) {
+                                                      setDeletedShgIds(prev => [...prev, shg._id]);
+                                                    }
+                                                    const updated = formData.shgList.filter((_, i) => i !== idx);
+                                                    setFormData(prev => ({ ...prev, shgList: updated }));
+                                                  }}
+                                                  className="p-2 bg-red-50 text-red-400 hover:text-red-600 hover:bg-red-100 rounded-2xl transition-all shrink-0"
+                                                  title="Remove SHG"
+                                                >
+                                                  <Trash2 className="w-4 h-4" />
+                                                </button>
+                                              </div>
+
+                                              {/* Time Controls: End Month/Year */}
+                                              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-gray-50">
+                                                <div className="space-y-1">
+                                                  <label className="text-[8px] font-black text-gray-400 uppercase ml-1">Process Ends (Month)</label>
+                                                  <select
+                                                    value={shg.endMonth || ''}
+                                                    onChange={(e) => {
+                                                      const val = e.target.value ? parseInt(e.target.value) : null;
+                                                      const updated = [...formData.shgList];
+                                                      updated[idx] = { ...updated[idx], endMonth: val };
+                                                      setFormData(prev => ({ ...prev, shgList: updated }));
+                                                    }}
+                                                    className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl px-2 py-1.5 text-[10px] font-bold focus:border-emerald-500 outline-none transition-all"
+                                                  >
+                                                    <option value="">No End Month</option>
+                                                    {Array.from({ length: 12 }, (_, i) => (
+                                                      <option key={i + 1} value={i + 1}>{new Date(0, i).toLocaleString('default', { month: 'long' })}</option>
+                                                    ))}
+                                                  </select>
+                                                </div>
+                                                <div className="space-y-1">
+                                                  <label className="text-[8px] font-black text-gray-400 uppercase ml-1">Process Ends (Year)</label>
+                                                  <select
+                                                    value={shg.endYear || ''}
+                                                    onChange={(e) => {
+                                                      const val = e.target.value ? parseInt(e.target.value) : null;
+                                                      const updated = [...formData.shgList];
+                                                      updated[idx] = { ...updated[idx], endYear: val };
+                                                      setFormData(prev => ({ ...prev, shgList: updated }));
+                                                    }}
+                                                    className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl px-2 py-1.5 text-[10px] font-bold focus:border-emerald-500 outline-none transition-all"
+                                                  >
+                                                    <option value="">No End Year</option>
+                                                    {[2024, 2025, 2026, 2027, 2028, 2029, 2030].map(y => (
+                                                      <option key={y} value={y}>{y}</option>
+                                                    ))}
+                                                  </select>
+                                                </div>
+                                              </div>
+
+                                              {/* New Entry ID field (if not existing) */}
+                                              {!shg._id && (
+                                                <div className="space-y-1 bg-indigo-50/50 p-2 rounded-2xl border border-indigo-100">
+                                                  <label className="text-[9px] font-black text-indigo-600 uppercase ml-1">New SHG ID ({devMode ? 9 : 18} Digits)</label>
+                                                  <input
+                                                    type="text"
+                                                    placeholder="Enter numerical ID"
+                                                    maxLength={devMode ? 9 : 18}
+                                                    value={shg.shgID || ''}
+                                                    onChange={(e) => {
+                                                      const val = e.target.value.replace(/\D/g, '');
+                                                      const updated = [...formData.shgList];
+                                                      updated[idx] = { ...updated[idx], shgID: val };
+                                                      setFormData(prev => ({ ...prev, shgList: updated }));
+                                                    }}
+                                                    className="w-full bg-white border-2 border-indigo-100 rounded-xl px-3 py-2 text-xs font-bold focus:border-indigo-500 focus:outline-none transition-all"
+                                                  />
+                                                </div>
+                                              )}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </>
+                                );
+                              })()}
 
                               {formData.role === 'Admin - CC' && (
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -3320,10 +3915,6 @@ const UsersTab = ({ filterProps }) => {
                               <div className="text-[7px] sm:text-[10px] font-black text-white/70 uppercase truncate">Approved</div>
                               <div className="text-sm sm:text-2xl font-black text-white">{uploadsSummary.validated}</div>
                             </div>
-                            <div className="bg-white/10 backdrop-blur-sm rounded-xl px-2.5 sm:px-4 py-1 sm:py-2.5 border border-white/20 flex-1 min-w-[80px]">
-                              <div className="text-[7px] sm:text-[10px] font-black text-white/70 uppercase truncate">Rejected</div>
-                              <div className="text-sm sm:text-2xl font-black text-white">{uploadsSummary.rejected}</div>
-                            </div>
                           </div>
                         )}
                       </div>
@@ -3373,33 +3964,6 @@ const UsersTab = ({ filterProps }) => {
                             </div>
                           )}
 
-                          {/* Rejected Section */}
-                          {groupedUserUploads.rejected.length > 0 && (
-                            <div>
-                              <div className="flex items-center gap-2 mb-4 bg-white rounded-xl p-3 border-2 border-red-300 shadow-sm">
-                                <AlertTriangle className="text-red-500" size={24} />
-                                <h4 className="text-lg font-black text-gray-900">
-                                  Rejected Documents
-                                  <span className="ml-2 text-sm font-normal text-gray-500">({groupedUserUploads.rejected.length})</span>
-                                </h4>
-                              </div>
-                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {groupedUserUploads.rejected.map((group, idx) => (
-                                  <AdminUploadCard
-                                    key={idx}
-                                    group={group}
-                                    status="rejected"
-                                    currentUserRole={currentUserRole}
-                                    uploading={uploading}
-                                    handleQuickStatusUpdate={handleQuickStatusUpdate}
-                                    openStatusModal={openStatusModal}
-                                    openImageViewer={openImageViewer}
-                                    downloadImage={downloadImage}
-                                  />
-                                ))}
-                              </div>
-                            </div>
-                          )}
 
                           {/* Validated Section */}
                           {groupedUserUploads.validated.length > 0 && (
@@ -3462,13 +4026,12 @@ const UsersTab = ({ filterProps }) => {
                       {/* Action Selection */}
                       <div>
                         <label className="block text-sm font-black text-gray-700 mb-3">Select Action</label>
-                        <div className="grid grid-cols-2 gap-3">
                           <button
                             onClick={() => {
                               setStatus('validated');
                               setRejectionReason('');
                             }}
-                            className={`p-4 rounded-2xl border-2 transition-all font-black text-sm ${status === 'validated'
+                            className={`p-4 rounded-2xl border-2 transition-all font-black text-sm w-full ${status === 'validated'
                               ? 'bg-emerald-50 border-emerald-500 text-emerald-700'
                               : 'bg-gray-50 border-gray-200 text-gray-700 hover:border-gray-300'
                               }`}
@@ -3479,24 +4042,6 @@ const UsersTab = ({ filterProps }) => {
                             </div>
                             <p className="text-[11px] font-bold text-gray-600 mt-1 opacity-75">Send to conversion</p>
                           </button>
-
-                          <button
-                            onClick={() => {
-                              setStatus('rejected');
-                              setRejectionReason(REJECTION_REASONS[0]);
-                            }}
-                            className={`p-4 rounded-2xl border-2 transition-all font-black text-sm ${status === 'rejected'
-                              ? 'bg-red-50 border-red-500 text-red-700'
-                              : 'bg-gray-50 border-gray-200 text-gray-700 hover:border-gray-300'
-                              }`}
-                          >
-                            <div className="flex items-center justify-center gap-2">
-                              <AlertCircle className="w-5 h-5" />
-                              Reject
-                            </div>
-                            <p className="text-[11px] font-bold text-gray-600 mt-1 opacity-75">Return to VO</p>
-                          </button>
-                        </div>
                       </div>
 
                       {/* Status-Specific UI */}
@@ -3544,14 +4089,14 @@ const UsersTab = ({ filterProps }) => {
                           : 'bg-red-600 hover:bg-red-700'
                           }`}
                       >
-                        {uploading ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            Processing...
-                          </>
-                        ) : (
-                          status === 'validated' ? 'Approve & Queue' : 'Reject Upload'
-                        )}
+                          {uploading ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              Processing...
+                            </>
+                          ) : (
+                            'Approve & Queue'
+                          )}
                       </button>
                     </div>
                   </div>
@@ -3570,9 +4115,9 @@ const UsersTab = ({ filterProps }) => {
                     <div className="px-4 sm:px-8 py-3 sm:py-6 border-b border-gray-100 bg-gradient-to-r from-indigo-600 to-purple-600">
                       <div className="flex justify-between items-center bg-transparent">
                         <div className="bg-transparent">
-                          <h3 className="text-lg sm:text-2xl font-black text-white leading-tight">{viewerImageData.title}</h3>
+                          <h3 className="text-lg sm:text-2xl font-black text-white leading-tight">{viewerImages[currentViewerIndex]?.title}</h3>
                           <div className="flex items-center gap-2 mt-0.5 bg-transparent">
-                            <p className="text-[9px] sm:text-sm text-white/80 font-bold uppercase tracking-wider">{viewerImageData.subtitle}</p>
+                            <p className="text-[9px] sm:text-sm text-white/80 font-bold uppercase tracking-wider">{viewerImages[currentViewerIndex]?.subtitle}</p>
                           </div>
                         </div>
                         <button onClick={() => setShowImageViewer(false)} className="p-1.5 sm:p-2.5 bg-white/20 text-white hover:bg-white/30 hover:shadow-md rounded-xl transition-all border border-white/30">
@@ -3582,17 +4127,17 @@ const UsersTab = ({ filterProps }) => {
                     </div>
                     <div className="flex-1 overflow-auto bg-gray-50/50 custom-scrollbar flex items-start justify-center p-0 relative">
                       <img src={viewerImages[currentViewerIndex]?.url} alt={viewerImages[currentViewerIndex]?.title} className="w-auto h-auto shadow-2xl" />
-                      
+
                       {/* Navigation Arrows */}
                       {viewerImages.length > 1 && (
                         <div className="absolute inset-0 flex items-center justify-between p-4 pointer-events-none">
-                          <button 
+                          <button
                             onClick={(e) => { e.stopPropagation(); setCurrentViewerIndex(prev => (prev > 0 ? prev - 1 : viewerImages.length - 1)); }}
                             className="p-3 bg-black/50 text-white rounded-full hover:bg-black/70 transition-all pointer-events-auto shadow-lg"
                           >
                             <ChevronLeft className="w-8 h-8" />
                           </button>
-                          <button 
+                          <button
                             onClick={(e) => { e.stopPropagation(); setCurrentViewerIndex(prev => (prev < viewerImages.length - 1 ? prev + 1 : 0)); }}
                             className="p-3 bg-black/50 text-white rounded-full hover:bg-black/70 transition-all pointer-events-auto shadow-lg"
                           >
@@ -3617,18 +4162,18 @@ const UsersTab = ({ filterProps }) => {
               )
             }
 
-            {/* Approval Gate Toggle Modal */}
+            {/* Conversion Gate Toggle Modal */}
             {
               showGateModal && createPortal(
                 <div className="fixed inset-0 bg-indigo-950/60 backdrop-blur-md flex items-center justify-center z-[100] p-2 sm:p-4 !mt-0 animate-in fade-in duration-300">
                   <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-md overflow-hidden border border-white/20 animate-in zoom-in-95 duration-200">
                     <div className="px-6 sm:px-8 py-4 sm:py-6 border-b border-gray-100 bg-gradient-to-r from-indigo-600 to-purple-600">
-                      <div className="flex justify-between items-center">
-                        <div>
+                      <div className="flex justify-between items-center bg-transparent">
+                        <div className="bg-transparent">
                           <h3 className="text-lg sm:text-2xl font-black text-white leading-tight">
-                            {gateStatus.isOpen ? 'Close Approval Gate' : 'Open Approval Gate'}
+                            {gateStatus.isOpen ? 'Close Conversion Gate' : 'Open Conversion Gate'}
                           </h3>
-                          <p className="text-[11px] sm:text-xs text-white/70 font-bold uppercase tracking-wider mt-1">
+                          <p className="text-[11px] sm:text-xs text-white/70 font-bold uppercase tracking-wider mt-1 bg-transparent">
                             This controls whether new upload approvals are processed
                           </p>
                         </div>
@@ -3645,7 +4190,7 @@ const UsersTab = ({ filterProps }) => {
                         }`}>
                         <p className="text-sm font-bold">
                           {gateStatus.isOpen
-                            ? '⚠️ You\'re about to CLOSE the gate. New approvals will be BLOCKED.'
+                            ? '⚠️ You\'re about to CLOSE the gate. New approvals will NOT be queued.'
                             : '✓ You\'re about to OPEN the gate. New approvals will be queued for conversion.'}
                         </p>
                       </div>

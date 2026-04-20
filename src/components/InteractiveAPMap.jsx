@@ -135,6 +135,17 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
         return minDistance < 60 ? bestCategory : null;
     }, [COLOR_CATEGORIES, hexToRgb]);
 
+    const activeSummary = useMemo(() => {
+        if (!summary) return {};
+        // If we have a specific geographic filter, the summary object IS the data
+        if (filters?.district && filters.district !== 'all') {
+            // Check if summary is a map of districts or the flat summary for the selection
+            if (summary[filters.district]) return summary[filters.district];
+            return summary; 
+        }
+        return summary.all || {};
+    }, [summary, filters]);
+
     const classifyPath = useCallback((pathElement) => {
         if (!pathElement) return null;
         const d = pathElement.getAttribute('d');
@@ -694,7 +705,15 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
                                 <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse mr-1" />
                                 LIVE
                             </span>
-                            <span className="text-white/60 text-[10px] font-bold uppercase tracking-widest">{selectedDistrict || 'State View'}</span>
+                            <span className="text-white/60 text-[10px] font-bold uppercase tracking-widest">
+                                {(!filters.district || filters.district === 'all') ? 'State View' : (
+                                    <>
+                                        {filters.district}
+                                        {filters.mandal && filters.mandal !== 'all' && ` / ${filters.mandal}`}
+                                        {filters.village && filters.village !== 'all' && ` / ${filters.village}`}
+                                    </>
+                                )}
+                            </span>
                         </div>
                     </div>
                 </div>
@@ -914,9 +933,27 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
                 <div className="lg:col-span-2 bg-white/60 backdrop-blur-xl border-l border-white/20 p-6 flex flex-col gap-6 overflow-y-auto max-h-[600px]">
                     <div>
                         <span className="text-[10px] font-black text-indigo-500 tracking-[0.2em] uppercase mb-1 block">Regional Intelligence</span>
-                        <h3 className="text-2xl font-black text-gray-900 leading-tight flex items-center gap-3">
-                            <MapPin className="w-6 h-6 text-red-500 fill-red-500" />
-                            {selectedDistrict || "STATE VIEW"}
+                        <h3 className="text-xl font-black text-gray-900 leading-tight flex items-center gap-3">
+                            <MapPin className="w-5 h-5 text-red-500 fill-red-500 flex-shrink-0" />
+                            <span className="break-all">
+                                {(!filters.district || filters.district === 'all') ? "STATE VIEW" : (
+                                    <>
+                                        <span className="text-gray-400">{filters.district}</span>
+                                        {filters.mandal && filters.mandal !== 'all' && (
+                                            <>
+                                                <span className="mx-2 text-gray-300">/</span>
+                                                <span>{filters.mandal}</span>
+                                            </>
+                                        )}
+                                        {filters.village && filters.village !== 'all' && (
+                                            <>
+                                                <span className="mx-2 text-gray-300">/</span>
+                                                <span className="text-indigo-600 font-extrabold">{filters.village}</span>
+                                            </>
+                                        )}
+                                    </>
+                                )}
+                            </span>
                         </h3>
                     </div>
 
@@ -1077,37 +1114,19 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
                                 <div className="grid grid-cols-3 gap-3">
                                     <div className="bg-white/80 p-3 rounded-xl">
                                         <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Uploaded</span>
-                                        <span className="text-lg font-black text-indigo-600">{(summary[selectedDistrict] || summary.all)?.uploaded || 0}</span>
+                                        <span className="text-lg font-black text-indigo-600">{activeSummary?.uploaded || 0}</span>
                                     </div>
                                     <div className="bg-white/80 p-3 rounded-xl">
                                         <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Pending</span>
-                                        <span className="text-lg font-black text-amber-600">{(summary[selectedDistrict] || summary.all)?.pending || 0}</span>
+                                        <span className="text-lg font-black text-amber-600">{activeSummary?.pending || 0}</span>
                                     </div>
                                     <div className="bg-white/80 p-3 rounded-xl">
                                         <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Total</span>
-                                        <span className="text-lg font-black text-gray-900">{(summary[selectedDistrict] || summary.all)?.total || 0}</span>
+                                        <span className="text-lg font-black text-gray-900">{activeSummary?.total || 0}</span>
                                     </div>
                                 </div>
                             </div>
 
-                            {/* CC Actions Section */}
-                            <div className="bg-emerald-50 rounded-2xl p-5">
-                                <h4 className="text-xs font-black text-emerald-900 uppercase mb-3">CC Actions</h4>
-                                <div className="grid grid-cols-3 gap-3">
-                                    <div className="bg-white/80 p-3 rounded-xl">
-                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Approved</span>
-                                        <span className="text-lg font-black text-green-600">{(summary[selectedDistrict] || summary.all)?.approved || 0}</span>
-                                    </div>
-                                    <div className="bg-white/80 p-3 rounded-xl">
-                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Rejected</span>
-                                        <span className="text-lg font-black text-red-600">{(summary[selectedDistrict] || summary.all)?.rejected || 0}</span>
-                                    </div>
-                                    <div className="bg-white/80 p-3 rounded-xl">
-                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Pending</span>
-                                        <span className="text-lg font-black text-amber-600">{(summary[selectedDistrict] || summary.all)?.ccPending || 0}</span>
-                                    </div>
-                                </div>
-                            </div>
 
                             {/* Digital Conversion Section */}
                             <div className="bg-purple-50 rounded-2xl p-5">
@@ -1115,25 +1134,25 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
                                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                                     <div className="bg-white/80 p-3 rounded-xl">
                                         <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Converted</span>
-                                        <span className="text-lg font-black text-purple-600">{(summary[selectedDistrict] || summary.all)?.converted || 0}</span>
+                                        <span className="text-lg font-black text-purple-600">{activeSummary?.converted || (activeSummary?.conversion?.converted) || 0}</span>
                                     </div>
                                     <div className="bg-white/80 p-3 rounded-xl">
                                         <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Failed</span>
-                                        <span className="text-lg font-black text-red-600">{(summary[selectedDistrict] || summary.all)?.failed || 0}</span>
+                                        <span className="text-lg font-black text-red-600">{activeSummary?.failed || (activeSummary?.conversion?.failed) || 0}</span>
                                     </div>
                                     <div className="bg-white/80 p-3 rounded-xl">
                                         <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Pending</span>
-                                        <span className="text-lg font-black text-amber-600">{(summary[selectedDistrict] || summary.all)?.convPending || 0}</span>
+                                        <span className="text-lg font-black text-amber-600">{activeSummary?.convPending || (activeSummary?.conversion?.pending) || 0}</span>
                                     </div>
                                     <div className="bg-white/80 p-3 rounded-xl">
                                         <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Proc.</span>
-                                        <span className="text-lg font-black text-cyan-600">{(summary[selectedDistrict] || summary.all)?.convProcessing || 0}</span>
+                                        <span className="text-lg font-black text-cyan-600">{activeSummary?.convProcessing || (activeSummary?.conversion?.processing) || 0}</span>
                                     </div>
                                 </div>
                             </div>
 
                             {/* Finance Overview Section (Simplified) */}
-                            {(summary[selectedDistrict] || summary.all)?.financeStats && (
+                            {activeSummary?.financeStats && (
                                 <div className="bg-gradient-to-br from-indigo-50/50 to-blue-50/50 rounded-2xl p-5 border border-indigo-100/30 shadow-sm relative overflow-hidden group">
                                     <div className="flex justify-between items-center mb-4 pb-3 border-b border-indigo-100/50">
                                         <h4 className="text-[10px] font-black text-indigo-900 uppercase tracking-widest">Finance Overview</h4>
@@ -1143,19 +1162,19 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
                                         <div className="flex justify-between items-center group/item">
                                             <span className="text-[10px] font-bold text-gray-500 uppercase tracking-tight group-hover/item:text-indigo-600 transition-colors">Total Collections</span>
                                             <span className="text-xs font-black text-indigo-700">
-                                                ₹{((summary[selectedDistrict] || summary.all)?.financeStats?.totalLoanRecovered || 0).toLocaleString('en-IN')}
+                                                ₹{(activeSummary?.financeStats?.totalLoanRecovered || 0).toLocaleString('en-IN')}
                                             </span>
                                         </div>
                                         <div className="flex justify-between items-center group/item">
                                             <span className="text-[10px] font-bold text-gray-500 uppercase tracking-tight group-hover/item:text-emerald-600 transition-colors">Member Deposits</span>
                                             <span className="text-xs font-black text-emerald-700">
-                                                ₹{((summary[selectedDistrict] || summary.all)?.financeStats?.totalSavings || 0).toLocaleString('en-IN')}
+                                                ₹{(activeSummary?.financeStats?.totalSavings || 0).toLocaleString('en-IN')}
                                             </span>
                                         </div>
                                         <div className="flex justify-between items-center group/item pt-2 border-t border-indigo-50">
                                             <span className="text-[10px] font-bold text-rose-500 uppercase tracking-tight group-hover/item:text-rose-700 transition-colors">Total Disbursements</span>
                                             <span className="text-xs font-black text-rose-700">
-                                                ₹{((summary[selectedDistrict] || summary.all)?.financeStats?.outgoing || 0).toLocaleString('en-IN')}
+                                                ₹{(activeSummary?.financeStats?.outgoing || 0).toLocaleString('en-IN')}
                                             </span>
                                         </div>
                                     </div>
@@ -1184,24 +1203,6 @@ const InteractiveAPMap = ({ summary = {}, filters = {}, onDistrictSelect, onMand
                                 </div>
                             </div>
 
-                            {/* State Level CC Actions Section */}
-                            <div className="bg-emerald-50 rounded-2xl p-5">
-                                <h4 className="text-xs font-black text-emerald-900 uppercase mb-3">Statewide CC Actions</h4>
-                                <div className="grid grid-cols-3 gap-3">
-                                    <div className="bg-white/80 p-3 rounded-xl">
-                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Approved</span>
-                                        <span className="text-lg font-black text-green-600">{summary.all?.approved || 0}</span>
-                                    </div>
-                                    <div className="bg-white/80 p-3 rounded-xl">
-                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Rejected</span>
-                                        <span className="text-lg font-black text-red-600">{summary.all?.rejected || 0}</span>
-                                    </div>
-                                    <div className="bg-white/80 p-3 rounded-xl">
-                                        <span className="block text-[9px] text-gray-400 font-black uppercase tracking-widest mb-1">Pending</span>
-                                        <span className="text-lg font-black text-amber-600">{summary.all?.ccPending || 0}</span>
-                                    </div>
-                                </div>
-                            </div>
 
                             {/* State Level Digital Conversion Section */}
                             <div className="bg-purple-50 rounded-2xl p-5">

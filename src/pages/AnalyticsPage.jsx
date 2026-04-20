@@ -3,7 +3,8 @@ import {
     Download, FileBarChart, ChartPie as PieChartIcon, Activity, Clock, CheckCircle,
     FileText, Filter, LayoutGrid, List, ChevronRight, AlertCircle,
     TrendingUp, Users, MapPin, Calendar, ArrowUpRight, ArrowDownRight,
-    Shield, User, ChevronDown, Loader2, Database
+    Shield, User, ChevronDown, Loader2, Database, Landmark, BarChart2,
+    Presentation, FileDown
 } from 'lucide-react';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -12,6 +13,7 @@ import {
 import InteractiveAPMap from '../components/InteractiveAPMap';
 import { API_BASE } from '../utils/apiConfig';
 import { exportPerformanceExcel, exportCumulativeExcel } from '../utils/excelGenerator';
+import { exportAnalyticsDoc, exportAnalyticsPDF, exportAnalyticsPPT } from '../utils/analyticsReportGenerator';
 
 const formatIndianCurrency = (value) => {
     if (value === null || value === undefined) return '₹0';
@@ -164,6 +166,13 @@ const AnalyticsPage = ({ filterProps }) => {
     const [refreshKey, setRefreshKey] = useState(0);
     const [isSSEConnected, setIsSSEConnected] = useState(false);
 
+    // Download Dropdown State
+    const [showDownloadMenu, setShowDownloadMenu] = useState(false);
+    const [isExporting, setIsExporting] = useState(null); // 'doc' | 'ppt' | null
+    const [dropdownPos, setDropdownPos] = useState({ top: 0, right: 0 });
+    const downloadButtonRef = useRef(null);
+    const downloadPanelRef = useRef(null);
+
     // Toast Notification State
     const [toast, setToast] = useState(null);
 
@@ -286,7 +295,6 @@ const AnalyticsPage = ({ filterProps }) => {
         }
         refreshTimeoutRef.current = setTimeout(() => {
             setRefreshKey(prev => prev + 1);
-            showToast('info', '🔄 Data updated', 2000);
         }, 500);
     }, []);
 
@@ -500,6 +508,83 @@ const AnalyticsPage = ({ filterProps }) => {
         }
     };
 
+    // Close download menu on outside click
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            const clickedButton = downloadButtonRef.current?.contains(e.target);
+            const clickedPanel  = downloadPanelRef.current?.contains(e.target);
+            if (!clickedButton && !clickedPanel) {
+                setShowDownloadMenu(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const toggleDownloadMenu = () => {
+        if (!showDownloadMenu && downloadButtonRef.current) {
+            const rect = downloadButtonRef.current.getBoundingClientRect();
+            setDropdownPos({
+                top: rect.bottom + 8,
+                right: window.innerWidth - rect.right,
+            });
+        }
+        setShowDownloadMenu(prev => !prev);
+    };
+
+    const handleExportDoc = async () => {
+        setShowDownloadMenu(false);
+        setIsExporting('doc');
+        showToast('loading', '⏳ Generating detailed analytics document...');
+        try {
+            await new Promise(r => setTimeout(r, 100));
+            await exportAnalyticsDoc({ summary, paymentData, paymentTrends, historyData, trends, filters });
+            clearToast();
+            showToast('success', '✅ Analytics document downloaded successfully!', 4000);
+        } catch (err) {
+            console.error('Doc export error:', err);
+            clearToast();
+            showToast('error', '❌ Failed to generate document. Please try again.', 5000);
+        } finally {
+            setIsExporting(null);
+        }
+    };
+
+    const handleExportPPT = async () => {
+        setShowDownloadMenu(false);
+        setIsExporting('ppt');
+        showToast('loading', '⏳ Building PowerPoint presentation...');
+        try {
+            await exportAnalyticsPPT({ summary, paymentData, paymentTrends, historyData, filters });
+            clearToast();
+            showToast('success', '✅ PowerPoint presentation downloaded successfully!', 4000);
+        } catch (err) {
+            console.error('PPT export error:', err);
+            clearToast();
+            showToast('error', '❌ Failed to generate presentation. Please try again.', 5000);
+        } finally {
+            setIsExporting(null);
+        }
+    };
+
+    const handleExportPDF = async () => {
+        setShowDownloadMenu(false);
+        setIsExporting('pdf');
+        showToast('loading', '⏳ Generating detailed PDF report...');
+        try {
+            await new Promise(r => setTimeout(r, 100));
+            await exportAnalyticsPDF({ summary, paymentData, paymentTrends, historyData, trends, filters });
+            clearToast();
+            showToast('success', '✅ PDF report downloaded successfully!', 4000);
+        } catch (err) {
+            console.error('PDF export error:', err);
+            clearToast();
+            showToast('error', '❌ Failed to generate report. Please try again.', 5000);
+        } finally {
+            setIsExporting(null);
+        }
+    };
+
     return (
         <div className="min-h-screen text-white p-4 lg:p-8 animate-in fade-in duration-700 pb-16">
             {/* Toast Notification */}
@@ -522,15 +607,11 @@ const AnalyticsPage = ({ filterProps }) => {
                 <div className="w-[25rem]">
                     <h2 className="text-5xl font-black text-white px-2 tracking-tighter flex items-center gap-3 drop-shadow-2xl">
                         Analytics
-                        {isRefreshing && (
-                            <div className="flex items-center gap-2 px-3 py-1 bg-indigo-500/20 border border-indigo-500/30 rounded-full animate-pulse ml-4">
-                                <Loader2 className="w-3 h-3 text-indigo-400 animate-spin" />
-                            </div>
-                        )}
                     </h2>
                 </div>
 
-                <div className="flex flex-nowrap items-center gap-2 w-full lg:w-auto pr-4">
+                <div className="flex flex-nowrap items-center gap-3 w-full lg:w-auto pr-4">
+                    {/* Tab Switcher */}
                     <div className="flex bg-white/5 backdrop-blur-xl p-1.5 rounded-2xl border border-white/10 shadow-2xl">
                         {[
                             { id: 'charts', icon: PieChartIcon, label: 'Performance Charts' },
@@ -548,8 +629,101 @@ const AnalyticsPage = ({ filterProps }) => {
                             </button>
                         ))}
                     </div>
+
+                    {/* Download Button — dropdown panel rendered at root level via fixed position */}
+                    <button
+                        ref={downloadButtonRef}
+                        onClick={toggleDownloadMenu}
+                        disabled={!!isExporting}
+                        className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs font-black transition-all duration-300 border shadow-lg
+                            ${ isExporting
+                                ? 'bg-indigo-700/50 border-indigo-500/30 text-indigo-300 cursor-not-allowed'
+                                : showDownloadMenu
+                                    ? 'bg-indigo-600 border-indigo-500 text-white shadow-indigo-500/30 scale-[1.02]'
+                                    : 'bg-white/5 border-white/10 text-gray-300 hover:bg-indigo-600 hover:border-indigo-500 hover:text-white hover:shadow-indigo-500/20'
+                            }`}
+                    >
+                        {isExporting ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                            <Download className="w-4 h-4" />
+                        )}
+                        {isExporting === 'doc' ? 'Generating Doc...' : isExporting === 'pdf' ? 'Building PDF...' : isExporting === 'ppt' ? 'Building PPT...' : 'Download'}
+                        {!isExporting && (
+                            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${showDownloadMenu ? 'rotate-180' : ''}`} />
+                        )}
+                    </button>
                 </div>
             </div>
+
+            {/* Download Dropdown Panel — fixed position to escape backdrop-blur stacking context */}
+            {showDownloadMenu && !isExporting && (
+                <div
+                    ref={downloadPanelRef}
+                    className="fixed w-72 bg-[#0f1035] border border-white/10 rounded-2xl shadow-2xl shadow-black/60 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
+                    style={{ top: dropdownPos.top, right: dropdownPos.right, zIndex: 999999 }}
+                >
+                    {/* Header */}
+                    <div className="px-4 py-3 border-b border-white/5 bg-white/[0.02]">
+                        <p className="text-[10px] font-black text-indigo-400/80 uppercase tracking-[0.2em]">Export Report</p>
+                        <p className="text-[11px] text-gray-400 mt-0.5">
+                            {filters?.month && filters?.year
+                                ? `${new Date(0, parseInt(filters.month) - 1).toLocaleString('default', { month: 'long' })} ${filters.year}`
+                                : 'Current Period'}
+                        </p>
+                    </div>
+
+                    {/* PDF Option */}
+                    <button
+                        onClick={handleExportPDF}
+                        className="w-full flex items-start gap-4 px-4 py-4 hover:bg-white/5 transition-all duration-200 group border-b border-white/5"
+                    >
+                        <div className="p-2.5 bg-rose-600/20 group-hover:bg-rose-600/40 rounded-xl transition-colors shrink-0 mt-0.5">
+                            <FileText className="w-5 h-5 text-rose-400 group-hover:text-rose-300" />
+                        </div>
+                        <div className="text-left">
+                            <p className="text-sm font-black text-white group-hover:text-rose-200 transition-colors">PDF Report</p>
+                            <p className="text-[11px] text-gray-400 mt-0.5 leading-relaxed">High-fidelity portable report — best for tablets, mobile & printing</p>
+                            <span className="inline-block mt-1.5 text-[9px] font-bold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded-full uppercase tracking-wide">.pdf format</span>
+                        </div>
+                    </button>
+
+                    {/* Document Option */}
+                    {/* <button
+                        onClick={handleExportDoc}
+                        className="w-full flex items-start gap-4 px-4 py-4 hover:bg-white/5 transition-all duration-200 group border-b border-white/5"
+                    >
+                        <div className="p-2.5 bg-indigo-600/20 group-hover:bg-indigo-600/40 rounded-xl transition-colors shrink-0 mt-0.5">
+                            <FileDown className="w-5 h-5 text-indigo-400 group-hover:text-indigo-300" />
+                        </div>
+                        <div className="text-left">
+                            <p className="text-sm font-black text-white group-hover:text-indigo-200 transition-colors">Word Document</p>
+                            <p className="text-[11px] text-gray-400 mt-0.5 leading-relaxed">Editable text report — optimized for MS Word processing</p>
+                            <span className="inline-block mt-1.5 text-[9px] font-bold text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded-full uppercase tracking-wide">.doc format</span>
+                        </div>
+                    </button> */}
+
+                    {/* PPT Option */}
+                    <button
+                        onClick={handleExportPPT}
+                        className="w-full flex items-start gap-4 px-4 py-4 hover:bg-white/5 transition-all duration-200 group"
+                    >
+                        <div className="p-2.5 bg-violet-600/20 group-hover:bg-violet-600/40 rounded-xl transition-colors shrink-0 mt-0.5">
+                            <Presentation className="w-5 h-5 text-violet-400 group-hover:text-violet-300" />
+                        </div>
+                        <div className="text-left">
+                            <p className="text-sm font-black text-white group-hover:text-violet-200 transition-colors">Presentation (PPT)</p>
+                            <p className="text-[11px] text-gray-400 mt-0.5 leading-relaxed">Executive 9-slide deck with charts & visuals</p>
+                            <span className="inline-block mt-1.5 text-[9px] font-bold text-violet-400 bg-violet-500/10 border border-violet-500/20 px-2 py-0.5 rounded-full uppercase tracking-wide">.pptx format</span>
+                        </div>
+                    </button>
+
+                    {/* Footer hint */}
+                    <div className="px-4 py-2.5 bg-white/[0.015] border-t border-white/5">
+                        <p className="text-[9px] text-gray-600 text-center">Uses currently applied filters &amp; date range</p>
+                    </div>
+                </div>
+            )}
 
             {/* Role-Adaptive Filter Bar */}
             <div className="mb-10">
@@ -570,8 +744,6 @@ const AnalyticsPage = ({ filterProps }) => {
                                 pending: summary?.shgStats?.pending,
                                 total: summary?.shgStats?.total,
                                 approved: summary?.ccActions?.approved,
-                                rejected: summary?.ccActions?.rejected,
-                                ccPending: summary?.ccActions?.pending,
                                 converted: conv.converted,
                                 sentToDB: conv.sentToDB,
                                 failed: conv.failed,
@@ -634,6 +806,7 @@ const AnalyticsPage = ({ filterProps }) => {
                         </div>
                     </div>
 
+
                     <div className="mb-8">
                         <CumulativeFinanceSummary
                             history={historyData}
@@ -641,9 +814,19 @@ const AnalyticsPage = ({ filterProps }) => {
                         />
                     </div>
 
+                    <div className="mb-8">
+                        <Page2FinanceBarChart 
+                            data={paymentData?.financeStats?.page2Finance || summary?.financeStats?.page2Finance} 
+                            breakdown={paymentData?.financeStats?.page2Breakdown || summary?.financeStats?.page2Breakdown}
+                            distributions={paymentData?.financeStats?.page2Distributions || summary?.financeStats?.page2Distributions}
+                            month={filters.month} 
+                            year={filters.year} 
+                        />
+                    </div>
+
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                         <TrendChart data={trends} />
-                        <DistributionCharts summary={summary} />
+                        <DistributionCharts summary={summary} month={filters.month} year={filters.year} />
                     </div>
                 </div>
             )}
@@ -1226,7 +1409,345 @@ const MiniPaymentPie = ({ data, color, level, metricLabel }) => {
     );
 };
 
-const DistributionCharts = ({ summary }) => {
+const UploadCompletionPieChart = ({ conversion, month, year }) => {
+    if (!conversion) return null;
+
+    const { bothPagesCount = 0, page1OnlyCount = 0, page2OnlyCount = 0 } = conversion;
+    const total = bothPagesCount + page1OnlyCount + page2OnlyCount;
+
+    const currYear = parseInt(year);
+    const currMonth = parseInt(month);
+    const isAfterFeb2026 = (currYear > 2026) || (currYear === 2026 && currMonth > 2);
+
+    const data = isAfterFeb2026 ? [
+        { name: 'Complete (P1+P2)', value: bothPagesCount, color: '#10b981', label: 'సంఘం వివరాలు మరియు ఫైనాన్సియల్ లెడ్జర్ అప్లోడ్ అయినవి' },
+        { name: 'Page 2 Pending', value: page1OnlyCount, color: '#f59e0b', label: 'ఫైనాన్సియల్ లెడ్జర్ అప్లోడ్ కావాల్సి ఉంది' },
+        { name: 'Page 1 Pending', value: page2OnlyCount, color: '#6366f1', label: 'సంఘం వివరాలు అప్లోడ్ కావాల్సి ఉంది' }
+    ] : [
+        { name: 'Complete (Page 1)', value: bothPagesCount + page1OnlyCount, color: '#10b981', label: 'సంఘం వివరాలు అప్లోడ్ అయినవి (Feb 2026 నిబంధన)' },
+        { name: 'Page 1 Pending', value: page2OnlyCount, color: '#6366f1', label: 'సంఘం వివరాలు అప్లోడ్ కావాల్సి ఉంది' }
+    ];
+
+    const filteredData = data.filter(d => d.value > 0 || total === 0);
+
+    return (
+        <div className="space-y-4">
+            <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest text-center">Page Upload Status</h4>
+            <div className="h-44">
+                <ResponsiveContainer width="100%" height="100%">
+                    <PieChart margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
+                        <Pie
+                            data={filteredData.length > 0 ? filteredData : [{ name: 'No Data', value: 1, color: '#f1f5f9' }]}
+                            innerRadius={60}
+                            outerRadius={70}
+                            paddingAngle={5}
+                            dataKey="value"
+                        >
+                            {filteredData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                        </Pie>
+                        <Tooltip 
+                            content={({ active, payload }) => {
+                                if (active && payload && payload.length) {
+                                    const d = payload[0].payload;
+                                    return (
+                                        <div className="bg-slate-900/95 backdrop-blur-md border border-white/10 p-3 rounded-xl shadow-2xl">
+                                            <p className="text-[10px] font-black text-indigo-400 uppercase tracking-wider mb-1">{d.name}</p>
+                                            <p className="text-lg font-black text-white leading-none mb-2">{d.value}</p>
+                                            <p className="text-[9px] font-bold text-gray-400 border-t border-white/5 pt-2">{d.label}</p>
+                                        </div>
+                                    );
+                                }
+                                return null;
+                            }}
+                        />
+                    </PieChart>
+                </ResponsiveContainer>
+            </div>
+            <div className="flex flex-col gap-2">
+                {filteredData.map(d => (
+                    <div key={d.name} className="flex items-center justify-between px-4 py-2 bg-gray-50 rounded-xl group hover:bg-white transition-all shadow-sm">
+                        <div className="flex items-center gap-2">
+                            <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: d.color }} />
+                            <span className="text-[10px] font-black text-gray-500 uppercase">{d.name}</span>
+                        </div>
+                        <span className="text-sm font-black" style={{ color: d.color }}>{d.value}</span>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+};
+
+const DEBUG_ID_MAP = {
+    "17": "Member Savings",
+    "31": "Revolving Fund",
+    "36": "Aadhaar/Pension Grants",
+    "19": "VO Share Capital",
+    "26": "VO Savings",
+    "33": "Streenidhi Shares",
+    "38": "Bank/Other Deposits",
+    "46": "VO Loan Recovery",
+    "51": "Streenidhi Loan Recovery",
+    "56": "Bank Loan Recovery",
+    "61": "Unnathi Loan Recovery",
+    "48": "VO Entrance Fee",
+    "53": "Travel Expenses",
+    "58": "Honorarium",
+    "63": "Stationery/Audit",
+    "68": "Bank Charges",
+    "72": "Misc. Expenses",
+    "76": "Member Returns",
+    "80": "Member Interest Paid",
+    "87": "Bank Interest",
+    "91": "Deposit Interest",
+    "89": "Bank Principal",
+    "93": "Streenidhi Principal",
+    "97": "Unnathi Principal",
+    "101": "CIF Principal",
+    "105": "VO Principal",
+    "109": "Bank Interest Paid",
+    "113": "Streenidhi Interest Paid"
+};
+
+const Page2FinanceBarChart = ({ data, breakdown, distributions, month, year }) => {
+    const formatMonth = (m) => {
+        const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+        return months[parseInt(m) - 1] || m;
+    };
+    
+    const safeData = data || {
+        savingsReceived: 0,
+        fundsReceived: 0,
+        investments: 0,
+        recoveriesReceived: 0,
+        expenses: 0,
+        incomesReceived: 0,
+        loanRecoveriesPaid: 0
+    };
+
+    const safeBreakdown = breakdown || {};
+    const safeDist = distributions || [];
+
+    const chartData = [
+        { name: 'Savings Received', value: safeData.savingsReceived, breakdown: safeBreakdown.savingsReceived || {}, color: '#6366f1', key: 'savingsReceived' },
+        { name: 'Funds Received', value: safeData.fundsReceived, breakdown: safeBreakdown.fundsReceived || {}, color: '#8b5cf6', key: 'fundsReceived' },
+        { name: 'Group Investments', value: safeData.investments, breakdown: safeBreakdown.investments || {}, color: '#ec4899', key: 'investments' },
+        { name: 'Recoveries Received', value: safeData.recoveriesReceived, breakdown: safeBreakdown.recoveriesReceived || {}, color: '#f43f5e', key: 'recoveriesReceived' },
+        { name: 'Group Expenses', value: safeData.expenses, breakdown: safeBreakdown.expenses || {}, color: '#f59e0b', key: 'expenses' },
+        { name: 'Group Incomes', value: safeData.incomesReceived, breakdown: safeBreakdown.incomesReceived || {}, color: '#10b981', key: 'incomesReceived' },
+        { name: 'Loan Recoveries Paid', value: safeData.loanRecoveriesPaid, breakdown: safeBreakdown.loanRecoveriesPaid || {}, color: '#3b82f6', key: 'loanRecoveriesPaid' }
+    ];
+
+    const COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f59e0b', '#10b981', '#06b6d4', '#3b82f6'];
+
+    return (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+            {/* 1. Manual Ledger Summary Card */}
+            <div className="lg:col-span-2 bg-white rounded-[32px] shadow-xl border border-slate-100 p-8 hover:shadow-2xl transition-all duration-500 overflow-hidden relative h-full">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-50/30 blur-[80px] rounded-full -mr-20 -mt-20 pointer-events-none" />
+                
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-10 relative z-10">
+                    <div className="flex items-center gap-5">
+                        <div className="p-4 bg-indigo-600 shadow-lg shadow-indigo-200 rounded-2xl">
+                            <BarChart2 className="w-7 h-7 text-white" />
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-bold text-slate-900 tracking-tight">Manual Ledger Summary</h3>
+                            <p className="text-xs font-bold text-indigo-500 uppercase tracking-[0.2em] mt-1 flex items-center gap-2">
+                                <Calendar className="w-3 h-3" />
+                                Data for {formatMonth(month)} {year}
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-2 px-5 py-2.5 bg-indigo-50/50 rounded-2xl border border-indigo-100 backdrop-blur-sm">
+                        <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse shadow-[0_0_8px_rgba(99,102,241,0.6)]" />
+                        <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Live Financial Insights</span>
+                    </div>
+                </div>
+
+                <div className="bg-slate-50/50 rounded-3xl p-6 border border-slate-100/50 relative z-10">
+                    <div className="flex items-center justify-between mb-6 px-2">
+                        <div className="flex items-center gap-2">
+                            <Activity className="w-4 h-4 text-slate-400" />
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-left">Category Volume</span>
+                        </div>
+                    </div>
+                    <div className="h-[400px] w-full mt-4">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={chartData} margin={{ top: 20, right: 10, left: 10, bottom: 65 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" strokeOpacity={0.6} />
+                                <XAxis 
+                                    dataKey="name" 
+                                    axisLine={false}
+                                    tickLine={false}
+                                    tick={{ fill: '#64748b', fontSize: 10, fontWeight: 700 }}
+                                    angle={-35}
+                                    textAnchor="end"
+                                    interval={0}
+                                    height={70}
+                                    dy={10}
+                                />
+                                <YAxis 
+                                    axisLine={false}
+                                    tickLine={false}
+                                    tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 600 }}
+                                    tickFormatter={(value) => formatIndianCurrency(value).replace('₹', '')}
+                                />
+                                <Tooltip 
+                                    cursor={{ fill: '#f1f5f9', opacity: 0.4 }}
+                                    wrapperStyle={{ zIndex: 1000 }}
+                                    content={({ active, payload }) => {
+                                        if (active && payload && payload.length) {
+                                            const entry = payload[0].payload;
+                                            const breakdownItems = Object.entries(entry.breakdown || {});
+                                            
+                                            return (
+                                                <div className="bg-white/95 backdrop-blur-md p-5 rounded-[24px] shadow-2xl border border-indigo-50 min-w-[240px] animate-in zoom-in-95 duration-200">
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
+                                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">{entry.name}</p>
+                                                    </div>
+                                                    <p className="text-2xl font-black text-slate-900 mb-4">{formatIndianCurrency(entry.value)}</p>
+                                                    
+                                                    {breakdownItems.length > 0 && (
+                                                        <div className="space-y-3 pt-4 border-t border-slate-100">
+                                                            {breakdownItems.map(([id, val]) => (
+                                                                <div key={id} className="flex items-center justify-between group">
+                                                                    <span className="text-[10px] font-bold text-slate-500 uppercase group-hover:text-indigo-600 transition-colors">{DEBUG_ID_MAP[id] || `Field ${id}`}</span>
+                                                                    <span className="text-[11px] font-black text-slate-800">{formatIndianCurrency(val)}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        }
+                                        return null;
+                                    }}
+                                />
+                                <Bar 
+                                    dataKey="value" 
+                                    radius={[12, 12, 4, 4]}
+                                    isAnimationActive={true}
+                                    barSize={40}
+                                >
+                                    {chartData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={entry.color} fillOpacity={0.8} />
+                                    ))}
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+            </div>
+
+            {/* 2. Regional Contribution Card */}
+            <div className="bg-white rounded-[32px] shadow-xl border border-slate-100 p-8 hover:shadow-2xl transition-all duration-500 overflow-hidden relative h-full flex flex-col">
+                <div className="absolute bottom-0 left-0 w-64 h-64 bg-indigo-50/20 blur-[80px] rounded-full -ml-20 -mb-20 pointer-events-none" />
+                
+                <div className="flex items-center justify-between mb-8 relative z-10">
+                    <div className="flex items-center gap-5">
+                        <div className="p-4 bg-indigo-500 shadow-lg shadow-indigo-100 rounded-2xl">
+                            <PieChartIcon className="w-6 h-6 text-white" />
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-bold text-slate-900 tracking-tight">Regional Contribution</h3>
+                        </div>
+                    </div>
+                </div>
+
+                <div className="bg-slate-50/50 rounded-3xl p-6 border border-slate-100/50 relative z-10 flex-1 overflow-y-auto custom-scrollbar">
+                    {Object.keys(distributions || {}).some(k => (distributions[k] || []).length > 0) ? (
+                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                            {chartData.map((catInfo, idx) => {
+                                const distData = distributions[catInfo.key] || [];
+                                if (distData.length === 0) return null;
+
+                                const totalVal = distData.reduce((acc, cur) => acc + cur.value, 0);
+
+                                // Per-category color palettes anchored to each category's accent color
+                                const CAT_PALETTES = {
+                                    savingsReceived:    ['#6366f1','#818cf8','#a5b4fc','#4f46e5','#3730a3','#4338ca','#7c3aed','#8b5cf6','#6d28d9','#c7d2fe'],
+                                    fundsReceived:      ['#8b5cf6','#a78bfa','#c4b5fd','#7c3aed','#6d28d9','#9333ea','#a855f7','#c026d3','#d946ef','#e879f9'],
+                                    investments:        ['#ec4899','#f472b6','#f9a8d4','#db2777','#be185d','#e11d48','#f43f5e','#fb7185','#fda4af','#ff6b81'],
+                                    recoveriesReceived: ['#f43f5e','#fb7185','#fda4af','#e11d48','#be123c','#f97316','#fb923c','#fdba74','#ef4444','#dc2626'],
+                                    expenses:           ['#f59e0b','#fbbf24','#fcd34d','#d97706','#b45309','#f97316','#fb923c','#ea580c','#c2410c','#ef4444'],
+                                    incomesReceived:    ['#10b981','#34d399','#6ee7b7','#059669','#047857','#14b8a6','#2dd4bf','#06b6d4','#0891b2','#22c55e'],
+                                    loanRecoveriesPaid: ['#3b82f6','#60a5fa','#93c5fd','#2563eb','#1d4ed8','#0ea5e9','#38bdf8','#7dd3fc','#06b6d4','#0891b2'],
+                                };
+                                const catColors = CAT_PALETTES[catInfo.key] || COLORS;
+
+                                return (
+                                    <div key={idx} className="flex flex-col items-center">
+                                        <div className="flex items-center gap-2 mb-2 w-full pb-2 border-b" style={{ borderColor: catInfo.color + '33' }}>
+                                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: catInfo.color }} />
+                                            <span className="text-[9px] font-black uppercase tracking-tighter truncate" style={{ color: catInfo.color }}>{catInfo.name}</span>
+                                        </div>
+                                        
+                                        <div className="w-full aspect-square relative min-h-[120px]">
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <PieChart>
+                                                    <Pie
+                                                        data={distData}
+                                                        innerRadius={35}
+                                                        outerRadius={50}
+                                                        paddingAngle={3}
+                                                        dataKey="value"
+                                                        stroke="none"
+                                                    >
+                                                        {distData.map((entry, index) => (
+                                                            <Cell key={`cell-${index}`} fill={catColors[index % catColors.length]} />
+                                                        ))}
+                                                    </Pie>
+                                                    <Tooltip 
+                                                        wrapperStyle={{ zIndex: 10001, outline: 'none' }}
+                                                        useTranslate3d={true}
+                                                        content={({ active, payload }) => {
+                                                            if (active && payload && payload.length) {
+                                                                const { name, value } = payload[0].payload;
+                                                                const percent = ((value / totalVal) * 100).toFixed(1);
+                                                                return (
+                                                                    <div className="bg-slate-900/95 backdrop-blur-md px-3 py-2 rounded-xl shadow-2xl border border-white/10 flex flex-col gap-0.5 items-start min-w-[120px]">
+                                                                        <span className="text-[8px] font-black uppercase tracking-widest" style={{ color: catInfo.color }}>{name}</span>
+                                                                        <span className="text-sm font-black text-white">{formatIndianCurrency(value)}</span>
+                                                                        <span className="text-[8px] font-bold text-slate-400">{percent}% of Category</span>
+                                                                    </div>
+                                                                );
+                                                            }
+                                                            return null;
+                                                        }}
+                                                    />
+                                                </PieChart>
+                                            </ResponsiveContainer>
+                                            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-0">
+                                                <span className="text-[7px] font-black text-gray-400 uppercase leading-none">Total</span>
+                                                <span className="text-[10px] font-black mt-1" style={{ color: catInfo.color }}>{formatIndianCurrency(totalVal)}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        <div className="flex-1 flex flex-col items-center justify-center gap-6 py-32">
+                            <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center opacity-40 animate-pulse">
+                                <Activity className="w-10 h-10 text-slate-400" />
+                            </div>
+                            <div className="text-center">
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-2">Awaiting Data</p>
+                                <p className="text-sm font-bold text-slate-300">No categorical regional data found</p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const DistributionCharts = ({ summary, month, year }) => {
     if (!summary) return null;
 
     const pieData = [
@@ -1242,17 +1763,17 @@ const DistributionCharts = ({ summary }) => {
     ];
 
     return (
-        <div className="bg-white/80 backdrop-blur-md p-8 rounded-[32px] border border-white/20 shadow-lg space-y-8">
-            <div className="grid grid-cols-2 gap-4 h-full">
+        <div className="bg-white/80 backdrop-blur-md p-8 rounded-[32px] border border-white/20 shadow-lg space-y-8 h-full">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 <div className="space-y-4">
                     <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest text-center">Capture Stats</h4>
                     <div className="h-44">
                         <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
+                            <PieChart margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
                                 <Pie
                                     data={pieData}
                                     innerRadius={60}
-                                    outerRadius={80}
+                                    outerRadius={70}
                                     paddingAngle={5}
                                     dataKey="value"
                                 >
@@ -1278,11 +1799,11 @@ const DistributionCharts = ({ summary }) => {
                     <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest text-center">Conversion Status</h4>
                     <div className="h-44">
                         <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
+                            <PieChart margin={{ top: 10, right: 10, left: 10, bottom: 10 }}>
                                 <Pie
                                     data={conversionData}
                                     innerRadius={60}
-                                    outerRadius={80}
+                                    outerRadius={70}
                                     paddingAngle={5}
                                     dataKey="value"
                                 >
@@ -1303,6 +1824,9 @@ const DistributionCharts = ({ summary }) => {
                         ))}
                     </div>
                 </div>
+
+                {/* New Upload Completion Pie Chart */}
+                <UploadCompletionPieChart conversion={summary.conversion} month={month} year={year} />
             </div>
         </div>
     );
@@ -1322,15 +1846,6 @@ const RowStats = ({ stats }) => (
                         className="h-full bg-emerald-500 transition-all duration-1000"
                         style={{ width: `${(stats?.uploads?.uploaded / Math.max(stats?.uploads?.total || 0, 1)) * 100}%` }}
                     ></div>
-                </div>
-            </div>
-        </td>
-        <td className="px-8 py-6">
-            <div className="flex flex-col items-center gap-1.5">
-                <div className="flex gap-1.5 font-black text-[10px]">
-                    <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-100">{stats?.ccActions?.approved || 0}A</span>
-                    <span className="text-rose-500 bg-red-50 px-2 py-0.5 rounded-lg border border-red-100">{stats?.ccActions?.rejected || 0}R</span>
-                    <span className="text-gray-400 bg-gray-50 px-2 py-0.5 rounded-lg border border-gray-100">{stats?.ccActions?.pending || 0}P</span>
                 </div>
             </div>
         </td>
@@ -1450,7 +1965,7 @@ const HierarchicalRow = ({ item, handleDetailedDownload, level = 0, filters, ref
             </tr>
             {isExpanded && loadingChildren && (
                 <tr>
-                    <td colSpan="5" className="px-8 py-4">
+                    <td colSpan="4" className="px-8 py-4">
                         <div className="flex items-center gap-3" style={{ paddingLeft: `${(level + 1) * 24}px` }}>
                             <Loader2 className="w-3 h-3 text-indigo-400 animate-spin" />
                             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest animate-pulse">{getLoadingText()}</span>
@@ -1490,7 +2005,6 @@ const DetailedTable = ({ data, loading, handleDetailedDownload, filters, refresh
                         <tr className="bg-indigo-900 text-white">
                             <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-left">User (Hierarchy)</th>
                             <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-center">Uploads (U/P/T)</th>
-                            <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-center">Approved (A/R/P)</th>
                             <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-center">Conversion (C/F)</th>
                             <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-center">Action</th>
                         </tr>

@@ -372,9 +372,9 @@ export default function EnhancedTableOCRSystem() {
 
   // Helper: refresh user state from localStorage and sync location selectors
   const refreshUserFromStorage = () => {
-    // Force default to March 2026 for completion phase
-    setSelectedMonth('03');
-    setSelectedYear('2026');
+    const now = new Date();
+    setSelectedMonth(String(now.getMonth() + 1).padStart(2, '0'));
+    setSelectedYear(String(now.getFullYear()));
 
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
@@ -520,8 +520,8 @@ export default function EnhancedTableOCRSystem() {
       } catch (e) {
         // Fallback: detect from current path
         const currentPath = window.location.pathname;
-        if (currentPath.startsWith('/SMD')) {
-          basePath = '/SMD';
+        if (currentPath.startsWith('/Test')) {
+          basePath = '/Test';
         } else {
           const pathParts = currentPath.split('/').filter(p => p);
           if (pathParts.length > 0) {

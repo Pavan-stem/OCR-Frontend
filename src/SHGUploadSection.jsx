@@ -1,15 +1,20 @@
-
-
-
 // SHGUploadSection.jsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Upload, CheckCircle, X, FileText, Search, AlertCircle, Eye, Filter, RotateCw, RotateCcw, Camera, AlertTriangle, Activity, ScanLine, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Upload, CheckCircle, X, FileText, Search, AlertCircle, FilePenLine, Filter, RotateCw, RotateCcw, Camera, AlertTriangle, Activity, ScanLine, Lock, Unlock, ChevronDown } from 'lucide-react';
 import { API_BASE } from './utils/apiConfig';
 import { analyzeImage } from './utils/imageQualityCheck';
 import SmartCamera from './smartcamera';
 import SHGUploadCard from './components/SHGUploadCard';
 import { processDocumentAndValidate, stitchImages } from './utils/documentProcessor';
+import SHGConversionEditView from './pages/SHGConversionEditView';
+
+const padSHGId = (id) => {
+  if (!id) return id;
+  const s = String(id).trim();
+  if (/^\d+$/.test(s)) return s.padStart(18, '0');
+  return s;
+};
 
 const SHGUploadSection = ({
   selectedMonth,
@@ -41,7 +46,6 @@ const SHGUploadSection = ({
   const [analyzingMap, setAnalyzingMap] = useState({});
   const [smartPreviewUrl, setSmartPreviewUrl] = useState(null);
   const [isProcessingPreview, setIsProcessingPreview] = useState(false);
-  const previewSessionUrlRef = useRef(null);
   const [failedUploads, setFailedUploads] = useState([]);
   const [showFailedOnly, setShowFailedOnly] = useState(false);
   const [activeShgId, setActiveShgId] = useState(null);
@@ -54,7 +58,21 @@ const SHGUploadSection = ({
   const [showSmartCamera, setShowSmartCamera] = useState(false);
   const [cameraTarget, setCameraTarget] = useState({ id: null, name: null });
   const [permanentlyUploadedFiles, setPermanentlyUploadedFiles] = useState([]);
+  const [viewerImages, setViewerImages] = useState([]);
+  const [currentViewerIndex, setCurrentViewerIndex] = useState(0);
+
+  // Determine if current period is after the 2-page requirement threshold (Feb 2026)
+  const isAfterFeb2026 = (parseInt(selectedYear) > 2026) || (parseInt(selectedYear) === 2026 && parseInt(selectedMonth) > 2);
   const [currentlyViewingId, setCurrentlyViewingId] = useState(null);
+  const [activeTab, setActiveTab] = useState('upload'); // 'upload' or 'conversion'
+  const [conversions, setConversions] = useState({ success: [], failed: [] });
+  const [conversionSummary, setConversionSummary] = useState({ totalUnsaved: 0 });
+  const [isConversionsLoading, setIsConversionsLoading] = useState(false);
+  const [editingSHG, setEditingSHG] = useState(null);
+
+  // VO Upload Access Restriction States
+  const [restriction, setRestriction] = useState(null); // { mode: 'restricted', month: '02', year: '2025' }
+  const [isRestrictionLoading, setIsRestrictionLoading] = useState(true);
 
   // Detect if device is mobile/tablet
   useEffect(() => {
@@ -76,6 +94,33 @@ const SHGUploadSection = ({
     return () => window.removeEventListener('resize', checkIfMobileDevice);
   }, []);
 
+  // Fetch VO Upload Access Restriction
+  useEffect(() => {
+    const fetchRestriction = async () => {
+      if (!user?._id) return;
+      try {
+        const token = localStorage.getItem('token');
+        const res = await fetch(`${API_BASE}/api/vo/upload-access-status`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (data.success && data.mode === 'restricted') {
+          setRestriction(data);
+          // Sync parent state with restriction
+          if (onMonthChange) onMonthChange(data.month);
+          if (onYearChange) onYearChange(data.year);
+        } else {
+          setRestriction(null);
+        }
+      } catch (err) {
+        console.error('Failed to fetch upload restriction:', err);
+      } finally {
+        setIsRestrictionLoading(false);
+      }
+    };
+    fetchRestriction();
+  }, [user?._id]);
+
   const handleMaintenanceResponse = (data) => {
     if (setMaintenance) {
       const maintenanceData = {
@@ -90,16 +135,13 @@ const SHGUploadSection = ({
 
   const isDeveloper = user?.role?.toLowerCase().includes('developer') || (user?.voID && String(user.voID).length === 4);
   const isAuthorizedVO = user?.role?.toLowerCase() === 'vo' || user?.role?.toLowerCase().includes('developer') || user?.role?.toLowerCase().startsWith('vo-');
-  const isTestMode = window.location.pathname.startsWith('/SMD');
+  const isTestMode = window.location.pathname.startsWith('/Test');
   const hasAIFeatures = isTestMode && isDeveloper;
 
   // Smart Preview Logic
   useEffect(() => {
     if (!previewFile) {
-      if (previewSessionUrlRef.current) {
-        URL.revokeObjectURL(previewSessionUrlRef.current);
-        previewSessionUrlRef.current = null;
-      }
+      if (smartPreviewUrl) URL.revokeObjectURL(smartPreviewUrl);
       setSmartPreviewUrl(null);
       return;
     }
@@ -117,16 +159,9 @@ const SHGUploadSection = ({
         if (previewFile.rotation && previewFile.rotation % 360 !== 0) {
           const processedFile = await processFileRotation(previewFile, { quality: 0.9 });
           const url = URL.createObjectURL(processedFile);
-
-          if (previewSessionUrlRef.current) URL.revokeObjectURL(previewSessionUrlRef.current);
-          previewSessionUrlRef.current = url;
+          if (smartPreviewUrl) URL.revokeObjectURL(smartPreviewUrl);
           setSmartPreviewUrl(url);
         } else {
-          // If we return to 0 rotation, clear session URL but keep the original
-          if (previewSessionUrlRef.current) {
-            URL.revokeObjectURL(previewSessionUrlRef.current);
-            previewSessionUrlRef.current = null;
-          }
           setSmartPreviewUrl(previewFile.previewUrl);
         }
       } catch (err) {
@@ -174,8 +209,107 @@ const SHGUploadSection = ({
   useEffect(() => {
     if (selectedMonth && selectedYear) {
       fetchPermanentlyUploadedFiles();
+      fetchConversions();
     }
   }, [selectedMonth, selectedYear, user?.voID, serverProgress?.uploadedShgIds]);
+
+  const fetchConversions = useCallback(async () => {
+    if (!user?._id || !selectedMonth || !selectedYear) return;
+    setIsConversionsLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const params = new URLSearchParams({
+        month: selectedMonth,
+        year: selectedYear,
+        limit: 1000 // Get all for current scope
+      }).toString();
+
+      const res = await fetch(`${API_BASE}/api/conversion/results/${user._id}?${params}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setConversions(data.results);
+        if (data.summary) setConversionSummary(data.summary);
+      }
+    } catch (err) {
+      console.error('Error fetching conversions:', err);
+    } finally {
+      setIsConversionsLoading(false);
+    }
+  }, [user?._id, selectedMonth, selectedYear]);
+
+  const fetchConversionStatus = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const params = new URLSearchParams({
+        month: selectedMonth,
+        year: selectedYear,
+        refresh: 'true'
+      }).toString();
+
+      if (!user?._id) return;
+      const res = await fetch(`${API_BASE}/api/conversion/status/${user._id}?${params}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setConversionSummary(prev => ({ ...prev, ...data.summary }));
+      }
+    } catch (err) {
+      console.error('Error fetching status:', err);
+    }
+  }, [user?._id, selectedMonth, selectedYear]);
+
+  // Periodic status check for the notification badge
+  useEffect(() => {
+    fetchConversionStatus();
+    const interval = setInterval(fetchConversionStatus, 15000);
+    return () => clearInterval(interval);
+  }, [fetchConversionStatus]);
+
+  // Group conversions by SHG ID for the edit list
+  const getGroupedConversions = () => {
+    const groups = {};
+    const items = [...(conversions.success || []), ...(conversions.failed || [])];
+    items.forEach(item => {
+      const shgId = padSHGId(item.shgID || item.shgId);
+      if (!shgId) return;
+      if (!groups[shgId]) {
+        groups[shgId] = {
+          shgID: shgId,
+          shgName: item.shgName,
+          pages: {},
+          isSynced: true,
+          hasFailed: false
+        };
+      }
+
+      // Robust Page Detection: Check multiple possible locations for the page number
+      const pageNum = item.page || item.page_num || item.table_data?.page || 1;
+      groups[shgId].pages[pageNum] = item;
+
+      // Robust Sync Detection: Check for multiple field names and status values
+      const syncedField = item.isSynced ?? item.is_synced ?? item.synced;
+      const isActuallySynced = syncedField === true || item.status === 'synced' || item.status === 'synced_to_db';
+
+      // Mark as unsaved if ANY page in the group (completed or success) is not explicitly synced
+      if ((item.status === 'completed' || item.status === 'success' || !item.status) && !isActuallySynced) {
+        groups[shgId].isSynced = false;
+      }
+
+      if (item.status === 'failed') {
+        groups[shgId].hasFailed = true;
+      }
+    });
+
+    // Filter: Show SHGs that have at least one page converted/present
+    return Object.values(groups).filter(group => group.pages[1] || group.pages[2]);
+  };
+
+  const groupedConversions = getGroupedConversions();
+  // Now that detection logic is robust, we can safely sync the badge with the filtered list
+  const unsavedCount = groupedConversions.filter(g => !g.isSynced).length;
 
   const handleViewPermanentlyUploadedFile = async (shgId, page = 1) => {
     const viewId = `${shgId}-${page}`;
@@ -338,7 +472,6 @@ const SHGUploadSection = ({
   useEffect(() => {
     const shgIds = Object.keys(uploadedFiles);
 
-    // No files uploaded at all → not validated
     if (shgIds.length === 0) {
       setAllFilesValidated(false);
       return;
@@ -347,7 +480,30 @@ const SHGUploadSection = ({
     const allValidated = shgIds.every(shgId => {
       const p1 = uploadedFiles[shgId]?.page1;
       const p2 = uploadedFiles[shgId]?.page2;
-      // Both pages must exist AND both must be validated
+
+      // ── Partial re-upload: check if the OTHER page is accepted on the server.
+      // We rely on permanentlyUploadedFiles to detect server-accepted pages.
+      const targetId = shgId?.toString().toLowerCase();
+      const serverPages = permanentlyUploadedFiles.filter(u => {
+        const uId = (u.shgID || u.shgId || u.metadata?.shgID || u.metadata?.shgId || '').toString().toLowerCase();
+        return uId === targetId || uId.includes(targetId) || targetId.includes(uId);
+      });
+      const serverPageNums = serverPages
+        .filter(u => !['rejected'].includes((u.status || '').toLowerCase()))
+        .map(u => parseInt(u.page || u.metadata?.page || 0))
+        .filter(Boolean);
+
+      const p1OnServer = serverPageNums.includes(1);
+      const p2OnServer = serverPageNums.includes(2);
+
+      // Partial reupload: only the locally-provided page(s) need to be validated
+      if ((p1OnServer && !p2OnServer && p2 && !p1) || (!p1OnServer && p2OnServer && p1 && !p2)) {
+        // One page on server, one local → just validate the local one
+        if (p1OnServer && p2) return p2.validated === true;
+        if (p2OnServer && p1) return p1.validated === true;
+      }
+
+      // Standard: Both pages must exist AND both must be validated
       return (
         p1 && p2 &&
         p1.validated === true &&
@@ -356,7 +512,7 @@ const SHGUploadSection = ({
     });
 
     setAllFilesValidated(allValidated);
-  }, [uploadedFiles]);
+  }, [uploadedFiles, permanentlyUploadedFiles]);
 
   const fetchUploadProgress = async () => {
     if (!selectedMonth || !selectedYear) return;
@@ -492,7 +648,7 @@ const SHGUploadSection = ({
     setError('');
 
     if (!selectedMonth || !selectedYear) {
-      setError('Please select both month and year first.');
+      setError(t?.('upload.selectMonthYearFirst') || 'Please select both month and year first.');
       setLoading(false);
       return;
     }
@@ -500,7 +656,7 @@ const SHGUploadSection = ({
     try {
       const token = localStorage.getItem('token');
       if (!token) {
-        setError('Session expired. Please log in again.');
+        setError(t?.('upload.sessionExpired') || 'Session expired. Please log in again.');
         setLoading(false);
         window.location.href = '#/login';
         return;
@@ -521,7 +677,7 @@ const SHGUploadSection = ({
       if (response.status === 401) {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
-        setError('Session expired. Please log in again.');
+        setError(t?.('upload.sessionExpired') || 'Session expired. Please log in again.');
         setLoading(false);
         window.location.href = '#/login';
         return;
@@ -821,7 +977,7 @@ const SHGUploadSection = ({
       }
     } catch (err) {
       console.error("Manual validation error:", err);
-      alert("Validation failed. Please ensure the image is clear and try again.");
+      alert(t?.('upload.validationFailedClear') || 'Validation failed. Please ensure the image is clear and try again.');
     } finally {
       setAnalyzingMap(prev => ({ ...prev, [shgId]: { ...(prev[shgId] || {}), [pageKey]: false } }));
     }
@@ -950,8 +1106,9 @@ const SHGUploadSection = ({
     }
   };
 
-  const uploadFileWithRetry = async (shgData, token, maxRetries = 2) => {
-    const { page1, page2 } = shgData;
+  const uploadFileWithRetry = async (shgFileData, token, maxRetries = 2) => {
+    const { page1, page2 } = shgFileData;
+    const results = [];
 
     const uploadPage = async (pageData, pageNumber) => {
       const file = await processFileRotation(pageData);
@@ -979,16 +1136,17 @@ const SHGUploadSection = ({
     };
 
     try {
-      const res1 = await uploadPage(page1, 1);
-      const res2 = await uploadPage(page2, 2);
+      if (page1) results.push(await uploadPage(page1, 1));
+      if (page2) results.push(await uploadPage(page2, 2));
+
       return {
-        success: res1.success && res2.success,
-        results: [res1, res2],
-        shgData
+        success: results.every(r => r.success),
+        results: results,
+        shgData: shgFileData
       };
     } catch (err) {
-      console.error("Failed preparing upload for SHG", page1.shgId, err);
-      return { success: false, error: err, shgData };
+      console.error("Failed preparing upload for SHG", (page1 || page2)?.shgId, err);
+      return { success: false, error: err, shgData: shgFileData };
     }
   };
 
@@ -1021,9 +1179,33 @@ const SHGUploadSection = ({
   const handleUploadAllFiles = async () => {
     const validatedFiles = Object.keys(uploadedFiles)
       .filter(shgId => {
+        if (uploadStatus[shgId]?.uploaded) return false;
+
         const p1 = uploadedFiles[shgId].page1;
         const p2 = uploadedFiles[shgId].page2;
-        return p1?.validated && p2?.validated && !uploadStatus[shgId]?.uploaded;
+
+        // Check server status for partial flows
+        const targetId = shgId?.toString().toLowerCase();
+        const serverPages = permanentlyUploadedFiles.filter(u => {
+          const uId = (u.shgID || u.shgId || u.metadata?.shgID || u.metadata?.shgId || '').toString().toLowerCase();
+          return uId === targetId || uId.includes(targetId) || targetId.includes(uId);
+        });
+        const serverPageNums = serverPages
+          .filter(u => !['rejected'].includes((u.status || '').toLowerCase()))
+          .map(u => parseInt(u.page || u.metadata?.page || 0))
+          .filter(Boolean);
+
+        const p1OnServer = serverPageNums.includes(1);
+        const p2OnServer = serverPageNums.includes(2);
+
+        // Case 1: Both local pages exist and are validated
+        if (p1 && p2) return p1.validated && p2.validated;
+
+        // Case 2: One on server, the other local and validated
+        if (p1OnServer && p2) return p2.validated;
+        if (p2OnServer && p1) return p1.validated;
+
+        return false;
       })
       .map(shgId => uploadedFiles[shgId]);
 
@@ -1034,26 +1216,6 @@ const SHGUploadSection = ({
 
     if (!selectedMonth || !selectedYear) {
       alert(t?.('upload.selectMonthYear') || 'Please select month and year');
-      return;
-    }
-
-    // Role & Period Restrictions (Submission Guard)
-    const isVO = isAuthorizedVO;
-    const m = parseInt(selectedMonth);
-    const y = parseInt(selectedYear);
-
-    if (!isVO) {
-      alert(t?.('upload.voOnlyError') || 'Only VOs are authorized to perform uploads.');
-      return;
-    }
-
-    if (y === 2026 && (m === 4 || m === 5)) {
-      alert(t?.('upload.restrictedAprilMay') || 'Uploads for April and May are temporarily disabled. Please complete March uploads.');
-      return;
-    }
-
-    if (y > 2026 || (y === 2026 && m > 3)) {
-      alert(t?.('upload.restrictedPeriod') || 'Uploads for the selected period are locked.');
       return;
     }
 
@@ -1076,7 +1238,7 @@ const SHGUploadSection = ({
 
       for (const result of uploadResults) {
         const { success, shgData, error } = result;
-        const shgId = shgData.page1.shgId;
+        const shgId = (shgData.page1 || shgData.page2)?.shgId;
 
         if (!success) {
           failCount++;
@@ -1120,9 +1282,9 @@ const SHGUploadSection = ({
   };
 
   const handleUploadSingleFile = async (shgId) => {
-    const shgData = uploadedFiles[shgId];
-    if (!shgData?.page1 || !shgData?.page2) {
-      alert(t?.('upload.dualUploadRequired') || "Both Page 1 and Page 2 must be uploaded before submitting.");
+    const shgFileData = uploadedFiles[shgId];
+    if (!shgFileData) {
+      alert(t?.('upload.noFilesSelected') || 'No files selected.');
       return false;
     }
 
@@ -1131,32 +1293,46 @@ const SHGUploadSection = ({
       return false;
     }
 
-    // Role & Period Restrictions (Submission Guard)
-    const isVO = isAuthorizedVO;
-    const m = parseInt(selectedMonth);
-    const y = parseInt(selectedYear);
+    // ── Determine which pages need uploading ──────────────────────────────
+    // If a page is accepted on the server and no local file for it → skip it.
+    // If BOTH pages are local → require both validated (standard flow).
+    const hasP1 = !!shgFileData.page1;
+    const hasP2 = !!shgFileData.page2;
 
-    if (!isVO) {
-      alert(t?.('upload.voOnlyError') || 'Only VOs are authorized to perform uploads.');
+    if (!hasP1 && !hasP2) {
+      alert(t?.('upload.dualUploadRequired') || 'Please select at least one page to upload.');
       return false;
     }
 
-    if (y === 2026 && (m === 4 || m === 5)) {
-      alert(t?.('upload.restrictedAprilMay') || 'Uploads for April and May are temporarily disabled. Please complete March uploads.');
+    // Validate what we have
+    if (hasP1 && !shgFileData.page1.validated) {
+      alert(t?.('upload.validatePage1First') || 'Please validate Page 1 before uploading.');
+      return false;
+    }
+    if (hasP2 && !shgFileData.page2.validated) {
+      alert(t?.('upload.validatePage2First') || 'Please validate Page 2 before uploading.');
       return false;
     }
 
-    if (y > 2026 || (y === 2026 && m > 3)) {
-      alert(t?.('upload.restrictedPeriod') || 'Uploads for the selected period are locked.');
-      return false;
+    // After Feb 2026, we strongly encourage both pages if neither is on server yet
+    if (isAfterFeb2026 && (!hasP1 || !hasP2)) {
+      const targetId = shgId?.toString().toLowerCase();
+      const serverPages = permanentlyUploadedFiles.filter(u => {
+        const uId = (u.shgID || u.shgId || u.metadata?.shgID || u.metadata?.shgId || '').toString().toLowerCase();
+        return uId === targetId || uId.includes(targetId) || targetId.includes(uId);
+      }).map(u => parseInt(u.page || u.metadata?.page || 0));
+
+      const missingP1 = !hasP1 && !serverPages.includes(1);
+      const missingP2 = !hasP2 && !serverPages.includes(2);
+
+      if (missingP1 || missingP2) {
+        const confirmMsg = t?.('upload.bothPagesRequiredAfterFeb2026') ||
+          "After February 2026, both Page 1 and Page 2 are required for a complete SHG upload. You can upload one now, but it will stay pending until the second page is added. Proceed?";
+        if (!window.confirm(confirmMsg)) return false;
+      }
     }
 
-    if (!shgData.page1.validated || !shgData.page2.validated) {
-      alert(t?.('upload.dualValidationRequired') || 'Both pages must be validated before uploading.');
-      return false;
-    }
-
-    if (uploadStatus[shgId]?.uploaded) {
+    if (uploadStatus[shgId]?.uploaded && !hasP1 && !hasP2) {
       alert(t?.('upload.alreadyUploaded') || 'This file is already uploaded.');
       return false;
     }
@@ -1165,14 +1341,48 @@ const SHGUploadSection = ({
 
     try {
       const token = localStorage.getItem('token');
-      const result = await uploadFileWithRetry(shgData, token);
+      const results = [];
 
-      if (result.success) {
+      // Upload only the pages we have locally
+      const uploadPage = async (pageData, pageNumber) => {
+        const file = await processFileRotation(pageData);
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('month', selectedMonth);
+        formData.append('year', selectedYear);
+        formData.append('shgId', pageData.shgId);
+        formData.append('shgName', pageData.shgName);
+        formData.append('page', pageNumber);
+
+        for (let attempt = 0; attempt <= 2; attempt++) {
+          try {
+            const response = await fetch(`${API_BASE}/api/upload`, {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${token}` },
+              body: formData
+            });
+            return { response, success: response.ok, pageNumber };
+          } catch (err) {
+            if (attempt === 2) throw err;
+            await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+          }
+        }
+      };
+
+      if (hasP1) results.push(await uploadPage(shgFileData.page1, 1));
+      if (hasP2) results.push(await uploadPage(shgFileData.page2, 2));
+
+      const allOk = results.every(r => r.success);
+
+      if (allOk) {
         await updateUploadProgress(shgId);
+
+        const pagesLabel = hasP1 && hasP2 ? 'Page 1 & Page 2'
+          : hasP1 ? 'Page 1' : 'Page 2';
 
         setUploadStatus(prev => ({
           ...prev,
-          [shgId]: { uploaded: true, uploadDate: new Date().toISOString(), fileName: "Page 1 & Page 2" }
+          [shgId]: { uploaded: true, uploadDate: new Date().toISOString(), fileName: pagesLabel }
         }));
 
         setUploadedFiles(prev => {
@@ -1181,14 +1391,16 @@ const SHGUploadSection = ({
           return copy;
         });
 
-        alert(t('upload.uploadSuccessSingle').replace('{{shg}}', formatShgLabel(shgData)));
+        const shgName = shgFileData.page1?.shgName || shgFileData.page2?.shgName || shgId;
+        alert(t('upload.uploadSuccessSingle').replace('{{shg}}', `${shgName} (${shgId})`) ||
+          `Successfully uploaded ${pagesLabel} for ${shgName}`);
         fetchPermanentlyUploadedFiles();
         return true;
       } else {
-        throw new Error(result.error || "Upload failed");
+        throw new Error('One or more pages failed to upload');
       }
     } catch (err) {
-      console.error("Upload Error:", err);
+      console.error('Upload Error:', err);
       alert(t?.('upload.uploadError') || 'Upload failed. Please try again.');
       return false;
     } finally {
@@ -1219,6 +1431,19 @@ const SHGUploadSection = ({
   });
 
   const uploadedShgs = filteredShgData.filter(shg => {
+    const targetId = shg.shgId?.toString().toLowerCase();
+
+    // Check if both pages are required and present on server
+    if (isAfterFeb2026) {
+      const serverPages = permanentlyUploadedFiles.filter(u => {
+        const uId = (u.shgID || u.shgId || u.metadata?.shgID || u.metadata?.shgId || '').toString().toLowerCase();
+        return uId === targetId || uId.includes(targetId) || targetId.includes(uId);
+      }).map(u => parseInt(u.page || u.metadata?.page || 0));
+
+      const hasBothPagesOnServer = serverPages.includes(1) && serverPages.includes(2);
+      if (!hasBothPagesOnServer) return false;
+    }
+
     const isPermanentlyUploaded = serverProgress?.uploadedShgIds?.includes(shg.shgId) || uploadStatus[shg.shgId]?.uploaded === true;
     return isPermanentlyUploaded;
   });
@@ -1267,6 +1492,13 @@ const SHGUploadSection = ({
       handleValidateFile(shgId, pageIndex);
     };
 
+    const currentShgId = padSHGId(shg.shgId);
+    const conversionGroup = groupedConversions.find(g => padSHGId(g.shgID || g.shgId) === currentShgId);
+    const pageSyncStatus = {
+      1: !!(conversionGroup?.pages[1]?.isSynced || conversionGroup?.pages[1]?.is_synced || conversionGroup?.pages[1]?.status === 'synced' || conversionGroup?.pages[1]?.status === 'synced_to_db'),
+      2: !!(conversionGroup?.pages[2]?.isSynced || conversionGroup?.pages[2]?.is_synced || conversionGroup?.pages[2]?.status === 'synced' || conversionGroup?.pages[2]?.status === 'synced_to_db')
+    };
+
     return (
       <SHGUploadCard
         key={shg.shgId}
@@ -1286,6 +1518,7 @@ const SHGUploadSection = ({
         // should be rendered. When true, the card must hide the button.
         page1Validated={page1Validated}
         page2Validated={page2Validated}
+        pageSyncStatus={pageSyncStatus}
         // ─────────────────────────────────────────────────────────────────
         onOpenCamera={(shgId, shgName, page) => {
           setCameraTarget({ id: shgId, name: shgName, page });
@@ -1299,104 +1532,125 @@ const SHGUploadSection = ({
         onViewPermanentlyUploadedFile={handleViewPermanentlyUploadedFile}
         selectedMonth={selectedMonth}
         selectedYear={selectedYear}
+        isAfterFeb2026={isAfterFeb2026}
       />
     );
   };
 
   return (
     <div className="space-y-4 sm:space-y-6">
+      {/* Restriction Banner */}
+      {restriction?.mode === 'restricted' && (
+        <div className="animate-in slide-in-from-top duration-700">
+          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-4 sm:p-5 rounded-2xl shadow-xl border border-white/30 flex items-center gap-4 text-white">
+            <div className="w-12 h-12 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center shadow-inner shrink-0 scale-110">
+              <Lock size={24} className="text-white" />
+            </div>
+            <div>
+              <h4 className="text-xs sm:text-sm font-black uppercase tracking-widest leading-none mb-1">{t?.('upload.accessLocked') || 'Upload Access Locked'}</h4>
+              <p className="text-sm font-bold opacity-90 uppercase tracking-tighter">
+                {t?.('upload.accessLockedMessage') || 'Your coordinator has locked your upload period to'} <span className="underline decoration-2 underline-offset-4">{new Date(2025, parseInt(restriction.month) - 1).toLocaleString('default', { month: 'long' })} {restriction.year}</span>
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Month, Year & Statistics Bar */}
       <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-xl sm:rounded-2xl shadow-xl border border-white/30 p-4 sm:p-6">
         <div className="flex items-center justify-between gap-3 sm:gap-4 flex-wrap">
           {/* Month Dropdown */}
           <div className="flex-1 min-w-[140px] sm:min-w-[180px]">
-            <label className="block text-xs sm:text-sm font-bold text-white/90 mb-2">
+            <label className="flex items-center gap-2 text-xs sm:text-sm font-bold text-white/90 mb-2">
+              {restriction?.mode === 'restricted' ? (
+                <Lock size={14} className="text-amber-300 drop-shadow-sm" />
+              ) : (
+                <Unlock size={14} className="text-emerald-300 drop-shadow-sm" />
+              )}
               {t?.('upload.month') || 'Month'} <span className="text-yellow-300">*</span>
               {isAuthorizedVO && (
                 <span className="ml-2 text-[10px] bg-white/20 px-2 py-0.5 rounded-full">{t?.('upload.currentPastOnly') || 'Current & Past Only'}</span>
               )}
             </label>
-            <select
-              value={selectedMonth}
-              onChange={(e) => {
-                const now = new Date();
-                const currentMonth = now.getMonth() + 1;
-                const currentYear = now.getFullYear();
-                const selectedM = parseInt(e.target.value);
-                const selectedY = parseInt(selectedYear);
+            <div className="relative group">
+              <select
+                value={selectedMonth}
+                onChange={(e) => {
+                  const now = new Date();
+                  const currentMonth = now.getUTCMonth() + 1;
+                  // Default mode only allows current month and below. If restricted, respect the restricted month.
+                  const maxMonth = restriction?.mode === 'restricted' ? parseInt(restriction.month) : currentMonth;
+                  const currentYear = now.getFullYear();
+                  const selectedM = parseInt(e.target.value);
+                  const selectedY = parseInt(selectedYear);
 
-                // Role & Period Restrictions (March/April/May 2026 Enforcement)
-                const isVO = isAuthorizedVO;
-                if (!isVO) return; // Only VOs can select ANY month for upload
-
-                // Block April & May 2026 for everyone (even VOs/Developers)
-                if (selectedY === 2026 && (selectedM === 4 || selectedM === 5)) return;
-
-                // Block any month after March 2026 for everyone
-                if (selectedY > 2026 || (selectedY === 2026 && selectedM > 3)) return;
-
-                onMonthChange?.(e.target.value);
-              }}
-              className="w-full px-3 sm:px-4 py-2 sm:py-3 border-2 border-white/30 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-white bg-white/95 appearance-none cursor-pointer font-semibold text-sm sm:text-base"
-            >
-              <option value="">{t?.('upload.selectMonth') || 'Select Month'}</option>
-              {[
-                { val: "01", label: t?.('months.january') || 'January' },
-                { val: "02", label: t?.('months.february') || 'February' },
-                { val: "03", label: t?.('months.march') || 'March' },
-                { val: "04", label: t?.('months.april') || 'April' },
-                { val: "05", label: t?.('months.may') || 'May' },
-                { val: "06", label: t?.('months.june') || 'June' },
-                { val: "07", label: t?.('months.july') || 'July' },
-                { val: "08", label: t?.('months.august') || 'August' },
-                { val: "09", label: t?.('months.september') || 'September' },
-                { val: "10", label: t?.('months.october') || 'October' },
-                { val: "11", label: t?.('months.november') || 'November' },
-                { val: "12", label: t?.('months.december') || 'December' }
-              ].map(m => {
-                const now = new Date();
-                const selectedY = parseInt(selectedYear);
-                const mVal = parseInt(m.val);
-
-                // NEW RESTRICTIONS:
-                const isVO = isAuthorizedVO;
-                const isAprilMay2026 = selectedY === 2026 && (mVal === 4 || mVal === 5);
-                const isPostMarch2026 = selectedY > 2026 || (selectedY === 2026 && mVal > 3);
-
-                // Disable if not VO, or if it's April/May 2026, or if it's any future month
-                const disabled = !isVO || isAprilMay2026 || isPostMarch2026;
-
-                let statusLabel = '';
-                if (isAprilMay2026) statusLabel = `(${t?.('upload.temporaryDisabled') || 'Temp Disabled'})`;
-                else if (isPostMarch2026) statusLabel = `(${t?.('upload.locked') || 'Locked'})`;
-
-                return <option key={m.val} value={m.val} disabled={disabled}>{m.label} {statusLabel}</option>;
-              })}
-            </select>
+                  if (user?.role?.toLowerCase() === 'vo') {
+                    if (selectedY > currentYear || (selectedY === currentYear && selectedM > maxMonth)) return;
+                  }
+                  onMonthChange?.(e.target.value);
+                }}
+                disabled={restriction?.mode === 'restricted'}
+                className={`w-full px-3 sm:px-4 py-2 sm:py-3 border-2 border-white/30 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-white bg-white/95 appearance-none cursor-pointer font-semibold text-sm sm:text-base ${restriction?.mode === 'restricted' ? 'opacity-60 cursor-not-allowed' : ''} pr-10`}
+              >
+                <option value="">{t?.('upload.selectMonth') || 'Select Month'}</option>
+                {[
+                  { val: "01", label: t?.('months.january') || 'January' },
+                  { val: "02", label: t?.('months.february') || 'February' },
+                  { val: "03", label: t?.('months.march') || 'March' },
+                  { val: "04", label: t?.('months.april') || 'April' },
+                  { val: "05", label: t?.('months.may') || 'May' },
+                  { val: "06", label: t?.('months.june') || 'June' },
+                  { val: "07", label: t?.('months.july') || 'July' },
+                  { val: "08", label: t?.('months.august') || 'August' },
+                  { val: "09", label: t?.('months.september') || 'September' },
+                  { val: "10", label: t?.('months.october') || 'October' },
+                  { val: "11", label: t?.('months.november') || 'November' },
+                  { val: "12", label: t?.('months.december') || 'December' }
+                ].map(m => {
+                  const now = new Date();
+                  const currentMonth = now.getUTCMonth() + 1;
+                  const maxMonth = restriction?.mode === 'restricted' ? parseInt(restriction.month) : currentMonth;
+                  const isFuture = parseInt(selectedYear) > now.getFullYear() ||
+                    (parseInt(selectedYear) === now.getFullYear() && parseInt(m.val) > maxMonth);
+                  const disabled = user?.role?.toLowerCase() === 'vo' && isFuture;
+                  return <option key={m.val} value={m.val} disabled={disabled}>{m.label} {disabled ? `(${t?.('upload.locked') || 'Locked'})` : ''}</option>;
+                })}
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-focus-within:text-indigo-600 transition-colors">
+                <ChevronDown size={18} />
+              </div>
+            </div>
           </div>
 
           {/* Year Dropdown */}
           <div className="flex-1 min-w-[140px] sm:min-w-[180px]">
-            <label className="block text-xs sm:text-sm font-bold text-white/90 mb-2">
+            <label className="flex items-center gap-2 text-xs sm:text-sm font-bold text-white/90 mb-2">
+              {restriction?.mode === 'restricted' ? (
+                <Lock size={14} className="text-amber-300 drop-shadow-sm" />
+              ) : (
+                <Unlock size={14} className="text-emerald-300 drop-shadow-sm" />
+              )}
               {t?.('upload.year') || 'Year'} <span className="text-yellow-300">*</span>
             </label>
-            <select
-              value={selectedYear}
-              onChange={(e) => onYearChange?.(e.target.value)}
-              className="w-full px-3 sm:px-4 py-2 sm:py-3 border-2 border-white/30 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-white bg-white/95 appearance-none cursor-pointer font-semibold text-sm sm:text-base"
-            >
-              <option value="">{t?.('upload.selectYear') || 'Select Year'}</option>
-              {Array.from({ length: 5 }, (_, i) => {
-                const y = new Date().getFullYear() - 1 + i;
-                const isVO = isAuthorizedVO;
-                const isFutureYear = y > 2026;
-                const disabled = !isVO || isFutureYear;
-                let statusLabel = '';
-                if (isFutureYear) statusLabel = `(${t?.('upload.locked') || 'Locked'})`;
-
-                return <option key={y} value={y} disabled={disabled}>{y} {statusLabel}</option>;
-              })}
-            </select>
+            <div className="relative group">
+              <select
+                value={selectedYear}
+                onChange={(e) => onYearChange?.(e.target.value)}
+                disabled={restriction?.mode === 'restricted'}
+                className={`w-full px-3 sm:px-4 py-2 sm:py-3 border-2 border-white/30 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-white bg-white/95 appearance-none cursor-pointer font-semibold text-sm sm:text-base ${restriction?.mode === 'restricted' ? 'opacity-60 cursor-not-allowed' : ''} pr-10`}
+              >
+                <option value="">{t?.('upload.selectYear') || 'Select Year'}</option>
+                {Array.from({ length: 5 }, (_, i) => {
+                  const y = new Date().getFullYear() - 1 + i;
+                  const isFutureYear = y > new Date().getFullYear();
+                  const disabled = user?.role?.toLowerCase() === 'vo' && isFutureYear;
+                  return <option key={y} value={y} disabled={disabled}>{y} {disabled ? `(${t?.('upload.locked') || 'Locked'})` : ''}</option>;
+                })}
+              </select>
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-focus-within:text-indigo-600 transition-colors">
+                <ChevronDown size={18} />
+              </div>
+            </div>
           </div>
 
           {/* Stats Cards */}
@@ -1454,170 +1708,350 @@ const SHGUploadSection = ({
         </div>
       </div>
 
-      {error && (
-        <div className="bg-red-50 border-2 border-red-300 rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-md">
-          <div className="flex items-center gap-3 mb-3">
-            <AlertCircle size={32} className="text-red-600 flex-shrink-0" />
-            <h3 className="text-lg sm:text-xl font-bold text-red-800">{t?.('upload.errorLoading') || 'No SHG Data Found'}</h3>
-          </div>
-          <p className="text-sm sm:text-base text-red-700 break-words font-medium">{error}</p>
-          <div className="mt-4 p-3 bg-white/50 rounded-lg border border-red-200 text-sm text-red-800">
-            <p>{t?.('upload.errorHelp') || 'Please try selecting a different month or year using the dropdowns above.'}</p>
-          </div>
-          <button
-            onClick={loadSHGDataFromBackend}
-            className="mt-4 px-4 sm:px-6 py-2 sm:py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold text-sm sm:text-base shadow-lg transition-all"
-          >
-            {t?.('upload.retry') || 'Retry'}
-          </button>
-        </div>
+      {/* Edit View Overlay - Using Portal to ensure full coverage over the app UI */}
+      {editingSHG && createPortal(
+        <div className="fixed inset-0 z-[9999] bg-black/40 backdrop-blur-md overflow-y-auto p-4 sm:p-8 animate-in fade-in duration-300">
+          <SHGConversionEditView
+            shgGroup={editingSHG}
+            onBack={() => setEditingSHG(null)}
+            t={t}
+            onSaveSuccess={(stayOpen) => {
+              if (!stayOpen) setEditingSHG(null);
+              fetchConversions();
+              fetchUploadProgress();
+            }}
+          />
+        </div>,
+        document.body
       )}
 
-      {/* Search, Filter and Action Bar */}
-      {!error && (
-        <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg p-3 sm:p-4 border-2 border-gray-200">
-          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-            <div className="flex-1 min-w-[200px] relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+      {/* Tab Switcher */}
+      <div className="bg-white rounded-2xl border-2 border-gray-200 shadow-md p-1.5 flex gap-1.5 relative overflow-visible">
+        <button
+          onClick={() => setActiveTab('upload')}
+          className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-black uppercase tracking-[0.12em] text-[10px] sm:text-xs transition-all duration-300 ${activeTab === 'upload'
+            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200'
+            : 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-800'
+            }`}
+        >
+          <Upload size={15} />
+          {t?.('upload.uploadTab') || 'Upload Files'}
+        </button>
+        <button
+          onClick={() => setActiveTab('conversion')}
+          className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-black uppercase tracking-[0.12em] text-[10px] sm:text-xs transition-all duration-300 relative ${activeTab === 'conversion'
+            ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-200'
+            : 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-800'
+            }`}
+        >
+          <FilePenLine size={15} />
+          {t?.('upload.conversionTab') || 'Conversion Edit'}
+
+          {/* Improved Notification Badge */}
+          {unsavedCount > 0 && (
+            <div className="absolute -top-2.5 -right-1.5 flex h-6 w-6">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+              <span className="relative inline-flex items-center justify-center rounded-full h-6 w-6 bg-red-600 text-[10px] font-black text-white shadow-lg ring-2 ring-white">
+                {unsavedCount}
+              </span>
+            </div>
+          )}
+        </button>
+      </div>
+
+      {activeTab === 'upload' ? (
+        <>
+          {error && (
+            <div className="bg-red-50 border-2 border-red-300 rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-md">
+              <div className="flex items-center gap-3 mb-3">
+                <AlertCircle size={32} className="text-red-600 flex-shrink-0" />
+                <h3 className="text-lg sm:text-xl font-bold text-red-800">{t?.('upload.errorLoading') || 'No SHG Data Found'}</h3>
+              </div>
+              <p className="text-sm sm:text-base text-red-700 break-words font-medium">{error}</p>
+              <div className="mt-4 p-3 bg-white/50 rounded-lg border border-red-200 text-sm text-red-800">
+                <p>{t?.('upload.errorHelp') || 'Please try selecting a different month or year using the dropdowns above.'}</p>
+              </div>
+              <button
+                onClick={loadSHGDataFromBackend}
+                className="mt-4 px-4 sm:px-6 py-2 sm:py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold text-sm sm:text-base shadow-lg transition-all"
+              >
+                {t?.('upload.retry') || 'Retry'}
+              </button>
+            </div>
+          )}
+
+          {/* Search, Filter and Action Bar */}
+          {!error && (
+            <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg p-3 sm:p-4 border-2 border-gray-200">
+              <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                <div className="flex-1 min-w-[200px] relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+                  <input
+                    type="text"
+                    placeholder={t?.('upload.searchPlaceholder') || 'Search by SHG ID or SHG Name...'}
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-9 sm:pl-10 pr-3 sm:pr-4 py-2 sm:py-3 border-2 border-gray-300 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm sm:text-base"
+                  />
+                </div>
+
+                <div className="w-full sm:w-auto flex flex-wrap gap-2">
+                  {/* Upload All Button */}
+                  <button
+                    onClick={handleUploadAllFiles}
+                    disabled={!allFilesValidated || isUploading}
+                    className={`flex-1 sm:flex-none px-4 sm:px-6 py-2 sm:py-3 rounded-lg sm:rounded-xl font-semibold transition-all flex items-center justify-center gap-2 text-sm sm:text-base ${allFilesValidated && !isUploading
+                      ? 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-md'
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      }`}
+                  >
+                    <Upload size={18} className="sm:hidden" />
+                    <Upload size={20} className="hidden sm:block" />
+                    {isUploading ? (t?.('upload.uploading') || 'Uploading...') : (t?.('upload.uploadAll') || 'Upload All')}
+                  </button>
+
+                  {/* Filter buttons */}
+                  <button
+                    onClick={() => { setShowUploadedOnly(!showUploadedOnly); if (!showUploadedOnly) { setShowPendingOnly(false); setShowFailedOnly(false); } }}
+                    className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl font-semibold transition-all flex items-center justify-center gap-2 text-sm sm:text-base ${showUploadedOnly ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                  >
+                    <Filter size={16} className="sm:hidden" /><Filter size={18} className="hidden sm:block" />
+                    {t?.('upload.uploaded') || 'Uploaded'}
+                  </button>
+
+                  <button
+                    onClick={() => { setShowPendingOnly(!showPendingOnly); if (!showPendingOnly) { setShowUploadedOnly(false); setShowFailedOnly(false); } }}
+                    className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl font-semibold transition-all flex items-center justify-center gap-2 text-sm sm:text-base ${showPendingOnly ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                  >
+                    <Filter size={16} className="sm:hidden" /><Filter size={18} className="hidden sm:block" />
+                    {t?.('upload.pending') || 'Pending'}
+                  </button>
+
+                  <button
+                    onClick={() => { setShowFailedOnly(!showFailedOnly); if (!showFailedOnly) { setShowUploadedOnly(false); setShowPendingOnly(false); } }}
+                    className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl font-semibold transition-all flex items-center justify-center gap-2 text-sm sm:text-base ${showFailedOnly
+                      ? 'bg-gradient-to-r from-rose-500 to-rose-600 text-white shadow-lg shadow-rose-100 ring-2 ring-rose-500/20'
+                      : 'bg-white text-gray-700 hover:bg-gray-50 border-2 border-gray-100'
+                      }`}
+                  >
+                    <AlertTriangle size={16} className="sm:hidden" />
+                    <AlertTriangle size={18} className="hidden sm:block" />
+                    {t?.('upload.rejected') || 'Rejected'}
+                  </button>
+
+                  {/* Validate All Button */}
+                  <button
+                    onClick={handleValidateAll}
+                    disabled={Object.keys(uploadedFiles).length === 0 || allFilesValidated}
+                    className={`flex-1 sm:flex-none px-4 sm:px-6 py-2 sm:py-3 rounded-lg sm:rounded-xl font-semibold transition-all flex items-center justify-center gap-2 text-sm sm:text-base ${Object.keys(uploadedFiles).length > 0 && !allFilesValidated
+                      ? 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-md'
+                      : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                      }`}
+                  >
+                    <CheckCircle size={16} className="sm:hidden" />
+                    <CheckCircle size={20} className="hidden sm:block" />
+                    {t?.('upload.validateAll') || 'Validate All'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {!loading && !error && shgData.length === 0 && (
+            <div className="bg-yellow-50 border-2 border-yellow-300 rounded-2xl p-4 sm:p-6 mx-1 my-4">
+              <div className="flex items-center gap-3 mb-3">
+                <AlertCircle size={32} className="text-yellow-600 flex-shrink-0" />
+                <h3 className="text-lg sm:text-xl font-bold text-yellow-800">{t?.('upload.noSHGsFound') || 'No SHGs Found'}</h3>
+              </div>
+              <p className="text-sm sm:text-base text-yellow-700 break-words">
+                {t?.('upload.noSHGsMessage') || `No SHGs found for VO ID: ${user.voID}. Please contact your administrator.`}
+              </p>
+            </div>
+          )}
+
+          {/* SHG Sections */}
+          {!loading && !error && shgData.length > 0 && (
+            <div className="space-y-8">
+              {showFailedOnly && failedShgs.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-3 mb-4 bg-white rounded-xl sm:rounded-2xl shadow-xl shadow-gray-200/50 p-3 sm:p-5 border border-rose-100 overflow-hidden relative">
+                    <div className="absolute top-0 left-0 w-1.5 h-full bg-gradient-to-b from-rose-400 to-rose-600" />
+                    <div className="bg-rose-50 p-2 rounded-lg">
+                      <AlertTriangle className="text-rose-500" size={24} />
+                    </div>
+                    <h3 className="text-xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+                      {t?.('upload.rejectedUploads') || 'Rejected Uploads'}
+                      <span className="ml-2 text-sm font-semibold text-rose-500/80 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-100">
+                        {failedShgs.length}
+                      </span>
+                    </h3>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                    {failedShgs.map(failed => renderSHGCard({ shgId: failed.shgID, shgName: failed.shgName }))}
+                  </div>
+                </div>
+              )}
+
+              {pendingShgs.length > 0 && !showFailedOnly && (
+                <div>
+                  <div className="flex items-center gap-2 mb-4 bg-white rounded-xl sm:rounded-2xl shadow-lg p-3 sm:p-4 border-2 border-gray-200">
+                    <AlertCircle className="text-orange-500" size={24} />
+                    <h3 className="text-xl font-bold text-gray-800">
+                      {t?.('upload.pendingUploads') || 'Pending Uploads'}
+                      <span className="ml-2 text-sm font-normal text-gray-500">({pendingShgs.length})</span>
+                    </h3>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                    {pendingShgs.map(renderSHGCard)}
+                  </div>
+                </div>
+              )}
+
+              {uploadedShgs.length > 0 && !showFailedOnly && (
+                <div>
+                  <div className="flex items-center gap-2 mb-4 bg-white rounded-xl sm:rounded-2xl shadow-lg p-3 sm:p-4 border-2 border-gray-200">
+                    <CheckCircle className="text-green-500" size={24} />
+                    <h3 className="text-xl font-bold text-gray-800">
+                      {t?.('upload.completedUploads') || 'Completed Uploads'}
+                      <span className="ml-2 text-sm font-normal text-gray-500">({uploadedShgs.length})</span>
+                    </h3>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5 sm:gap-2 auto-rows-min">
+                    {uploadedShgs.map(renderSHGCard)}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!loading && !error && filteredShgData.length === 0 && shgData.length > 0 && (
+            <div className="text-center py-8 sm:py-12">
+              <div className="w-20 h-20 sm:w-24 sm:h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Search size={36} className="sm:hidden text-gray-400" />
+                <Search size={48} className="hidden sm:block text-gray-400" />
+              </div>
+              <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-2">{t?.('upload.noSHGsFound') || 'No SHGs Found'}</h3>
+              <p className="text-sm sm:text-base text-gray-600 px-4">
+                {searchTerm ? t?.('upload.adjustSearch') || 'Try adjusting your search terms' : t?.('upload.noSHGsAvailable') || 'No SHGs available'}
+              </p>
+            </div>
+          )}
+        </>
+      ) : (
+        /* Conversion Edit Tab Content */
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          {/* Search Bar for Conversions */}
+          <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200">
+            <div className="relative group">
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-all duration-300" size={20} />
               <input
                 type="text"
-                placeholder={t?.('upload.searchPlaceholder') || 'Search by SHG ID or SHG Name...'}
+                placeholder={t?.('upload.searchConversions') || 'Search converted SHGs by Name or ID...'}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-9 sm:pl-10 pr-3 sm:pr-4 py-2 sm:py-3 border-2 border-gray-300 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm sm:text-base"
+                className="w-full pl-12 pr-5 py-3.5 sm:py-4 bg-slate-50/50 border border-slate-200/60 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500/50 focus:bg-white transition-all text-sm sm:text-base font-medium placeholder:text-slate-400"
               />
             </div>
-
-            <div className="w-full sm:w-auto flex flex-wrap gap-2">
-              {/* Upload All Button */}
-              <button
-                onClick={handleUploadAllFiles}
-                disabled={!allFilesValidated || isUploading}
-                className={`flex-1 sm:flex-none px-4 sm:px-6 py-2 sm:py-3 rounded-lg sm:rounded-xl font-semibold transition-all flex items-center justify-center gap-2 text-sm sm:text-base ${allFilesValidated && !isUploading
-                  ? 'bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-md'
-                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  }`}
-              >
-                <Upload size={18} className="sm:hidden" />
-                <Upload size={20} className="hidden sm:block" />
-                {isUploading ? (t?.('upload.uploading') || 'Uploading...') : (t?.('upload.uploadAll') || 'Upload All')}
-              </button>
-
-              {/* Filter buttons */}
-              <button
-                onClick={() => { setShowUploadedOnly(!showUploadedOnly); if (!showUploadedOnly) { setShowPendingOnly(false); setShowFailedOnly(false); } }}
-                className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl font-semibold transition-all flex items-center justify-center gap-2 text-sm sm:text-base ${showUploadedOnly ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-              >
-                <Filter size={16} className="sm:hidden" /><Filter size={18} className="hidden sm:block" />
-                {t?.('upload.uploaded') || 'Uploaded'}
-              </button>
-
-              <button
-                onClick={() => { setShowPendingOnly(!showPendingOnly); if (!showPendingOnly) { setShowUploadedOnly(false); setShowFailedOnly(false); } }}
-                className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl font-semibold transition-all flex items-center justify-center gap-2 text-sm sm:text-base ${showPendingOnly ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-              >
-                <Filter size={16} className="sm:hidden" /><Filter size={18} className="hidden sm:block" />
-                {t?.('upload.pending') || 'Pending'}
-              </button>
-
-              <button
-                onClick={() => { setShowFailedOnly(!showFailedOnly); if (!showFailedOnly) { setShowUploadedOnly(false); setShowPendingOnly(false); } }}
-                className={`flex-1 sm:flex-none px-3 sm:px-4 py-2 sm:py-3 rounded-lg sm:rounded-xl font-semibold transition-all flex items-center justify-center gap-2 text-sm sm:text-base ${showFailedOnly ? 'bg-red-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-              >
-                <Filter size={16} className="sm:hidden" /><Filter size={18} className="hidden sm:block" />
-                {t?.('upload.rejected') || 'Rejected'}
-              </button>
-
-              {/* Validate All Button */}
-              <button
-                onClick={handleValidateAll}
-                disabled={Object.keys(uploadedFiles).length === 0 || allFilesValidated}
-                className={`flex-1 sm:flex-none px-4 sm:px-6 py-2 sm:py-3 rounded-lg sm:rounded-xl font-semibold transition-all flex items-center justify-center gap-2 text-sm sm:text-base ${Object.keys(uploadedFiles).length > 0 && !allFilesValidated
-                  ? 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white shadow-md'
-                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  }`}
-              >
-                <CheckCircle size={16} className="sm:hidden" />
-                <CheckCircle size={20} className="hidden sm:block" />
-                {t?.('upload.validateAll') || 'Validate All'}
-              </button>
-            </div>
           </div>
-        </div>
-      )}
 
-      {!loading && !error && shgData.length === 0 && (
-        <div className="bg-yellow-50 border-2 border-yellow-300 rounded-2xl p-4 sm:p-6 mx-1 my-4">
-          <div className="flex items-center gap-3 mb-3">
-            <AlertCircle size={32} className="text-yellow-600 flex-shrink-0" />
-            <h3 className="text-lg sm:text-xl font-bold text-yellow-800">{t?.('upload.noSHGsFound') || 'No SHGs Found'}</h3>
-          </div>
-          <p className="text-sm sm:text-base text-yellow-700 break-words">
-            {t?.('upload.noSHGsMessage') || `No SHGs found for VO ID: ${user.voID}. Please contact your administrator.`}
-          </p>
-        </div>
-      )}
-
-      {/* SHG Sections */}
-      {!loading && !error && shgData.length > 0 && (
-        <div className="space-y-8">
-          {showFailedOnly && failedShgs.length > 0 && (
-            <div>
-              <div className="flex items-center gap-2 mb-4 bg-white rounded-xl sm:rounded-2xl shadow-lg p-3 sm:p-4 border-2 border-red-300">
-                <AlertTriangle className="text-red-600" size={24} />
-                <h3 className="text-xl font-bold text-gray-800">
-                  {t?.('upload.rejectedUploads') || 'Rejected Uploads'}
-                  <span className="ml-2 text-sm font-normal text-gray-500">({failedShgs.length})</span>
+          <div className="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden">
+            <div className="bg-slate-50/80 px-6 py-5 border-b border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-1 h-5 bg-emerald-500 rounded-full"></div>
+                <h3 className="text-xs font-bold uppercase tracking-[0.15em] text-slate-800">
+                  {t?.('upload.convertedResults') || 'Converted SHG Results'} <span className="ml-1 text-slate-400 font-medium">({groupedConversions.length})</span>
                 </h3>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-                {failedShgs.map(failed => renderSHGCard({ shgId: failed.shgID, shgName: failed.shgName }))}
+              <div className="flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-full border border-emerald-100 transition-all">
+                <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
+                <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">
+                  {t?.('upload.realTimeSync') || 'Real-time sync'}
+                </span>
               </div>
             </div>
-          )}
 
-          {pendingShgs.length > 0 && !showFailedOnly && (
-            <div>
-              <div className="flex items-center gap-2 mb-4 bg-white rounded-xl sm:rounded-2xl shadow-lg p-3 sm:p-4 border-2 border-gray-200">
-                <AlertCircle className="text-orange-500" size={24} />
-                <h3 className="text-xl font-bold text-gray-800">
-                  {t?.('upload.pendingUploads') || 'Pending Uploads'}
-                  <span className="ml-2 text-sm font-normal text-gray-500">({pendingShgs.length})</span>
-                </h3>
+            {isConversionsLoading && getGroupedConversions().length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20">
+                <RotateCw className="w-10 h-10 animate-spin text-emerald-700 mb-4" />
+                <p className="text-gray-700 font-bold uppercase tracking-widest text-xs">
+                  {t?.('upload.fetchingConversions') || 'Fetching conversions...'}
+                </p>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
-                {pendingShgs.map(renderSHGCard)}
+            ) : getGroupedConversions().length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center px-4">
+                <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mb-6">
+                  <ScanLine className="w-10 h-10 text-gray-300" />
+                </div>
+                <h4 className="text-gray-900 font-black uppercase tracking-wider text-sm mb-2">
+                  {t?.('upload.noConversionsFound') || 'No conversions found'}
+                </h4>
+                <p className="text-gray-600 text-xs font-bold max-w-xs uppercase tracking-tight">
+                  {searchTerm
+                    ? t?.('upload.adjustSearch') || 'Try adjusting your search terms'
+                    : t?.('upload.noConversionsMessage') || 'Converted records for this period will appear here once processed.'}
+                </p>
               </div>
-            </div>
-          )}
-
-          {uploadedShgs.length > 0 && !showFailedOnly && (
-            <div>
-              <div className="flex items-center gap-2 mb-4 bg-white rounded-xl sm:rounded-2xl shadow-lg p-3 sm:p-4 border-2 border-gray-200">
-                <CheckCircle className="text-green-500" size={24} />
-                <h3 className="text-xl font-bold text-gray-800">
-                  {t?.('upload.completedUploads') || 'Completed Uploads'}
-                  <span className="ml-2 text-sm font-normal text-gray-500">({uploadedShgs.length})</span>
-                </h3>
+            ) : (
+              <div className="divide-y divide-gray-50">
+                {groupedConversions
+                  .filter(group =>
+                    !searchTerm ||
+                    group.shgName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    group.shgID?.toString().toLowerCase().includes(searchTerm.toLowerCase())
+                  )
+                  .map((group, idx) => (
+                    <div key={idx} className="p-4 sm:p-5 hover:bg-white transition-all duration-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 last:border-b-0">
+                      <div className="flex items-start gap-3 sm:gap-4 flex-1 min-w-0">
+                        <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0 transition-transform duration-300 ${group.isSynced ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-rose-50 text-rose-600 border border-rose-100'}`}>
+                          {group.isSynced ? <CheckCircle size={20} className="sm:hidden" /> : <AlertTriangle size={20} className="sm:hidden" />}
+                          {group.isSynced ? <CheckCircle size={24} className="hidden sm:block" /> : <AlertTriangle size={24} className="hidden sm:block" />}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <h4 className="text-sm sm:text-base font-bold text-slate-900 leading-tight tracking-tight break-words sm:truncate">{group.shgName}</h4>
+                          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                            <span className="text-[9px] sm:text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg uppercase tracking-wide border border-slate-200/50">{group.shgID}</span>
+                            <div className="flex gap-1.5 items-center">
+                              <div className="flex gap-1">
+                                {Object.keys(group.pages).map(p => {
+                                  const item = group.pages[p];
+                                  const isSynced = !!(item?.isSynced || item?.is_synced || item?.status === 'synced' || item?.status === 'synced_to_db');
+                                  return (
+                                    <span key={p} className={`text-[8px] sm:text-[9px] font-black ${isSynced ? 'bg-emerald-50 text-emerald-600 border border-emerald-500/20' : 'bg-amber-50 text-amber-600 border border-amber-500/20'} px-1.5 py-0.5 rounded transition-all`}>P{p}</span>
+                                  );
+                                })}
+                                {!group.pages[1] && <span className="text-[8px] sm:text-[9px] font-bold bg-rose-50 text-rose-600 px-1.5 py-0.5 rounded border border-rose-100/50">P1 MISSING</span>}
+                                {!group.pages[2] && <span className="text-[8px] sm:text-[9px] font-bold bg-rose-50 text-rose-600 px-1.5 py-0.5 rounded border border-rose-100/50">P2 MISSING</span>}
+                              </div>
+                              <span className={`text-[8px] sm:text-[9px] font-bold uppercase tracking-tight px-1.5 py-0.5 rounded flex items-center gap-1 ${group.pages[1] && group.pages[2] ? 'text-emerald-600 bg-emerald-50/50 border border-emerald-100' : 'text-amber-600 bg-amber-50/50 border border-amber-100'}`}>
+                                <div className={`w-1 h-1 rounded-full ${group.pages[1] && group.pages[2] ? 'bg-emerald-500' : 'bg-amber-500'}`}></div>
+                                {group.pages[1] && group.pages[2] ? (t?.('upload.bothPagesReady') || 'Both Ready') : (t?.('upload.incompleteSHG') || 'Incomplete')}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="mt-2.5 flex items-center gap-2">
+                            <div className={`px-2.5 py-1 rounded-lg text-[9px] sm:text-[10px] font-bold uppercase tracking-wider border flex items-center gap-1.5 ${group.isSynced
+                              ? 'bg-emerald-600 text-white border-emerald-500'
+                              : 'bg-rose-600 text-white border-rose-500'
+                              }`}>
+                              {group.isSynced ? <CheckCircle size={10} /> : <AlertTriangle size={10} />}
+                              {group.isSynced ? t?.('upload.saved') || 'Saved' : t?.('upload.unsaved') || 'Unsaved'}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-end sm:justify-start gap-3">
+                        <button
+                          onClick={() => setEditingSHG(group)}
+                          className="w-full sm:w-auto px-6 py-2.5 bg-white border border-slate-200 hover:border-indigo-500 text-slate-600 hover:text-indigo-600 rounded-xl font-bold text-xs uppercase tracking-widest transition-all hover:bg-indigo-50/30"
+                        >
+                          {t?.('common.edit') || 'Edit'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5 sm:gap-2 auto-rows-min">
-                {uploadedShgs.map(renderSHGCard)}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {!loading && !error && filteredShgData.length === 0 && shgData.length > 0 && (
-        <div className="text-center py-8 sm:py-12">
-          <div className="w-20 h-20 sm:w-24 sm:h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Search size={36} className="sm:hidden text-gray-400" />
-            <Search size={48} className="hidden sm:block text-gray-400" />
+            )}
           </div>
-          <h3 className="text-lg sm:text-xl font-bold text-gray-800 mb-2">{t?.('upload.noSHGsFound') || 'No SHGs Found'}</h3>
-          <p className="text-sm sm:text-base text-gray-600 px-4">
-            {searchTerm ? t?.('upload.adjustSearch') || 'Try adjusting your search terms' : t?.('upload.noSHGsAvailable') || 'No SHGs available'}
-          </p>
         </div>
       )}
 

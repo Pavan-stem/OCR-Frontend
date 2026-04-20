@@ -18,10 +18,15 @@ import {
     Image as ImageIcon,
     Eye,
     EyeOff,
-    BookCheck
+    BookCheck,
+    BookOpen,
+    Book,
+    Lock,
+    Database
 } from 'lucide-react';
 import { API_BASE } from '../utils/apiConfig';
 import { formatDateTime } from '../utils/dateUtils';
+import SHGPage2View from './SHGPage2View';
 
 const padSHGId = (id) => {
     if (!id) return id;
@@ -52,6 +57,7 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
     const [showImage, setShowImage] = useState(false);
     const [s3Url, setS3Url] = useState(null);
     const [opacity, setOpacity] = useState(0.5);
+    const [page1Totals, setPage1Totals] = useState(null);
 
     useEffect(() => {
         const fetchDetail = async () => {
@@ -67,6 +73,7 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                     setData(result.data);
                     setOriginalData(JSON.parse(JSON.stringify(result.data)));
                     setS3Url(result.s3Url);
+                    setPage1Totals(result.related_page1_totals);
                 } else {
                     setError(result.message || 'Failed to load table data');
                 }
@@ -82,27 +89,36 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
     }, [uploadId]);
 
     const handleDownloadExcel = async () => {
-        // ... (existing code remains but use current 'data')
         try {
             if (!data || !data.table_data) return;
 
+            const isPage2 = data.table_data.page === 2;
+            const endpoint = isPage2 ? `${API_BASE}/api/export-finance-to-excel` : `${API_BASE}/api/export-to-excel`;
+            
+            const payload = isPage2 ? {
+                table_data: data.table_data,
+                shg_mbk_id: padSHGId(data.shgID) || 'Unknown',
+                filename: `SHG_Finance_${shgName}_${padSHGId(data.shgID)}`
+            } : {
+                table_data: {
+                    ...data.table_data,
+                    header_rows: headerRows,
+                    column_headers: headers
+                },
+                shg_mbk_id: padSHGId(data.shgID) || 'Unknown',
+                month: new Date(data.convertedAt).getMonth() + 1,
+                year: new Date(data.convertedAt).getFullYear(),
+                filename: `SHG_Data_${shgName}_${padSHGId(data.shgID)}`
+            };
+
             const token = localStorage.getItem('token');
-            const res = await fetch(`${API_BASE}/api/export-to-excel`, {
+            const res = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${token}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    table_data: {
-                        ...data.table_data,
-                        header_rows: headerRows,
-                        column_headers: headers
-                    },
-                    shg_mbk_id: padSHGId(data.shgID) || 'Unknown',
-                    month: new Date(data.convertedAt).getMonth() + 1,
-                    year: new Date(data.convertedAt).getFullYear()
-                })
+                body: JSON.stringify(payload)
             });
 
             if (res.ok) {
@@ -110,7 +126,9 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `SHG_Data_${shgName}_${padSHGId(data.shgID)}.xlsx`;
+                a.download = isPage2 
+                    ? `SHG_Finance_${shgName}_${padSHGId(data.shgID)}.xlsx`
+                    : `SHG_Data_${shgName}_${padSHGId(data.shgID)}.xlsx`;
                 document.body.appendChild(a);
                 a.click();
                 a.remove();
@@ -125,27 +143,33 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
     const handleSave = async () => {
         setSaving(true);
         try {
+            const currentTotals = calculateColumnTotals();
             const updatedTableData = (() => {
                 const updated = JSON.parse(JSON.stringify(data.table_data));
-                // For v2.0 or when totals are explicitly editable/present
-                if (updated.schema_version === "2.0" || (updated.totals_row && updated.totals_row.cells)) {
-                    // Totals are already updated by handleTotalChange
-                } else if (!updated.totals_row || !updated.totals_row.cells || updated.totals_row.cells.length === 0) {
-                    // For old versions where totals are missing, inject calculated ones
-                    const totalsCells = [];
-                    for (let i = 0; i < 14; i++) {
-                        const frontendIdx = i + 2;
-                        const val = calculatedTotals[frontendIdx] || 0;
-                        totalsCells.push({
-                            col_index: i,
-                            text: val > 0 ? val.toFixed(2) : '',
-                            confidence: 1.0
-                        });
-                    }
-                    updated.totals_row = { cells: totalsCells };
+
+                // Skip totals logic for Page 2 (Financial Ledger)
+                if (updated.page === 2) return updated;
+
+                // Always re-calculate and save the current totals for Page 1
+                // This ensures "what is displaying" is what is saved
+                const totalsCells = [];
+                for (let i = 0; i < 14; i++) {
+                    const frontendIdx = i + 2;
+                    const val = currentTotals[frontendIdx] || 0;
+                    totalsCells.push({
+                        col_index: i,
+                        text: val > 0 ? val.toFixed(2) : '',
+                        confidence: 1.0
+                    });
                 }
+                updated.totals_row = { cells: totalsCells };
+                
                 return updated;
             })();
+
+            // SHG ID is usually found in table_data.shg_mbk_id if it was edited
+            // fallback to data.shgID if not changed or present in table_data
+            const shgIDToSave = updatedTableData.shg_mbk_id || data.shgID;
 
             const token = localStorage.getItem('token');
             const res = await fetch(`${API_BASE}/api/conversion/detail/${uploadId}`, {
@@ -156,13 +180,18 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                 },
                 body: JSON.stringify({
                     table_data: updatedTableData,
-                    shgID: data.shgID
+                    shgID: shgIDToSave
                 })
             });
             const result = await res.json();
             if (result.success) {
                 // Update local state with the same data we sent to server
-                const newData = { ...data, table_data: updatedTableData, isSynced: true };
+                const newData = { 
+                    ...data, 
+                    table_data: updatedTableData, 
+                    shgID: shgIDToSave, // Update primary record ID if changed
+                    isSynced: true 
+                };
                 setData(newData);
                 setOriginalData(JSON.parse(JSON.stringify(newData)));
                 setIsEditing(false);
@@ -211,6 +240,35 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
     const handleCellChange = (rIdx, cIdx, val) => {
         const newData = { ...data };
         newData.table_data.data_rows[rIdx].cells[cIdx].text = val;
+        setData(newData);
+    };
+
+    // Page 2 cell edit: update cell by debug_id across all rows
+    const handlePage2CellEdit = (debugId, value) => {
+        const newData = JSON.parse(JSON.stringify(data));
+        let found = false;
+        for (const row of newData.table_data.data_rows || []) {
+            for (const cell of row.cells || []) {
+                if (cell.debug_id === debugId) {
+                    cell.text = value;
+                    found = true;
+                    break;
+                }
+            }
+            if (found) break;
+        }
+        if (!found) {
+            // Cell doesn't exist yet — insert it in first row as a new cell
+            if (!newData.table_data.data_rows) newData.table_data.data_rows = [];
+            if (newData.table_data.data_rows.length === 0) {
+                newData.table_data.data_rows.push({ cells: [] });
+            }
+            newData.table_data.data_rows[0].cells.push({
+                debug_id: debugId,
+                text: value,
+                confidence: 1.0,
+            });
+        }
         setData(newData);
     };
 
@@ -359,6 +417,8 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
 
     const tableData = data.table_data;
     const schemaVersion = tableData.schema_version || "1.0"; // Default to v1.0 for old data
+    const formPage = tableData.page || 1;  // 1 = member table, 2 = financial ledger
+    const isPage2 = formPage === 2;
 
     // V2.0: Use static headers, V1.0: Use headers from database
     const headers = schemaVersion === "2.0" ? SHG_COLUMN_HEADERS_V2 : (tableData.column_headers || []);
@@ -368,16 +428,13 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
     const convertedSHGID = tableData.shg_mbk_id || tableData.shg_id || "";
     const actualSHGID = data.shgID || "";
 
-    // Check if SHG ID matches using padded versions to avoid false mismatches (e.g. leading zeros)
-    const isSHGIDMismatch = convertedSHGID && actualSHGID && padSHGId(convertedSHGID) !== padSHGId(actualSHGID);
-
     // V2.0: Build header rows with dynamic SHG ID injection
     let headerRows;
     if (schemaVersion === "2.0") {
         headerRows = JSON.parse(JSON.stringify(BASE_SHG_HEADER_ROWS_V2)); // Deep copy
-        // Inject dynamic SHG ID into row 2, cell 2
-        headerRows[1][1].label = convertedSHGID || actualSHGID;
-        headerRows[1][1].text = convertedSHGID || actualSHGID;
+        // Inject dynamic SHG ID into row 2, cell 2 - match the top-level ID for consistency
+        headerRows[1][1].label = actualSHGID;
+        headerRows[1][1].text = actualSHGID;
     } else {
         headerRows = tableData.header_rows || [];
     }
@@ -507,14 +564,23 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
 
             {/* Main Table Vessel with Image Overlay */}
             <div className="bg-white rounded-[32px] shadow-lg border border-gray-200 overflow-hidden relative z-0">
-                <div className="bg-indigo-600 px-8 py-5 flex items-center justify-between">
+                <div className={`${isPage2 ? 'bg-violet-700' : 'bg-indigo-600'} px-8 py-5 flex items-center justify-between`}>
                     <div className="flex items-center gap-4">
                         <div className="p-2.5 bg-white/20 rounded-xl">
-                            <TableIcon className="text-white" size={24} />
+                            {isPage2 ? <Book className="text-white" size={24} /> : <TableIcon className="text-white" size={24} />}
                         </div>
                         <div>
-                            <h4 className="text-sm font-black text-white uppercase tracking-[0.2em]">SHG Digital Table</h4>
-                            <p className="text-[10px] text-indigo-200 font-bold uppercase tracking-widest mt-0.5">SHG Digitally Converted Table</p>
+                            <div className="flex items-center gap-3">
+                                <h4 className="text-sm font-black text-white uppercase tracking-[0.2em]">
+                                    {isPage2 ? 'SHG Financial Ledger' : 'SHG Digital Table'}
+                                </h4>
+                                <span className="px-2.5 py-0.5 bg-white/25 text-white text-[10px] font-black uppercase tracking-widest rounded-full">
+                                    Page {formPage}
+                                </span>
+                            </div>
+                            <p className={`text-[10px] ${isPage2 ? 'text-violet-200' : 'text-indigo-200'} font-bold uppercase tracking-widest mt-0.5`}>
+                                {isPage2 ? 'Monthly Financial Summary — ఆర్థిక సారాంశం' : 'SHG Digitally Converted Table'}
+                            </p>
                         </div>
                     </div>
                     <div className="flex items-center gap-4">
@@ -548,16 +614,23 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
 
                         <button
                             onClick={handleSyncToPayments}
-                            disabled={isSyncing || isEditing}
-                            className={`hidden sm:flex items-center gap-2 px-6 py-2.5 rounded-full shadow-xl transition-all border-2 ${isSyncing
-                                ? 'bg-indigo-400 border-indigo-300 text-white cursor-not-allowed'
-                                : 'bg-emerald-500 border-emerald-400 text-white hover:bg-emerald-600 hover:scale-110 active:scale-95'
-                                } ${isEditing ? 'opacity-50 cursor-not-allowed' : 'animate-pulse-subtle'}`}
-                            title="Save data to member payments collection"
+                            disabled={isSyncing || isEditing || data?.isSynced}
+                            className={`px-5 sm:px-8 py-3 sm:py-4 rounded-xl sm:rounded-2xl transition-all font-black shadow-lg flex items-center gap-2 sm:gap-3 ${data?.isSynced
+                                ? 'bg-emerald-500 text-white cursor-default border-emerald-400'
+                                : isPage2
+                                    ? 'bg-violet-500 text-white hover:bg-violet-600 border-violet-400'
+                                    : 'bg-emerald-500 text-white hover:bg-emerald-600 border-emerald-400'
+                                }`}
                         >
-                            {isSyncing ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-                            <span className="text-[11px] font-black uppercase tracking-widest text-white">
-                                {isSyncing ? 'Processing...' : 'Save Data to DB'}
+                            {isSyncing ? (
+                                <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
+                            ) : data?.isSynced ? (
+                                <BookCheck className="w-4 h-4 sm:w-5 sm:h-5" />
+                            ) : (
+                                <Database className="w-4 h-4 sm:w-5 sm:h-5" />
+                            )}
+                            <span className="text-sm sm:text-base">
+                                {data?.isSynced ? 'Sent to DB' : isPage2 ? 'Save Finance Ledger' : 'Send to DB'}
                             </span>
                         </button>
                     </div>
@@ -599,158 +672,131 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                     </div>
                 )}
 
-                <div className="overflow-x-auto custom-scrollbar">
-                    <div className="inline-block min-w-full align-top">
-                        <table className="w-full border-collapse">
-                            <thead>
-                                {/* Complex Headers - v2.0 uses static template, v1.0 uses database */}
-                                {headerRows && headerRows.map((row, rIdx) => (
-                                    <tr key={rIdx}>
-                                        {row.map((cell, cIdx) => {
-                                            const isLastLevel = (rIdx + (cell.row_span || 1)) === headerRows.length;
-                                            const isSHGIDHeader = (cell.col_span === 15 && cell.row_span === 1);
-                                            return (
-                                                <th
-                                                    key={cIdx}
-                                                    colSpan={cell.col_span || 1}
-                                                    rowSpan={cell.row_span || 1}
-                                                    className={`bg-indigo-50/50 border-b border-r border-indigo-100/50 px-6 py-4 text-[11px] font-black transition-colors uppercase tracking-wider ${isLastLevel ? 'bg-indigo-100/30' : ''} ${isSHGIDHeader ? 'text-left' : 'text-center'} ${isSHGIDHeader && isSHGIDMismatch ? 'text-red-600 bg-red-50/50' : 'text-indigo-900'}`}
-                                                >
-                                                    {isSHGIDHeader && isEditing ? (
-                                                        <input
-                                                            type="text"
-                                                            value={tableData.shg_mbk_id || cell.label}
-                                                            onChange={(e) => handleSHGIDChange(e.target.value)}
-                                                            className={`w-full bg-white border border-black/30 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-bold ${isSHGIDMismatch ? 'text-red-600' : 'text-indigo-900'}`}
-                                                        />
-                                                    ) : (
-                                                        cell.label
-                                                    )}
-                                                </th>
-                                            );
-                                        })}
-                                    </tr>
-                                ))}
-                                {/* Fallback Simple Header - Only if no complex headers available */}
-                                {(!headerRows || headerRows.length === 0) && (
-                                    <tr className="bg-indigo-50/50">
-                                        {headers.map((header, idx) => (
-                                            <th key={idx} className="border-b border-r border-indigo-100/50 px-6 py-4 text-xs font-black text-indigo-900 text-left whitespace-nowrap uppercase tracking-widest">
-                                                {header.label}
-                                            </th>
+                {/* ── PAGE 2: Financial Ledger renderer ───────────────── */}
+                {isPage2 ? (
+                    <SHGPage2View
+                        tableData={tableData}
+                        isEditing={isEditing}
+                        onCellEdit={handlePage2CellEdit}
+                        relatedPage1Totals={page1Totals}
+                    />
+                ) : (
+                    /* ── PAGE 1: Member spreadsheet renderer (unchanged) ── */
+                    <>
+                        <div className="overflow-x-auto custom-scrollbar">
+                            <div className="inline-block min-w-full align-top">
+                                <table className="w-full border-collapse">
+                                    <thead>
+                                        {/* Complex Headers - v2.0 uses static template, v1.0 uses database */}
+                                        {headerRows && headerRows.map((row, rIdx) => (
+                                            <tr key={rIdx}>
+                                                {row.map((cell, cIdx) => {
+                                                    const isLastLevel = (rIdx + (cell.row_span || 1)) === headerRows.length;
+                                                    const isSHGIDHeader = (cell.col_span === 15 && cell.row_span === 1);
+                                                    return (
+                                                        <th
+                                                            key={cIdx}
+                                                            colSpan={cell.col_span || 1}
+                                                            rowSpan={cell.row_span || 1}
+                                                            className={`bg-indigo-50/50 border-b border-r border-indigo-100/50 px-6 py-4 text-[11px] font-black transition-colors uppercase tracking-wider ${isLastLevel ? 'bg-indigo-100/30' : ''} ${isSHGIDHeader ? 'text-left' : 'text-center'}`}
+                                                        >
+                                                            {isSHGIDHeader && isEditing ? (
+                                                                <input
+                                                                    type="text"
+                                                                    value={tableData.shg_mbk_id || cell.label}
+                                                                    onChange={(e) => handleSHGIDChange(e.target.value)}
+                                                                    className={`w-full bg-white border border-black/30 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-bold`}
+                                                                />
+                                                            ) : (
+                                                                cell.label
+                                                            )}
+                                                        </th>
+                                                    );
+                                                })}
+                                            </tr>
                                         ))}
-                                    </tr>
-                                )}
-                            </thead>
-                            <tbody className="divide-y divide-gray-100 bg-white/50">
-                                {rows.map((row, rIdx) => (
-                                    <tr key={rIdx} className="hover:bg-indigo-50/30 transition-all duration-200 group">
-                                        {row.cells.map((cell, cIdx) => {
-                                            return (
-                                                <td key={cIdx} className="px-6 py-4 text-sm font-semibold text-gray-700 border-r border-gray-100/50 group-last:border-r-0 min-w-[150px]">
-                                                    <div className="flex flex-col">
-                                                        {isEditing ? (
-                                                            <input
-                                                                type="text"
-                                                                value={cell.text}
-                                                                onChange={(e) => handleCellChange(rIdx, cIdx, e.target.value)}
-                                                                className="w-full bg-indigo-50/50 border border-indigo-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-gray-800"
-                                                            />
-                                                        ) : (
-                                                            <span>{cIdx === 0 ? padMBKId(cell.text) : cell.text}</span>
-                                                        )}
-                                                    </div>
-                                                </td>
-                                            );
-                                        })}
-                                    </tr>
-                                ))}
-
-                                {/* Totals Row */}
-                                {rows.length > 0 && rows[0].cells && (
-                                    <tr className="bg-indigo-50 border-t-2 border-indigo-600">
-                                        {rows[0].cells.map((_, cellIdx) => {
-                                            if (cellIdx === 0) {
-                                                return (
-                                                    <td
-                                                        key={cellIdx}
-                                                        colSpan={2}
-                                                        className="px-6 py-4 text-sm font-black text-indigo-900 border-r border-gray-100/50 text-left"
-                                                    >
-                                                        మొత్తం :
+                                        {/* Fallback Simple Header */}
+                                        {(!headerRows || headerRows.length === 0) && (
+                                            <tr className="bg-indigo-50/50">
+                                                {headers.map((header, idx) => (
+                                                    <th key={idx} className="border-b border-r border-indigo-100/50 px-6 py-4 text-xs font-black text-indigo-900 text-left whitespace-nowrap uppercase tracking-widest">
+                                                        {header.label}
+                                                    </th>
+                                                ))}
+                                            </tr>
+                                        )}
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100 bg-white/50">
+                                        {rows.map((row, rIdx) => (
+                                            <tr key={rIdx} className="hover:bg-indigo-50/30 transition-all duration-200 group">
+                                                {row.cells.map((cell, cIdx) => (
+                                                    <td key={cIdx} className="px-6 py-4 text-sm font-semibold text-gray-700 border-r border-gray-100/50 group-last:border-r-0 min-w-[150px]">
+                                                        <div className="flex flex-col">
+                                                            {isEditing ? (
+                                                                <input
+                                                                    type="text"
+                                                                    value={cell.text}
+                                                                    onChange={(e) => handleCellChange(rIdx, cIdx, e.target.value)}
+                                                                    className="w-full bg-indigo-50/50 border border-indigo-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-gray-800"
+                                                                />
+                                                            ) : (
+                                                                <span>{cIdx === 0 ? padMBKId(cell.text) : cell.text}</span>
+                                                            )}
+                                                        </div>
                                                     </td>
-                                                );
-                                            } else if (cellIdx === 1) {
-                                                return null;
-                                            } else {
-                                                const columnTotal = calculatedTotals[cellIdx] || 0;
+                                                ))}
+                                            </tr>
+                                        ))}
 
-                                                // Find extracted total for this column from OCR
-                                                // v1.0: totals cells have col_index field
-                                                // v2.0: totals cells don't have col_index, use array position
-                                                // Backend: col_index 0-13 (14 totals, renumbered starting from 0)
-                                                // Frontend: cellIdx 0-1 (label), 2-15 (data columns)
-                                                // Mapping: backend col_index + 2 = frontend cellIdx
-                                                // So: col_index 0 → cellIdx 2, col_index 1 → cellIdx 3, etc.
-                                                const expectedColIndex = cellIdx - 2;
-
-                                                // v2.0: use array index directly, v1.0: find by col_index
-                                                const extractedTotalCell = schemaVersion === "2.0"
-                                                    ? extractedTotals[expectedColIndex]  // v2.0: array position
-                                                    : extractedTotals.find(t => t.col_index === expectedColIndex);  // v1.0: lookup by col_index
-
-                                                const extractedText = extractedTotalCell?.text || '';
-                                                const extractedValue = extractedText
-                                                    ? parseFloat(extractedText.replace(/[^0-9.-]/g, ''))
-                                                    : null;
-
-                                                const hasExtractedTotal = !!extractedText;
-                                                const displayText = hasExtractedTotal ? extractedText : (columnTotal > 0 ? columnTotal.toFixed(2) : '-');
-
-                                                // Check if there's a mismatch (tolerance of 0.01 for floating point)
-                                                const hasMismatch = hasExtractedTotal && extractedValue !== null &&
-                                                    Math.abs(extractedValue - columnTotal) > 0.01;
-
-                                                return (
-                                                    <td
-                                                        key={cellIdx}
-                                                        className={`px-6 py-4 text-sm font-black border-r border-gray-100/50 text-center ${hasMismatch
-                                                            ? 'text-orange-600 bg-orange-50/50'
-                                                            : !hasExtractedTotal
-                                                                ? 'text-gray-500' // normal color for fallback
-                                                                : 'text-indigo-900'
-                                                            }`}
-                                                        title={hasMismatch ? `OCR: ${extractedText} | Calculated: ${columnTotal.toFixed(2)}` : !hasExtractedTotal ? 'Calculated Total (OCR missing)' : ''}
-                                                    >
-                                                        {isEditing ? (
-                                                            <input
-                                                                type="text"
-                                                                value={displayText === '-' ? '' : displayText}
-                                                                onChange={(e) => handleTotalChange(cellIdx, e.target.value)}
-                                                                className="w-full bg-white border border-indigo-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-indigo-500 font-black text-indigo-900"
-                                                            />
-                                                        ) : (
-                                                            displayText
-                                                        )}
-                                                    </td>
-                                                );
-                                            }
-                                        })}
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                {rows.length === 0 && (
-                    <div className="p-32 text-center bg-gray-50/30">
-                        <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner">
-                            <FileText className="w-10 h-10 text-gray-300" />
+                                        {/* Totals Row */}
+                                        {rows.length > 0 && rows[0].cells && (
+                                            <tr className="bg-indigo-50 border-t-2 border-indigo-600">
+                                                {rows[0].cells.map((_, cellIdx) => {
+                                                    if (cellIdx === 0) {
+                                                        return (
+                                                            <td key={cellIdx} colSpan={2} className="px-6 py-4 text-sm font-black text-indigo-900 border-r border-gray-100/50 text-left">
+                                                                మొత్తం :
+                                                            </td>
+                                                        );
+                                                    } else if (cellIdx === 1) {
+                                                        return null;
+                                                    } else {
+                                                        const columnTotal = calculatedTotals[cellIdx] || 0;
+                                                        const displayText = columnTotal > 0 ? columnTotal.toFixed(2) : '-';
+                                                        return (
+                                                            <td
+                                                                key={cellIdx}
+                                                                className="px-6 py-4 text-sm font-black border-r border-gray-100/50 text-center text-indigo-900"
+                                                            >
+                                                                {isEditing ? (
+                                                                    <input
+                                                                        type="text"
+                                                                        value={displayText === '-' ? '' : displayText}
+                                                                        onChange={(e) => handleTotalChange(cellIdx, e.target.value)}
+                                                                        className="w-full bg-white border border-indigo-200 rounded px-1 py-0.5 text-center focus:outline-none focus:ring-1 focus:ring-indigo-500 font-black text-indigo-900"
+                                                                    />
+                                                                ) : displayText}
+                                                            </td>
+                                                        );
+                                                    }
+                                                })}
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
-                        <p className="text-gray-400 font-black uppercase tracking-[0.2em] text-xs">No records extracted</p>
-                        <p className="text-[10px] text-gray-300 font-bold uppercase tracking-widest mt-2">Check source document quality</p>
-                    </div>
+
+                        {rows.length === 0 && (
+                            <div className="p-32 text-center bg-gray-50/30">
+                                <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner">
+                                    <FileText className="w-10 h-10 text-gray-300" />
+                                </div>
+                                <p className="text-gray-400 font-black uppercase tracking-[0.2em] text-xs">No records extracted</p>
+                                <p className="text-[10px] text-gray-300 font-bold uppercase tracking-widest mt-2">Check source document quality</p>
+                            </div>
+                        )}
+                    </>
                 )}
             </div>
 
