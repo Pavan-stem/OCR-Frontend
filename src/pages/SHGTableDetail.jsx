@@ -155,7 +155,8 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                 const totalsCells = [];
                 for (let i = 0; i < 14; i++) {
                     const frontendIdx = i + 2;
-                    const val = currentTotals[frontendIdx] || 0;
+                    // Skip saving total for "అప్పు రకం" (Loan Type) — backend column index 11
+                    const val = frontendIdx === 11 ? 0 : (currentTotals[frontendIdx] || 0);
                     totalsCells.push({
                         col_index: i,
                         text: val > 0 ? val.toFixed(2) : '',
@@ -458,6 +459,7 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
         if (!rows || rows.length === 0) return totals;
 
         for (let colIdx = 2; colIdx < (rows[0]?.cells?.length || 0); colIdx++) {
+            if (colIdx === 11) continue; // Skip totaling for "అప్పు రకం" (Loan Type)
             const calculatedTotal = rows.reduce((sum, row) => {
                 const cellText = row.cells[colIdx]?.text || '';
                 const numValue = parseFloat(cellText.replace(/[^0-9.-]/g, ''));
@@ -761,14 +763,14 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                                                     } else if (cellIdx === 1) {
                                                         return null;
                                                     } else {
-                                                        const columnTotal = calculatedTotals[cellIdx] || 0;
+                                                        const columnTotal = cellIdx === 11 ? 0 : (calculatedTotals[cellIdx] || 0);
                                                         const displayText = columnTotal > 0 ? columnTotal.toFixed(2) : '-';
                                                         return (
                                                             <td
                                                                 key={cellIdx}
                                                                 className="px-6 py-4 text-sm font-black border-r border-gray-100/50 text-center text-indigo-900"
                                                             >
-                                                                {isEditing ? (
+                                                                {isEditing && cellIdx !== 11 ? (
                                                                     <input
                                                                         type="text"
                                                                         value={displayText === '-' ? '' : displayText}

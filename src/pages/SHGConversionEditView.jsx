@@ -166,6 +166,15 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
       const uploadId = shgGroup.pages[activePageTab].uploadId;
       const pageData = activePageTab === 1 ? page1Data : page2Data;
 
+      // Ensure Page 1 "అప్పు రకం" (Loan Type - index 11) total is NOT saved
+      if (activePageTab === 1 && pageData.table_data?.totals_row?.cells) {
+        pageData.table_data.totals_row.cells.forEach(cell => {
+          if (cell.col_index === 9) { // col_index 9 maps to frontend index 11
+            cell.text = '';
+          }
+        });
+      }
+
       // STEP 1: Save corrections
       const res = await fetch(`${API_BASE}/api/conversion/detail/${uploadId}`, {
         method: 'PUT',
