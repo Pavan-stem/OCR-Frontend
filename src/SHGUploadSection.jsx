@@ -292,7 +292,7 @@ const SHGUploadSection = ({
       // Robust Sync Detection: Check for multiple field names and status values
       const syncedField = item.isSynced ?? item.is_synced ?? item.synced;
       const isActuallySynced = syncedField === true || item.status === 'synced' || item.status === 'synced_to_db';
-      
+
       // Mark as unsaved if ANY page in the group (completed or success) is not explicitly synced
       if ((item.status === 'completed' || item.status === 'success' || !item.status) && !isActuallySynced) {
         groups[shgId].isSynced = false;
@@ -1251,7 +1251,7 @@ const SHGUploadSection = ({
 
           setUploadStatus(prev => ({
             ...prev,
-            [shgId]: { uploaded: true, uploadDate: new Date().toISOString(), fileName: "Page 1 & Page 2" }
+            [shgId]: { uploaded: true, uploadDate: new Date().toISOString(), fileName: `${t?.('upload.page1') || 'Page 1'} & ${t?.('upload.page2') || 'Page 2'}` }
           }));
 
           setUploadedFiles(prev => {
@@ -1324,7 +1324,7 @@ const SHGUploadSection = ({
       const missingP2 = !hasP2 && !serverPages.includes(2);
 
       if (missingP1 || missingP2) {
-        const confirmMsg = t?.('upload.bothPagesRequiredAfterFeb2026') || 
+        const confirmMsg = t?.('upload.bothPagesRequiredAfterFeb2026') ||
           "After February 2026, both Page 1 and Page 2 are required for a complete SHG upload. You can upload one now, but it will stay pending until the second page is added. Proceed?";
         if (!window.confirm(confirmMsg)) return false;
       }
@@ -1375,8 +1375,8 @@ const SHGUploadSection = ({
       if (allOk) {
         await updateUploadProgress(shgId);
 
-        const pagesLabel = hasP1 && hasP2 ? 'Page 1 & Page 2'
-          : hasP1 ? 'Page 1' : 'Page 2';
+        const pagesLabel = hasP1 && hasP2 ? `${t?.('upload.page1') || 'Page 1'} & ${t?.('upload.page2') || 'Page 2'}`
+          : hasP1 ? (t?.('upload.page1') || 'Page 1') : (t?.('upload.page2') || 'Page 2');
 
         setUploadStatus(prev => ({
           ...prev,
@@ -1430,14 +1430,14 @@ const SHGUploadSection = ({
 
   const uploadedShgs = filteredShgData.filter(shg => {
     const targetId = shg.shgId?.toString().toLowerCase();
-    
+
     // Check if both pages are required and present on server
     if (isAfterFeb2026) {
       const serverPages = permanentlyUploadedFiles.filter(u => {
         const uId = (u.shgID || u.shgId || u.metadata?.shgID || u.metadata?.shgId || '').toString().toLowerCase();
         return uId === targetId || uId.includes(targetId) || targetId.includes(uId);
       }).map(u => parseInt(u.page || u.metadata?.page || 0));
-      
+
       const hasBothPagesOnServer = serverPages.includes(1) && serverPages.includes(2);
       if (!hasBothPagesOnServer) return false;
     }
@@ -1555,7 +1555,7 @@ const SHGUploadSection = ({
       )}
 
       {/* Month, Year & Statistics Bar */}
-      <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-xl sm:rounded-2xl shadow-xl border border-white/30 p-4 sm:p-6">
+      <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-xl sm:rounded-2xl shadow-xl border border-white p-4 sm:p-6">
         <div className="flex items-center justify-between gap-3 sm:gap-4 flex-wrap">
           {/* Month Dropdown */}
           <div className="flex-1 min-w-[140px] sm:min-w-[180px]">
@@ -1566,24 +1566,21 @@ const SHGUploadSection = ({
                 <Unlock size={14} className="text-emerald-300 drop-shadow-sm" />
               )}
               {t?.('upload.month') || 'Month'} <span className="text-yellow-300">*</span>
-              {isAuthorizedVO && (
-                <span className="ml-2 text-[10px] bg-white/20 px-2 py-0.5 rounded-full">{t?.('upload.currentPastOnly') || 'Current & Past Only'}</span>
-              )}
             </label>
             <div className="relative group">
               <select
                 value={selectedMonth}
                 onChange={(e) => {
                   const now = new Date();
-                  const currentMonth = now.getUTCMonth() + 1;
+                  const currentMonth = now.getMonth() + 1;
+                  const currentYear = now.getFullYear();
                   // Default mode only allows current month and below. If restricted, respect the restricted month.
                   const maxMonth = restriction?.mode === 'restricted' ? parseInt(restriction.month) : currentMonth;
-                  const currentYear = now.getFullYear();
                   const selectedM = parseInt(e.target.value);
                   const selectedY = parseInt(selectedYear);
 
-                  if (user?.role?.toLowerCase() === 'vo') {
-                    if (selectedY > currentYear || (selectedY === currentYear && selectedM > maxMonth)) return;
+                  if (selectedY > currentYear || (selectedY === currentYear && selectedM > maxMonth)) {
+                    return;
                   }
                   onMonthChange?.(e.target.value);
                 }}
@@ -1606,12 +1603,13 @@ const SHGUploadSection = ({
                   { val: "12", label: t?.('months.december') || 'December' }
                 ].map(m => {
                   const now = new Date();
-                  const currentMonth = now.getUTCMonth() + 1;
+                  const currentMonth = now.getMonth() + 1;
+                  const currentYear = now.getFullYear();
                   const maxMonth = restriction?.mode === 'restricted' ? parseInt(restriction.month) : currentMonth;
-                  const isFuture = parseInt(selectedYear) > now.getFullYear() ||
-                    (parseInt(selectedYear) === now.getFullYear() && parseInt(m.val) > maxMonth);
-                  const disabled = user?.role?.toLowerCase() === 'vo' && isFuture;
-                  return <option key={m.val} value={m.val} disabled={disabled}>{m.label} {disabled ? `(${t?.('upload.locked') || 'Locked'})` : ''}</option>;
+                  const isFuture = parseInt(selectedYear) > currentYear ||
+                    (parseInt(selectedYear) === currentYear && parseInt(m.val) > maxMonth);
+                  const disabled = isFuture;
+                  return <option key={m.val} value={m.val} disabled={disabled} className={disabled ? "text-gray-400" : ""}>{m.label} {disabled ? `(${t?.('upload.locked') || 'Locked'})` : ''}</option>;
                 })}
               </select>
               <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-focus-within:text-indigo-600 transition-colors">
@@ -1633,7 +1631,13 @@ const SHGUploadSection = ({
             <div className="relative group">
               <select
                 value={selectedYear}
-                onChange={(e) => onYearChange?.(e.target.value)}
+                onChange={(e) => {
+                  const now = new Date();
+                  const currentYear = now.getFullYear();
+                  const selectedY = parseInt(e.target.value);
+                  if (selectedY > currentYear) return;
+                  onYearChange?.(e.target.value);
+                }}
                 disabled={restriction?.mode === 'restricted'}
                 className={`w-full px-3 sm:px-4 py-2 sm:py-3 border-2 border-white/30 rounded-lg sm:rounded-xl focus:outline-none focus:ring-2 focus:ring-white bg-white/95 appearance-none cursor-pointer font-semibold text-sm sm:text-base ${restriction?.mode === 'restricted' ? 'opacity-60 cursor-not-allowed' : ''} pr-10`}
               >
@@ -1641,8 +1645,8 @@ const SHGUploadSection = ({
                 {Array.from({ length: 5 }, (_, i) => {
                   const y = new Date().getFullYear() - 1 + i;
                   const isFutureYear = y > new Date().getFullYear();
-                  const disabled = user?.role?.toLowerCase() === 'vo' && isFutureYear;
-                  return <option key={y} value={y} disabled={disabled}>{y} {disabled ? `(${t?.('upload.locked') || 'Locked'})` : ''}</option>;
+                  const disabled = isFutureYear;
+                  return <option key={y} value={y} disabled={disabled} className={disabled ? "text-gray-400" : ""}>{y} {disabled ? `(${t?.('upload.locked') || 'Locked'})` : ''}</option>;
                 })}
               </select>
               <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 group-focus-within:text-indigo-600 transition-colors">
@@ -1728,7 +1732,7 @@ const SHGUploadSection = ({
         <button
           onClick={() => setActiveTab('upload')}
           className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-black uppercase tracking-[0.12em] text-[10px] sm:text-xs transition-all duration-300 ${activeTab === 'upload'
-            ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200'
+            ? 'bg-indigo-600 text-white shadow-md'
             : 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-800'
             }`}
         >
@@ -1738,7 +1742,7 @@ const SHGUploadSection = ({
         <button
           onClick={() => setActiveTab('conversion')}
           className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-black uppercase tracking-[0.12em] text-[10px] sm:text-xs transition-all duration-300 relative ${activeTab === 'conversion'
-            ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-200'
+            ? 'bg-emerald-600 text-white shadow-md'
             : 'bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-800'
             }`}
         >
@@ -1884,7 +1888,7 @@ const SHGUploadSection = ({
                       </span>
                     </h3>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {failedShgs.map(failed => renderSHGCard({ shgId: failed.shgID, shgName: failed.shgName }))}
                   </div>
                 </div>
@@ -1899,7 +1903,7 @@ const SHGUploadSection = ({
                       <span className="ml-2 text-sm font-normal text-gray-500">({pendingShgs.length})</span>
                     </h3>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {pendingShgs.map(renderSHGCard)}
                   </div>
                 </div>
@@ -1914,7 +1918,7 @@ const SHGUploadSection = ({
                       <span className="ml-2 text-sm font-normal text-gray-500">({uploadedShgs.length})</span>
                     </h3>
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1.5 sm:gap-2 auto-rows-min">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                     {uploadedShgs.map(renderSHGCard)}
                   </div>
                 </div>

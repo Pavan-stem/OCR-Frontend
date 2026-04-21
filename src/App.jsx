@@ -1610,7 +1610,7 @@ export default function EnhancedTableOCRSystem() {
               className="w-20 h-20 md:w-28 md:h-28 object-contain drop-shadow-xl"
             />
             <div className="text-center md:text-left">
-              <h2 className="text-2xl lg:text-4xl font-extrabold mb-2 bg-gradient-to-r from-yellow-300 via-orange-300 to-yellow-300 bg-clip-text text-transparent transform hover:scale-105 transition-transform duration-300">
+              <h2 className="text-2xl lg:text-4xl font-extrabold mb-2 bg-gradient-to-r from-yellow-300 via-orange-300 to-yellow-300 bg-clip-text text-transparent">
                 SOCIETY FOR ELIMINATION OF RURAL POVERTY
               </h2>
               <h3 className="text-lg lg:text-2xl font-bold text-blue-100/90 tracking-wide">
@@ -1622,41 +1622,54 @@ export default function EnhancedTableOCRSystem() {
           {/* Main Header */}
           <div className="bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/30 mb-8 overflow-hidden">
             <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-t-2xl p-6">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center shadow-lg border border-white/30">
-                    <Table2 size={32} className="text-white" />
+              <div className="flex flex-col md:flex-row items-center justify-between gap-6 md:gap-4">
+                <div className="flex items-center gap-3 sm:gap-4 w-full md:w-auto justify-center md:justify-start">
+                  <div className="w-10 h-10 sm:w-14 sm:h-14 bg-white/20 backdrop-blur-sm rounded-lg sm:rounded-xl flex items-center justify-center shadow-lg border border-white/30 shrink-0">
+                    <Table2 size={24} className="sm:hidden text-white" />
+                    <Table2 size={32} className="hidden sm:block text-white" />
                   </div>
-                  <div>
-                    <h1 className="text-2xl lg:text-4xl font-extrabold text-white tracking-tight">
+                  <div className="min-w-0">
+                    <h1 className="text-xl sm:text-2xl lg:text-4xl font-extrabold text-white tracking-tight truncate sm:whitespace-normal text-center md:text-left">
                       {t('header.dashboard')}
                     </h1>
-                    <p className="text-xs lg:text-sm text-blue-100 mt-1">
+                    <p className="text-[10px] sm:text-xs lg:text-sm text-blue-100 mt-0.5 sm:mt-1 truncate sm:whitespace-normal opacity-90 text-center md:text-left">
                       {t('header.subtitle')}
-                    </p></div>
+                    </p>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 lg:gap-3 flex-wrap justify-end">
-                  <LanguageToggle />
+                <div className="grid grid-cols-2 sm:flex items-center gap-2 md:gap-3 w-full md:w-auto justify-items-stretch sm:justify-end">
+                  <div className="flex justify-center sm:block h-12 sm:h-auto">
+                    <LanguageToggle />
+                  </div>
                   <button
                     onClick={() => setActiveTab('profile')}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl font-semibold transition-all shadow-lg"
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 sm:px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl font-semibold transition-all shadow-lg active:scale-95 text-xs sm:text-sm h-12 sm:h-auto"
                   >
                     <CircleUserRound size={20} />
-                    <span className="hidden sm:inline">{t('header.profile')}</span>
+                    <div className="flex flex-col items-center leading-tight">
+                      <span className="sm:hidden text-[9px] font-bold opacity-80 uppercase tracking-tighter">{t('header.profileShort')}</span>
+                      <span className="hidden sm:inline">{t('header.profile')}</span>
+                    </div>
                   </button>
                   <button
                     onClick={() => setActiveTab('documents')}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl font-semibold transition-all shadow-lg"
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 sm:px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl font-semibold transition-all shadow-lg active:scale-95 text-xs sm:text-sm h-12 sm:h-auto"
                   >
                     <FileText size={20} />
-                    <span className="hidden sm:inline">{t('header.documentHistory')}</span>
+                    <div className="flex flex-col items-center leading-tight">
+                      <span className="sm:hidden text-[9px] font-bold opacity-80 uppercase tracking-tighter">{t('header.historyShort')}</span>
+                      <span className="hidden sm:inline">{t('header.documentHistory')}</span>
+                    </div>
                   </button>
                   <button
                     onClick={() => setShowLogoutModal(true)}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-red-500/90 hover:bg-red-600 text-white rounded-xl font-semibold transition-all shadow-lg"
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 sm:px-4 py-2.5 bg-red-500/80 hover:bg-red-600 text-white rounded-xl font-semibold transition-all shadow-lg active:scale-95 text-xs sm:text-sm h-12 sm:h-auto"
                   >
                     <LogOut size={20} />
-                    <span className="hidden sm:inline">{t('header.logout')}</span>
+                    <div className="flex flex-col items-center leading-tight">
+                      <span className="sm:hidden text-[9px] font-bold opacity-80 uppercase tracking-tighter">{t('header.logoutShort')}</span>
+                      <span className="hidden sm:inline">{t('header.logout')}</span>
+                    </div>
                   </button>
                 </div>
               </div>
@@ -1664,23 +1677,22 @@ export default function EnhancedTableOCRSystem() {
 
             {/* Status Bar */}
             <div className="px-6 py-3 bg-gradient-to-r from-blue-50 to-indigo-50 border-t border-gray-200">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 text-sm">
                   <div
                     className={`w-2 h-2 rounded-full animate-pulse ${systemOnline ? "bg-green-500" : "bg-red-500"
                       }`}
                   ></div>
-                  <span className="text-gray-700 font-medium">
+                  <span className="text-gray-700 font-bold uppercase tracking-wider text-[10px] sm:text-xs">
                     {systemOnline ? t('header.systemOnline') : t('header.systemOffline')}
                   </span>
                 </div>
-                <div>
-                  <span className="text-xs text-gray-500 font-medium mr-3">{t('header.importProcessActive')}</span>
+                <div className="flex items-center gap-3 flex-wrap">
                   {user?.previousLogin && (
-                    <>
-                      <span className="text-xs text-gray-500 font-medium">{t('header.lastLogin')}: </span>
-                      <span className="text-xs text-gray-500 font-medium">{timeAgo}</span>
-                    </>
+                    <div className="flex items-center gap-1.5 bg-gray-100 px-2 py-0.5 rounded-md border border-gray-200">
+                      <span className="text-[10px] sm:text-xs text-gray-500 font-black uppercase tracking-tighter">{t('header.lastLogin')}: </span>
+                      <span className="text-[10px] sm:text-xs text-indigo-600 font-black tracking-tight">{timeAgo}</span>
+                    </div>
                   )}
                 </div>
               </div>
@@ -1698,45 +1710,82 @@ export default function EnhancedTableOCRSystem() {
           {(
             <>
               {/* Location Information Card */}
-              <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl shadow-xl border border-white mb-8 p-6">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center shadow-lg border border-white/30">
-                      <MapPin size={30} className="text-white" />
+              <div className="bg-gradient-to-br from-indigo-600 via-indigo-600 to-purple-600 rounded-3xl lg:rounded-2xl shadow-2xl border border-white mb-8 p-5 sm:p-6 lg:py-6 lg:px-6 relative overflow-hidden group">
+                {/* Decorative accents */}
+                <div className="absolute -right-6 -top-6 w-32 h-32 bg-white/10 rounded-full blur-3xl opacity-50 transition-transform group-hover:scale-110 duration-1000"></div>
+
+                <div className="relative z-10">
+                  <div className="flex items-center lg:items-center gap-4 lg:gap-6">
+                    {/* Icon Block */}
+                    <div className="w-12 h-12 lg:w-16 lg:h-16 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center shadow-inner border border-white/30 shrink-0">
+                      <MapPin size={24} className="text-white lg:hidden" />
+                      <MapPin size={32} className="text-white hidden lg:block" />
                     </div>
-                    <div>
-                      <h3 className="text-sm font-semibold text-blue-100 uppercase tracking-wider">{t('location.operationalArea')}</h3>
-                      <div className="flex items-center gap-3 mt-2 flex-wrap">
-                        <div className="flex items-center gap-2">
-                          <span className="text-white/80 text-sm font-medium">{t('location.district')}:</span>
-                          <span className="text-white text-lg font-bold">{user?.district}</span>
-                        </div>
-                        <div className="w-1 h-6 bg-white/30 hidden sm:block"></div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-white/80 text-sm font-medium">{t('location.mandal')}:</span>
-                          <span className="text-white text-lg font-bold">{user?.mandal}</span>
-                        </div>
-                        <div className="w-1 h-6 bg-white/30 hidden sm:block"></div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-white/80 text-sm font-medium">{t('location.village')}:</span>
-                          <span className="text-white text-lg font-bold">{user?.village}</span>
-                        </div>
-                        <div className="w-1 h-6 bg-white/30 hidden sm:block"></div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-white/80 text-sm font-medium">{t('location.voName')}:</span>
-                          <span className="text-white text-lg font-bold">{user?.voName}</span>
-                        </div>
-                        <div className="w-1 h-6 bg-white/30 hidden sm:block"></div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-white/80 text-sm font-medium">VO ID:</span>
-                          <span className="text-white text-lg font-bold">{user?.voID}</span>
-                        </div>
-                        {/* <div className="w-1 h-6 bg-white/30 hidden sm:block"></div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-white/80 text-sm font-medium">{t('location.panchayat')}:</span>
-                          <span className="text-white text-lg font-bold">{user?.panchayat}</span>
-                        </div> */}
+
+                    <div className="flex-1">
+                      {/* Section Title (Unified Mobile/Desktop styling) */}
+                      <div className="flex items-center gap-3 mb-1 lg:mb-5">
+                        <h3 className="text-xs sm:text-sm lg:text-[13px] font-black text-blue-100 uppercase tracking-[0.2em] opacity-95 leading-none">
+                          {t('location.operationalArea')}
+                        </h3>
+                        <div className="h-[1px] flex-1 bg-white/20 hidden lg:block"></div>
                       </div>
+
+                      {/* Desktop View: Compact Status Bar (Horizontal Line with Pipes) */}
+                      <div className="hidden lg:flex flex-wrap items-center gap-x-6 gap-y-1 text-white/95 text-[15px]">
+                        <div className="flex items-center gap-2">
+                          <span className="text-white/60 text-[11px] uppercase font-bold tracking-wider">{t('location.district')}:</span>
+                          <span className="font-bold">{user?.district}</span>
+                        </div>
+                        <div className="w-[1px] h-4 bg-white/20"></div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-white/60 text-[11px] uppercase font-bold tracking-wider">{t('location.mandal')}:</span>
+                          <span className="font-bold">{user?.mandal}</span>
+                        </div>
+                        <div className="w-[1px] h-4 bg-white/20"></div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-white/60 text-[11px] uppercase font-bold tracking-wider">{t('location.village')}:</span>
+                          <span className="font-bold">{user?.village}</span>
+                        </div>
+                        <div className="w-[1px] h-4 bg-white/20"></div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-white/60 text-[11px] uppercase font-bold tracking-wider">{t('location.voName')}:</span>
+                          <span className="font-bold">{user?.voName}</span>
+                        </div>
+                        <div className="w-[1px] h-4 bg-white/20"></div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-white/60 text-[11px] uppercase font-bold tracking-wider">VO ID:</span>
+                          <span className="font-mono text-sm font-bold opacity-90">{user?.voID}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Mobile View: Perfectly Aligned 2-Column Grid (Stay locked/No changes here) */}
+                  <div className="lg:hidden mt-6 flex flex-col gap-3">
+                    <div className="grid grid-cols-[100px_1fr] items-baseline gap-2 group/item">
+                      <span className="text-white/60 text-[10px] uppercase font-black tracking-widest leading-none">{t('location.district')}</span>
+                      <span className="text-white text-base font-bold leading-tight truncate">{user?.district}</span>
+                    </div>
+                    <div className="h-[1px] w-full bg-white/10"></div>
+                    <div className="grid grid-cols-[100px_1fr] items-baseline gap-2 group/item">
+                      <span className="text-white/60 text-[10px] uppercase font-black tracking-widest leading-none">{t('location.mandal')}</span>
+                      <span className="text-white text-base font-bold leading-tight truncate">{user?.mandal}</span>
+                    </div>
+                    <div className="h-[1px] w-full bg-white/10"></div>
+                    <div className="grid grid-cols-[100px_1fr] items-baseline gap-2 group/item">
+                      <span className="text-white/60 text-[10px] uppercase font-black tracking-widest leading-none">{t('location.village')}</span>
+                      <span className="text-white text-base font-bold leading-tight truncate">{user?.village}</span>
+                    </div>
+                    <div className="h-[1px] w-full bg-white/10"></div>
+                    <div className="grid grid-cols-[100px_1fr] items-baseline gap-2 group/item">
+                      <span className="text-white/60 text-[10px] uppercase font-black tracking-widest leading-none">{t('location.voName')}</span>
+                      <span className="text-white text-base font-bold leading-tight truncate">{user?.voName}</span>
+                    </div>
+                    <div className="h-[1px] w-full bg-white/10"></div>
+                    <div className="grid grid-cols-[100px_1fr] items-baseline gap-2 group/item">
+                      <span className="text-white/60 text-[10px] uppercase font-black tracking-widest leading-none">VO ID</span>
+                      <span className="text-white text-sm font-bold font-mono tracking-tighter opacity-90">{user?.voID}</span>
                     </div>
                   </div>
                 </div>

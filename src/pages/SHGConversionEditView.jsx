@@ -204,7 +204,7 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
 
             setSaveSuccess({
               pageNum: activePageTab,
-              message: t?.('conversion.saveSyncSuccess') || `Page ${activePageTab} saved and sent to DB!`
+              message: t?.('conversion.saveSyncSuccess', { page: activePageTab }) || `Page ${activePageTab} saved and sent to DB!`
             });
           } else {
             console.warn('Save succeeded but Sync failed:', syncResult.message);
@@ -347,44 +347,43 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
                     {t?.('conversion.bothPagesVerified') || 'Both Pages Verified & Ready'}
                   </span>
                 </div>
-                  <div className="flex flex-col gap-1">
-                    <div className="flex gap-1 items-center">
-                      {(activePageTab === 1 ? page1Data?.isSynced : page2Data?.isSynced) ? (
-                        <div className="flex items-center gap-1.5 bg-emerald-600/20 px-2 py-1 rounded-full border border-emerald-500/30">
-                          <CheckCircle className="w-3 h-3 text-emerald-400" />
-                          <span className="text-[9px] font-black text-emerald-400 uppercase tracking-wider">
-                            Page {activePageTab} {t?.('upload.saved') || 'Sent to DB'}
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1.5 bg-amber-500/10 px-2 py-1 rounded-full border border-amber-500/20">
-                          <AlertCircle className="w-3 h-3 text-amber-400" />
-                          <span className="text-[9px] font-black text-amber-400 uppercase tracking-wider">
-                            Page {activePageTab} {t?.('upload.unsaved') || 'Pending'}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    {/* Small summary of both pages */}
-                    <div className="flex gap-1 opacity-60 ml-0.5">
-                      {page1Data?.isSynced && (
-                         <div className="w-2 h-2 rounded-full bg-emerald-500" title="P1 Sent"></div>
-                      )}
-                      {page2Data?.isSynced && (
-                         <div className="w-2 h-2 rounded-full bg-emerald-500" title="P2 Sent"></div>
-                      )}
-                    </div>
+                <div className="flex flex-col gap-1">
+                  <div className="flex gap-1 items-center">
+                    {(activePageTab === 1 ? page1Data?.isSynced : page2Data?.isSynced) ? (
+                      <div className="flex items-center gap-1.5 bg-emerald-600/20 px-2 py-1 rounded-full border border-emerald-500/30">
+                        <CheckCircle className="w-3 h-3 text-emerald-400" />
+                        <span className="text-[9px] font-black text-emerald-400 uppercase tracking-wider">
+                          {t?.('upload.page') || 'Page'} {activePageTab} {t?.('upload.saved') || 'Sent to DB'}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 bg-amber-500/10 px-2 py-1 rounded-full border border-amber-500/20">
+                        <AlertCircle className="w-3 h-3 text-amber-400" />
+                        <span className="text-[9px] font-black text-amber-400 uppercase tracking-wider">
+                          {t?.('upload.page') || 'Page'} {activePageTab} {t?.('upload.unsaved') || 'Pending'}
+                        </span>
+                      </div>
+                    )}
                   </div>
+                  {/* Small summary of both pages */}
+                  <div className="flex gap-1 opacity-60 ml-0.5">
+                    {page1Data?.isSynced && (
+                      <div className="w-2 h-2 rounded-full bg-emerald-500" title="P1 Sent"></div>
+                    )}
+                    {page2Data?.isSynced && (
+                      <div className="w-2 h-2 rounded-full bg-emerald-500" title="P2 Sent"></div>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
             <button
               onClick={handleSave}
               disabled={saving || isSyncing}
-              className={`p-2 sm:p-3 rounded-xl sm:rounded-2xl shadow-xl transition-all font-black disabled:opacity-50 flex items-center gap-2 ${
-                saveSuccess?.pageNum === activePageTab 
-                  ? 'bg-emerald-500 text-white' 
+              className={`p-2 sm:p-3 rounded-xl sm:rounded-2xl shadow-xl transition-all font-black disabled:opacity-50 flex items-center gap-2 ${saveSuccess?.pageNum === activePageTab
+                  ? 'bg-emerald-500 text-white'
                   : 'bg-white text-indigo-600 hover:bg-indigo-50 border border-indigo-100'
-              }`}
+                }`}
             >
               {saving || isSyncing ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
