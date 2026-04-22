@@ -9,8 +9,8 @@ export default function DocumentHistory({ onClose }) {
   const [uploads, setUploads] = useState([]);
   const [selectedDocument, setSelectedDocument] = useState(null);
   const [imageError, setImageError] = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState('');
-  const [selectedYear, setSelectedYear] = useState('');
+  const [selectedMonth, setSelectedMonth] = useState(String(new Date().getMonth() + 1).padStart(2, '0'));
+  const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
   const [showFilters, setShowFilters] = useState(false);
 
   useEffect(() => {

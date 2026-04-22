@@ -33,10 +33,7 @@ function computePageStatuses(historyUploads = [], rejectionInfo = null) {
     return statuses;
 }
 
-const PAGE_LABELS = {
-    page1: 'Page 1 · Members Register',
-    page2: 'Page 2 · Financial Ledger',
-};
+// Translation labels will be handled inside the component using the 't' function.
 
 const SHGUploadCard = ({
     shg,
@@ -115,10 +112,10 @@ const SHGUploadCard = ({
         if (isPartialUpload) {
             const p1Needs = p1Rejected && (!filesData.page1 || !page1Validated);
             const p2Needs = p2Rejected && (!filesData.page2 || !page2Validated);
-            if (p1Needs && p2Needs) return "Page 1 & 2 need to be re-uploaded and validated.";
-            if (p1Needs) return "Page 1 needs to be re-uploaded and validated.";
-            if (p2Needs) return "Page 2 needs to be re-uploaded and validated.";
-            return "Validate the re-uploaded page before submitting.";
+            if (p1Needs && p2Needs) return t?.('upload.page1And2NeedReupload') || "Page 1 & 2 need to be re-uploaded and validated.";
+            if (p1Needs) return t?.('upload.page1NeedsReupload') || "Page 1 needs to be re-uploaded and validated.";
+            if (p2Needs) return t?.('upload.page2NeedsReupload') || "Page 2 needs to be re-uploaded and validated.";
+            return t?.('upload.reuploadValidationNote') || "Validate the re-uploaded page before submitting.";
         }
 
         if (isAfterFeb2026) {
@@ -130,14 +127,14 @@ const SHGUploadCard = ({
             const p1NotValidated = filesData.page1 && !page1Validated;
             const p2NotValidated = filesData.page2 && !page2Validated;
 
-            if (p1Missing && p2Missing) return "Page 1 & Page 2 are missing.";
-            if (p1Missing && p2NotValidated) return "Page 1 missing, Page 2 needs validation.";
-            if (p2Missing && p1NotValidated) return "Page 2 missing, Page 1 needs validation.";
-            if (p1Missing) return "Page 1 is missing.";
-            if (p2Missing) return "Page 2 is missing.";
-            if (p1NotValidated && p2NotValidated) return "Both pages need validation.";
-            if (p1NotValidated) return "Page 1 needs validation.";
-            if (p2NotValidated) return "Page 2 needs validation.";
+            if (p1Missing && p2Missing) return t?.('upload.page1And2Missing') || "Page 1 & Page 2 are missing.";
+            if (p1Missing && p2NotValidated) return t?.('upload.page1MissingPage2NeedsValidation') || "Page 1 missing, Page 2 needs validation.";
+            if (p2Missing && p1NotValidated) return t?.('upload.page2MissingPage1NeedsValidation') || "Page 2 missing, Page 1 needs validation.";
+            if (p1Missing) return t?.('upload.page1Missing') || "Page 1 is missing.";
+            if (p2Missing) return t?.('upload.page2Missing') || "Page 2 is missing.";
+            if (p1NotValidated && p2NotValidated) return t?.('upload.bothPagesNeedValidation') || "Both pages need validation.";
+            if (p1NotValidated) return t?.('upload.page1NeedsValidation') || "Page 1 needs validation.";
+            if (p2NotValidated) return t?.('upload.page2NeedsValidation') || "Page 2 needs validation.";
         }
 
         return t?.('upload.dualValidationRequired') || 'Both documents must be validated before uploading.';
@@ -157,16 +154,16 @@ const SHGUploadCard = ({
                         : 'bg-gradient-to-r from-slate-100 to-slate-200 text-slate-700 border-b border-slate-300';
 
     const cardBorderClass = isFullyAccepted
-        ? 'border-blue-300 bg-blue-50/10 shadow-xl shadow-blue-500/5'
+        ? 'border-blue-400 bg-white/80 backdrop-blur-md shadow-xl shadow-blue-500/10'
         : isReadyToSubmit
-            ? 'border-emerald-300 bg-emerald-50/10 shadow-xl shadow-emerald-500/5'
+            ? 'border-emerald-400 bg-white/80 backdrop-blur-md shadow-xl shadow-emerald-500/10'
             : isPartialUpload
-                ? 'border-amber-300 bg-amber-50/10 shadow-lg shadow-amber-500/5'
+                ? 'border-amber-400 bg-white/80 backdrop-blur-md shadow-lg shadow-amber-500/10'
                 : isFullyRejected
-                    ? 'border-rose-300 bg-rose-50/10 shadow-lg shadow-rose-500/5'
+                    ? 'border-rose-400 bg-white/80 backdrop-blur-md shadow-lg shadow-rose-500/10'
                     : isHalfPending
-                        ? 'border-indigo-300 bg-indigo-50/10 shadow-lg shadow-indigo-500/5'
-                        : 'border-slate-200 hover:border-indigo-300 bg-white';
+                        ? 'border-indigo-400 bg-white/80 backdrop-blur-md shadow-lg shadow-indigo-500/10'
+                        : 'border-slate-200 hover:border-indigo-400 bg-white shadow-md hover:shadow-xl';
 
     const idBadgeClass = isPending
         ? 'text-slate-600 font-bold bg-slate-100 border border-slate-200'
@@ -238,7 +235,7 @@ const SHGUploadCard = ({
                         <AlertCircle size={10} className="text-rose-600" />
                     </div>
                     <p className="text-[9px] font-black text-rose-700 uppercase tracking-widest leading-none">
-                        Page {pageNum} Rejected
+                        {t?.('upload.pageRejected', { page: pageNum }) || `Page ${pageNum} Rejected`}
                     </p>
                 </div>
                 <p className="text-[10px] text-gray-500 leading-tight pl-1 italic">
@@ -313,7 +310,7 @@ const SHGUploadCard = ({
                                         <Upload size={14} />
                                         <span>{isRejectedOnServer
                                             ? (t?.('upload.reuploadPage') || `Re-upload Page ${pageNum}`)
-                                            : (t?.('upload.uploadFile') || 'Upload Document')}</span>
+                                            : (t?.('upload.uploadFile') || t?.(`upload.page${pageNum}`) || `Upload Page ${pageNum}`)}</span>
                                     </button>
                                 )}
                                 {isMobileDevice && (
@@ -328,7 +325,7 @@ const SHGUploadCard = ({
                                         <ScanLine size={14} />
                                         <span>{isRejectedOnServer
                                             ? (t?.('upload.rescanPage') || `Re-scan Page ${pageNum}`)
-                                            : (t?.('upload.cameraScan') || 'Camera Scan')}</span>
+                                            : (t?.('upload.cameraScan') || t?.(`upload.page${pageNum}`) || `Camera Scan Page ${pageNum}`)}</span>
                                     </button>
                                 )}
                             </div>
@@ -396,84 +393,24 @@ const SHGUploadCard = ({
     };
 
     return (
-        <div className={`relative bg-white rounded-xl shadow-md border-2 transition-all duration-500 ${cardBorderClass}`}>
+        <div className={`relative bg-white rounded-2xl shadow-xl border border-white/20 transition-all duration-500 hover:-translate-y-1 hover:shadow-2xl overflow-hidden ${cardBorderClass}`}>
 
-            {/* FULLY ACCEPTED BADGE */}
-            {isFullyAccepted && (
-                <div className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-blue-500 flex items-center justify-center shadow-md border border-white z-10">
-                    <CheckCircle size={12} className="text-white" />
-                </div>
-            )}
 
-            {/* PARTIAL / REJECTION BADGE */}
-            {isPartialUpload && (
-                <div className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-amber-500 flex items-center justify-center shadow-md border border-white z-10">
-                    <AlertTriangle size={11} className="text-white" />
-                </div>
-            )}
-
-            {/* Both rejected (no accepted pages) badge */}
-            {!isPermanentlyUploaded && (p1Rejected || p2Rejected) && !isPartialUpload && !hasFiles && (
-                <div className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-red-500 flex items-center justify-center shadow-md border border-white z-10">
-                    <X size={12} className="text-white" />
-                </div>
-            )}
 
             {/* CARD HEADER */}
-            <div className={`p-4 ${headerAccent} rounded-t-[10px] transition-all duration-500`}>
-                <div className="flex items-start justify-between gap-4">
+            <div className={`p-4 sm:p-5 ${headerAccent} transition-all duration-500 relative overflow-hidden`}>
+                <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent pointer-events-none" />
+                <div className="flex items-start justify-between gap-4 relative z-10">
                     <div className="min-w-0 flex-1">
-                        <h3 className="font-extrabold text-sm sm:text-base leading-tight mb-1 truncate">
+                        <h3 className="font-extrabold text-sm sm:text-base leading-tight mb-1 truncate drop-shadow-sm">
                             {shg.shgName}
                         </h3>
                         <div className="flex items-center gap-2 flex-wrap">
-                            <p className={`text-xs ${idBadgeClass} font-mono tracking-tighter rounded-md px-1.5 py-0.5`}>
+                            <p className={`text-[10px] sm:text-xs ${idBadgeClass} font-mono tracking-wider rounded-lg px-2 py-0.5 border border-white/10 backdrop-blur-sm`}>
                                 {shg.shgId}
                             </p>
-                            {/* Page status indicators */}
-                            <div className="flex items-center gap-1.5 ml-1">
-                                {[1, 2].map(pageNum => {
-                                    const isSynced = pageSyncStatus[pageNum];
-                                    const isAccepted = pageNum === 1 ? p1AcceptedOnServer : p2AcceptedOnServer;
-                                    const isRejected = pageNum === 1 ? p1Rejected : p2Rejected;
-                                    const localFile = pageNum === 1 ? filesData.page1 : filesData.page2;
-                                    const isValidated = pageNum === 1 ? page1Validated : page2Validated;
-                                    
-                                    const exists = isAccepted || localFile || isRejected;
-                                    
-                                    let bgColor = 'bg-slate-200 text-slate-400'; // Missing
-                                    if (isSynced) {
-                                        bgColor = 'bg-emerald-500 text-white'; // Saved/Synced
-                                    } else if (isRejected) {
-                                        bgColor = 'bg-rose-500 text-white'; // Rejected
-                                    } else if (exists) {
-                                        bgColor = 'bg-amber-500 text-white'; // Pending/Validated locally
-                                    }
-
-                                    return (
-                                        <span 
-                                            key={pageNum}
-                                            className={`text-[10px] font-black w-5 h-5 flex items-center justify-center rounded shadow-sm transition-colors ${bgColor}`}
-                                            title={isSynced ? 'Saved to DB' : (exists ? 'Pending/Validated' : 'Missing')}
-                                        >
-                                            P{pageNum}
-                                        </span>
-                                    );
-                                })}
-
-                                {isReadyToSubmit && (
-                                    <span className="text-[9px] font-black px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 border border-emerald-200 uppercase tracking-tight animate-pulse">
-                                        {t?.('upload.bothPagesReady') || 'Both Pages Ready'}
-                                    </span>
-                                )}
-                            </div>
                         </div>
                     </div>
-                    {(isFullyAccepted || isReadyToSubmit || canSubmitPartial || isFullyRejected) && (
-                        <div className="bg-white/20 backdrop-blur-md rounded-full p-1.5 border border-white/30 hidden sm:block">
-                            {isFullyAccepted ? <CheckCircle size={20} className="text-white" /> : (isFullyRejected ? <X size={20} className="text-white" /> : <Upload size={20} className="text-white" />)}
-                        </div>
-                    )}
                 </div>
             </div>
 
@@ -575,9 +512,13 @@ const SHGUploadCard = ({
                         )}
 
                         {/* DUAL PAGE SLOTS */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {renderDocumentSlot('page1', PAGE_LABELS.page1)}
-                            {renderDocumentSlot('page2', PAGE_LABELS.page2)}
+                        <div className="flex flex-col sm:flex-row gap-4">
+                            <div className="flex-1">
+                                {renderDocumentSlot('page1', t?.('upload.page1Full') || 'Page 1 · Members Register')}
+                            </div>
+                            <div className="flex-1">
+                                {renderDocumentSlot('page2', t?.('upload.page2Full') || 'Page 2 · Financial Ledger')}
+                            </div>
                         </div>
 
                         {/* SUBMISSION BUTTON */}
