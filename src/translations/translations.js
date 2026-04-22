@@ -187,6 +187,7 @@ export const translations = {
             saved: "Saved",
             unsaved: "Unsaved",
             bothPagesReady: "Both Pages Ready for Upload",
+            incompleteSHG: "Incomplete (P1 or P2 missing)",
         },
 
         // Conversion Edit View
@@ -507,6 +508,7 @@ export const translations = {
             saved: "సేవ్ చేయబడింది",
             unsaved: "సేవ్ చేయబడలేదు",
             bothPagesReady: "రెండు పేజీలు అప్‌లోడ్ చేయడానికి సిద్ధంగా ఉన్నాయి",
+            incompleteSHG: "అసంపూర్తిగా ఉంది (P1 లేదా P2 లేదు)",
         },
 
         // Conversion Edit View - Telugu
