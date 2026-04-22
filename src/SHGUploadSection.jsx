@@ -1,7 +1,7 @@
 // SHGUploadSection.jsx
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Upload, CheckCircle, X, FileText, Search, AlertCircle, FilePenLine, Filter, RotateCw, RotateCcw, Camera, AlertTriangle, Activity, ScanLine, Lock, Unlock, ChevronDown } from 'lucide-react';
+import { Upload, CheckCircle, X, FileText, Search, AlertCircle, FilePenLine, Filter, RotateCw, RotateCcw, Camera, AlertTriangle, Activity, ScanLine, Lock, Unlock, ChevronDown, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 import { API_BASE } from './utils/apiConfig';
 import { analyzeImage } from './utils/imageQualityCheck';
 import SmartCamera from './smartcamera';
@@ -69,6 +69,7 @@ const SHGUploadSection = ({
   const [conversionSummary, setConversionSummary] = useState({ totalUnsaved: 0 });
   const [isConversionsLoading, setIsConversionsLoading] = useState(false);
   const [editingSHG, setEditingSHG] = useState(null);
+  const [imageError, setImageError] = useState(false);
 
   // VO Upload Access Restriction States
   const [restriction, setRestriction] = useState(null); // { mode: 'restricted', month: '02', year: '2025' }
@@ -268,6 +269,52 @@ const SHGUploadSection = ({
     return () => clearInterval(interval);
   }, [fetchConversionStatus]);
 
+  // Helper to check if an SHG is truly completed for the current period
+  const isSHGTrulyUploaded = useCallback((shgId) => {
+    const targetId = shgId?.toString().toLowerCase();
+    const isPermanentlyUploadedFromProgress = serverProgress?.uploadedShgIds?.includes(shgId) || uploadStatus[shgId]?.uploaded === true;
+
+    // 1. If not marked uploaded at all, it's not completed
+    if (!isPermanentlyUploadedFromProgress) return false;
+
+    // 2. Check for any active rejections in explicit failedUploads list
+    const hasActiveRejection = failedUploads.some(f => f.shgID === shgId);
+    if (hasActiveRejection) return false;
+
+    // 3. Check server-side files for rejection status and completeness
+    const serverPages = permanentlyUploadedFiles.filter(u => {
+      const uId = (u.shgID || u.shgId || u.metadata?.shgID || u.metadata?.shgId || '').toString().toLowerCase();
+      const idMatch = uId === targetId || uId.includes(targetId) || targetId.includes(uId);
+      if (!idMatch) return false;
+
+      const uM = String(u.month || u.metadata?.month || '').padStart(2, '0');
+      const uY = String(u.year || u.metadata?.year || '');
+      const timestamp = u.uploadTimestamp || u.metadata?.uploadTimestamp;
+      let dateMatch = uM === selectedMonth && uY === selectedYear;
+
+      if (!dateMatch && timestamp) {
+        const d = new Date(timestamp);
+        dateMatch = String(d.getMonth() + 1).padStart(2, '0') === selectedMonth && String(d.getFullYear()) === selectedYear;
+      }
+      return dateMatch;
+    });
+
+    // If ANY of the pages for this period are rejected, it's NOT completed
+    const hasRejectedPage = serverPages.some(u => (u.status || '').toLowerCase() === 'rejected');
+    if (hasRejectedPage) return false;
+
+    // 4. For dual-page months (after Feb 2026), require both pages to be present (and not rejected)
+    if (isAfterFeb2026) {
+      const pageNums = serverPages
+        .filter(u => (u.status || '').toLowerCase() !== 'rejected')
+        .map(u => parseInt(u.page || u.metadata?.page || 0));
+      const hasBothPages = pageNums.includes(1) && pageNums.includes(2);
+      if (!hasBothPages) return false;
+    }
+
+    return true;
+  }, [serverProgress, uploadStatus, failedUploads, permanentlyUploadedFiles, selectedMonth, selectedYear, isAfterFeb2026]);
+
   // Group conversions by SHG ID for the edit list
   const getGroupedConversions = () => {
     const groups = {};
@@ -315,6 +362,7 @@ const SHGUploadSection = ({
     const viewId = `${shgId}-${page}`;
     if (currentlyViewingId) return;
     setCurrentlyViewingId(viewId);
+    setImageError(false);
 
     const targetId = shgId?.toString().toLowerCase();
 
@@ -375,7 +423,11 @@ const SHGUploadSection = ({
     }
 
     let url = upload.url || upload.s3Url || upload.metadata?.s3Url || upload.metadata?.url;
-    if ((!url || (typeof url === 'string' && url.includes('amazonaws.com') && !url.includes('X-Amz-Signature'))) && upload._id) {
+
+    // Direct S3 links without signature need presigning
+    const isS3Direct = (u) => u && typeof u === 'string' && u.includes('amazonaws.com') && !u.includes('X-Amz-Signature');
+
+    if ((!url || isS3Direct(url)) && upload._id) {
       try {
         const token = localStorage.getItem('token');
         const resp = await fetch(`${API_BASE}/api/uploads/${upload._id}/presign`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
@@ -450,10 +502,10 @@ const SHGUploadSection = ({
       );
     }
     if (showUploadedOnly) {
-      filtered = filtered.filter(shg => uploadStatus[shg.shgId]?.uploaded);
+      filtered = filtered.filter(shg => isSHGTrulyUploaded(shg.shgId));
     }
     if (showPendingOnly) {
-      filtered = filtered.filter(shg => !uploadStatus[shg.shgId]?.uploaded);
+      filtered = filtered.filter(shg => !isSHGTrulyUploaded(shg.shgId));
     }
     if (showFailedOnly) {
       filtered = filtered.filter(shg => {
@@ -462,7 +514,7 @@ const SHGUploadSection = ({
     }
 
     setFilteredShgData(filtered);
-  }, [searchTerm, shgData, uploadStatus, showUploadedOnly, showPendingOnly, showFailedOnly, failedUploads]);
+  }, [searchTerm, shgData, uploadStatus, showUploadedOnly, showPendingOnly, showFailedOnly, failedUploads, isSHGTrulyUploaded]);
 
   // ─────────────────────────────────────────────────────────────────────────
   // FIX: allFilesValidated — requires BOTH pages uploaded AND both validated
@@ -496,19 +548,30 @@ const SHGUploadSection = ({
       const p1OnServer = serverPageNums.includes(1);
       const p2OnServer = serverPageNums.includes(2);
 
-      // Partial reupload: only the locally-provided page(s) need to be validated
-      if ((p1OnServer && !p2OnServer && p2 && !p1) || (!p1OnServer && p2OnServer && p1 && !p2)) {
-        // One page on server, one local → just validate the local one
-        if (p1OnServer && p2) return p2.validated === true;
-        if (p2OnServer && p1) return p1.validated === true;
+      const hasRejection = permanentlyUploadedFiles.some(u => {
+        const uId = (u.shgID || u.shgId || u.metadata?.shgID || u.metadata?.shgId || '').toString().toLowerCase();
+        return (uId === targetId || uId.includes(targetId) || targetId.includes(uId)) &&
+          (u.status || '').toLowerCase() === 'rejected';
+      });
+
+      // ── Rule: For first-time uploads (none on server, no rejections), BOTH are required.
+      // ── Otherwise (partial upload or re-upload), any staged local page must be validated.
+      const isFirstTime = !p1OnServer && !p2OnServer && !hasRejection;
+
+      if (isFirstTime) {
+        return (
+          p1 && p2 &&
+          p1.validated === true &&
+          p2.validated === true
+        );
       }
 
-      // Standard: Both pages must exist AND both must be validated
-      return (
-        p1 && p2 &&
-        p1.validated === true &&
-        p2.validated === true
-      );
+      // Re-upload or partial case: validate whatever is staged locally
+      if (p1 && p1.validated !== true) return false;
+      if (p2 && p2.validated !== true) return false;
+
+      // At least one page must be staged (which is guaranteed if the SHG is in shgIds)
+      return true;
     });
 
     setAllFilesValidated(allValidated);
@@ -1425,28 +1488,8 @@ const SHGUploadSection = ({
     );
   }
 
-  const pendingShgs = filteredShgData.filter(shg => {
-    const isPermanentlyUploaded = serverProgress?.uploadedShgIds?.includes(shg.shgId) || uploadStatus[shg.shgId]?.uploaded === true;
-    return !isPermanentlyUploaded;
-  });
-
-  const uploadedShgs = filteredShgData.filter(shg => {
-    const targetId = shg.shgId?.toString().toLowerCase();
-
-    // Check if both pages are required and present on server
-    if (isAfterFeb2026) {
-      const serverPages = permanentlyUploadedFiles.filter(u => {
-        const uId = (u.shgID || u.shgId || u.metadata?.shgID || u.metadata?.shgId || '').toString().toLowerCase();
-        return uId === targetId || uId.includes(targetId) || targetId.includes(uId);
-      }).map(u => parseInt(u.page || u.metadata?.page || 0));
-
-      const hasBothPagesOnServer = serverPages.includes(1) && serverPages.includes(2);
-      if (!hasBothPagesOnServer) return false;
-    }
-
-    const isPermanentlyUploaded = serverProgress?.uploadedShgIds?.includes(shg.shgId) || uploadStatus[shg.shgId]?.uploaded === true;
-    return isPermanentlyUploaded;
-  });
+  const pendingShgs = filteredShgData.filter(shg => !isSHGTrulyUploaded(shg.shgId));
+  const uploadedShgs = filteredShgData.filter(shg => isSHGTrulyUploaded(shg.shgId));
 
   const failedShgs = failedUploads.filter(failed => {
     if (shgData.length === 0) return true;
@@ -1454,7 +1497,7 @@ const SHGUploadSection = ({
   });
 
   const renderSHGCard = (shg) => {
-    const isPermanentlyUploaded = serverProgress?.uploadedShgIds?.includes(shg.shgId) || uploadStatus[shg.shgId]?.uploaded === true;
+    const isPermanentlyUploadedFromProgress = serverProgress?.uploadedShgIds?.includes(shg.shgId) || uploadStatus[shg.shgId]?.uploaded === true;
 
     const targetId = shg.shgId?.toString().toLowerCase();
     const matchedHistoryUploads = permanentlyUploadedFiles.filter(u => {
@@ -1474,7 +1517,26 @@ const SHGUploadSection = ({
       return dateMatch;
     });
 
-    const rejectionInfo = !isPermanentlyUploaded && failedUploads.find(failed => failed.shgID === shg.shgId);
+    // Check for rejections in the matched history uploads or failed list
+    const hasRejectedPageInHistory = matchedHistoryUploads.some(u => (u.status || '').toLowerCase() === 'rejected');
+    const hasActiveRejection = failedUploads.some(f => f.shgID === shg.shgId);
+
+    // It's only truly "permanently uploaded" (locked/completed) if there are no rejections
+    // AND for dual-page months, both pages are present.
+    let isTrulyPermanentlyUploaded = isPermanentlyUploadedFromProgress && !hasRejectedPageInHistory && !hasActiveRejection;
+
+    if (isAfterFeb2026 && isTrulyPermanentlyUploaded) {
+      const pageNums = matchedHistoryUploads
+        .filter(u => (u.status || '').toLowerCase() !== 'rejected')
+        .map(u => parseInt(u.page || u.metadata?.page || 0));
+      if (!pageNums.includes(1) || !pageNums.includes(2)) {
+        isTrulyPermanentlyUploaded = false;
+      }
+    }
+
+    const isPermanentlyUploaded = isTrulyPermanentlyUploaded;
+
+    const rejectionInfo = failedUploads.find(failed => failed.shgID === shg.shgId);
     const filesData = uploadedFiles[shg.shgId] || {};
     const shgAnalyzingState = analyzingMap[shg.shgId] || {};
 
@@ -1660,10 +1722,7 @@ const SHGUploadSection = ({
           {/* Stats Cards */}
           {!error && (() => {
             const totalCount = serverProgress?.total || shgData.length;
-            const uploadedCount = shgData.filter(shg =>
-              serverProgress?.uploadedShgIds?.includes(shg.shgId) ||
-              uploadStatus[shg.shgId]?.uploaded === true
-            ).length;
+            const uploadedCount = shgData.filter(shg => isSHGTrulyUploaded(shg.shgId)).length;
             const pendingCount = Math.max(0, totalCount - uploadedCount);
 
             return (
@@ -2062,103 +2121,147 @@ const SHGUploadSection = ({
       {/* Preview Modal */}
       {previewFile && createPortal(
         <div className={`fixed inset-0 flex items-center justify-center z-[9999] p-2 sm:p-4 animate-in fade-in duration-300 ${previewFile.fromServer ? 'bg-slate-900/90 backdrop-blur-sm' : 'bg-black/80 backdrop-blur-sm'}`}>
-          <div className={`bg-white rounded-xl sm:rounded-2xl w-full flex flex-col shadow-2xl overflow-hidden ${previewFile.fromServer ? 'max-w-4xl max-h-[90vh]' : 'max-w-5xl max-h-[95vh] sm:max-h-[90vh]'}`}>
-            <div className={`flex items-center justify-between p-3 sm:p-4 ${previewFile.fromServer ? 'bg-gradient-to-r from-blue-700 to-blue-800 text-white px-6' : 'border-b bg-white'}`}>
-              <div className="flex-1 min-w-0 mr-2">
-                <h3 className="font-bold text-sm sm:text-lg truncate">
-                  {previewFile.fromServer ? (
-                    <>{previewFile.shgName} <span className="text-blue-100/80 font-normal ml-1">({previewFile.shgId})</span></>
-                  ) : previewFile.fileName}
-                </h3>
-                {previewFile.fromServer && (
-                  <p className="text-xs text-blue-100 truncate mt-0.5 opacity-80">{previewFile.fileName}</p>
-                )}
+          <div className="w-full max-w-5xl h-auto max-h-[95vh] flex flex-col bg-white rounded-xl shadow-2xl overflow-hidden relative">
+
+            {/* VIEWER HEADER */}
+            <div className={`p-4 sm:p-5 flex items-center justify-between border-b ${previewFile.fromServer ? 'bg-blue-700 text-white border-blue-800' : 'bg-indigo-600 text-white border-indigo-500'}`}>
+              <div className="flex items-center gap-3 min-w-0">
+                <div className={`p-2 rounded-lg ${previewFile.fromServer ? 'bg-blue-800' : 'bg-indigo-500'}`}>
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-bold text-base sm:text-lg truncate tracking-tight uppercase">
+                    {previewFile.shgName || 'Document'}
+                  </h3>
+                  <p className="text-xs opacity-80 truncate font-medium">
+                    {t?.('upload.page') || 'Page'} {previewFile.page} • {previewFile.fileName}
+                  </p>
+                </div>
               </div>
-              <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+
+              <div className="flex items-center gap-2">
+                {/* Download Button fallback for server files */}
+
                 {!previewFile.fromServer && (
                   <>
-                    <button onClick={() => rotatePreviewImage('left')} className="p-1.5 sm:p-2 bg-gray-200 hover:bg-gray-300 rounded-lg" title="Rotate Left">
-                      <RotateCcw size={18} className="sm:hidden" /><RotateCcw size={20} className="hidden sm:block" />
+                    <button
+                      onClick={() => setPreviewRotation(prev => (prev - 90) % 360)}
+                      className="p-2 hover:bg-white/10 rounded-full transition-colors"
+                    >
+                      <RotateCcw className="w-5 h-5" />
                     </button>
-                    <button onClick={() => rotatePreviewImage('right')} className="p-1.5 sm:p-2 bg-gray-200 hover:bg-gray-300 rounded-lg" title="Rotate Right">
-                      <RotateCw size={18} className="sm:hidden" /><RotateCw size={20} className="hidden sm:block" />
+                    <button
+                      onClick={() => setPreviewRotation(prev => (prev + 90) % 360)}
+                      className="p-2 hover:bg-white/10 rounded-full transition-colors"
+                    >
+                      <RotateCw className="w-5 h-5" />
                     </button>
                   </>
                 )}
-                <button onClick={closePreview} className={`p-1.5 sm:p-2 rounded-lg transition-colors ${previewFile.fromServer ? 'hover:bg-white/10 text-white' : 'bg-red-500 hover:bg-red-600 text-white'}`} title={t?.('common.close') || 'Close'}>
-                  <X size={18} className="sm:hidden" /><X size={20} className="hidden sm:block" />
+
+                <button
+                  onClick={() => {
+                    setPreviewFile(null);
+                    setImageError(false);
+                  }}
+                  className="p-2 hover:bg-white/10 rounded-full transition-colors group"
+                >
+                  <X className="w-6 h-6 group-hover:scale-110 duration-200" />
                 </button>
               </div>
             </div>
 
-            {previewFile.fromServer ? (
-              <div className="flex-1 overflow-hidden bg-slate-50 relative group flex flex-col">
-                {/* Page indicators - Sticky at top of the image area, not overlapping content */}
-                <div className="bg-slate-100/80 backdrop-blur-sm border-b px-6 py-2 flex items-center justify-between z-20">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Document Review</span>
-                  <div className="bg-blue-600 text-white px-4 py-1.5 rounded-full text-xs font-black shadow-lg ring-4 ring-blue-100">
-                    Showing: Page {previewFile.page}
-                  </div>
-                </div>
+            {/* VIEWER CONTENT */}
+            <div className="flex-1 overflow-auto bg-slate-100 group/viewer relative">
+              {/* Floating Page Label with Box - Sticky at the top so it stays while scrolling */}
+              <div className="sticky top-0 right-6 ml-auto mr-6 z-[30] w-fit px-3 py-1.5 bg-white/95 backdrop-blur-md border-2 border-indigo-100 rounded-lg text-indigo-700 font-black uppercase tracking-[0.2em] text-[10px] pointer-events-none shadow-xl">
+                Page {previewFile.page}
+              </div>
 
-                {/* Page navigation - Transparent/Glass style to allow edge checking */}
-                <div className="absolute left-1.5 top-1/2 -translate-y-1/2 z-30">
+              {/* SIDE SWITCHING BUTTONS */}
+              {previewFile.fromServer && (
+                <>
                   <button
-                    onClick={() => handleViewPermanentlyUploadedFile(previewFile.shgId, 1)}
-                    className={`h-9 w-9 rounded-full shadow-xl backdrop-blur-md transition-all duration-300 transform hover:scale-110 flex items-center justify-center border ${previewFile.page === 1
-                      ? 'bg-blue-600/30 text-white border-blue-400'
-                      : 'bg-white/10 text-gray-700 border-white/30 hover:bg-white/30'}`}
-                    title="Page 1"
+                    onClick={() => handleViewPermanentlyUploadedFile(previewFile.shgId, previewFile.page === 1 ? 2 : 1)}
+                    className="absolute left-4 top-1/2 -translate-y-1/2 z-10 w-12 h-12 bg-white/90 hover:bg-white text-indigo-600 rounded-full shadow-xl flex items-center justify-center transition-all active:scale-90 border-2 border-indigo-100 hover:border-indigo-500"
+                    title={previewFile.page === 1 ? "Switch to Page 2" : "Switch to Page 1"}
                   >
-                    <ChevronLeft size={20} className={previewFile.page === 1 ? 'text-white' : 'text-slate-600'} />
+                    <ChevronLeft size={32} />
                   </button>
-                </div>
-                <div className="absolute right-1.5 top-1/2 -translate-y-1/2 z-30">
                   <button
-                    onClick={() => handleViewPermanentlyUploadedFile(previewFile.shgId, 2)}
-                    className={`h-9 w-9 rounded-full shadow-xl backdrop-blur-md transition-all duration-300 transform hover:scale-110 flex items-center justify-center border ${previewFile.page === 2
-                      ? 'bg-blue-600/30 text-white border-blue-400'
-                      : 'bg-white/10 text-gray-700 border-white/30 hover:bg-white/30'}`}
-                    title="Page 2"
+                    onClick={() => handleViewPermanentlyUploadedFile(previewFile.shgId, previewFile.page === 1 ? 2 : 1)}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 z-10 w-12 h-12 bg-white/90 hover:bg-white text-indigo-600 rounded-full shadow-xl flex items-center justify-center transition-all active:scale-90 border-2 border-indigo-100 hover:border-indigo-500"
+                    title={previewFile.page === 1 ? "Switch to Page 2" : "Switch to Page 1"}
                   >
-                    <ChevronRight size={20} className={previewFile.page === 2 ? 'text-white' : 'text-slate-600'} />
+                    <ChevronRight size={32} />
                   </button>
-                </div>
+                </>
+              )}
 
-                <div className="flex-1 w-full overflow-auto p-4 flex items-center justify-center relative">
-                  {currentlyViewingId && (
-                    <div className="absolute inset-0 z-40 bg-slate-900/10 backdrop-blur-[1px] flex items-center justify-center animate-in fade-in duration-200">
-                      <div className="bg-white/95 p-6 rounded-3xl shadow-2xl flex flex-col items-center gap-4">
-                        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+              {previewFile.fromServer ? (
+                <div className="w-full flex flex-col items-center justify-center px-2 py-1 sm:px-4 sm:py-2 bg-slate-900/5 min-h-[250px]">
+                  {imageError ? (
+                    <div className="flex flex-col items-center justify-center p-12 text-center bg-white rounded-xl shadow-sm border border-slate-200">
+                      <div className="w-20 h-20 bg-red-50 text-red-500 rounded-full flex items-center justify-center mb-6">
+                        <AlertTriangle size={40} />
                       </div>
+                      <h3 className="text-xl font-bold text-slate-800 mb-2">Failed to load document</h3>
+                    </div>
+                  ) : (
+                    <div className="relative w-full h-full flex items-center justify-center">
+                      {/* Detection for PDF/TIFF */}
+                      {(previewFile.previewUrl?.toLowerCase().includes('.pdf') ||
+                        previewFile.previewUrl?.toLowerCase().includes('.tif') ||
+                        previewFile.fileName?.toLowerCase().endsWith('.pdf') ||
+                        previewFile.fileName?.toLowerCase().endsWith('.tif') ||
+                        previewFile.fileName?.toLowerCase().endsWith('.tiff')) ? (
+                        <iframe
+                          src={`${previewFile.previewUrl}#toolbar=0`}
+                          className="w-full h-full rounded-md shadow-lg bg-white border-0"
+                          title="Document Viewer"
+                          onError={() => setImageError(true)}
+                        />
+                      ) : (
+                        <img
+                          src={previewFile.previewUrl}
+                          alt={`Document Page ${previewFile.page}`}
+                          className={`max-w-full h-auto mx-auto border-2 border-white rounded-md shadow-2xl transition-all duration-500 ${currentlyViewingId ? 'opacity-50 scale-95' : 'animate-in fade-in zoom-in-95'}`}
+                          style={{ transform: `rotate(${previewRotation}deg)` }}
+                          onLoad={() => setImageError(false)}
+                          onError={() => setImageError(true)}
+                          key={`${previewFile.shgId}-${previewFile.page}`}
+                        />
+                      )}
                     </div>
                   )}
-
-                  <div className="relative">
+                </div>
+              ) : (
+                <div className="flex-1 overflow-auto bg-slate-100 flex flex-col relative px-2 py-1 sm:px-4 sm:py-2 min-h-[250px]">
+                  {isProcessingPreview && !smartPreviewUrl ? (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-100/80 backdrop-blur-sm z-10">
+                      <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4" />
+                      <p className="text-indigo-900 font-bold animate-pulse uppercase tracking-widest text-sm">Processing Preview...</p>
+                    </div>
+                  ) : smartPreviewUrl ? (
+                    <img
+                      src={smartPreviewUrl}
+                      alt={previewFile.fileName}
+                      className="max-w-full max-h-full object-contain m-auto bg-white transition-opacity duration-300 shadow-xl rounded-lg"
+                      onError={() => setSmartPreviewUrl(previewFile.previewUrl)}
+                      style={{ transform: `rotate(${previewRotation}deg)` }}
+                    />
+                  ) : (
                     <img
                       src={previewFile.previewUrl}
-                      alt={`Document Page ${previewFile.page}`}
-                      className={`max-w-full h-auto mx-auto border-2 border-white rounded-md shadow-2xl transition-all duration-500 ${currentlyViewingId ? 'opacity-50 scale-95' : 'animate-in fade-in zoom-in-95'}`}
-                      key={`${previewFile.shgId}-${previewFile.page}`}
+                      alt={previewFile.fileName}
+                      className="max-w-full max-h-full object-contain m-auto bg-white transition-opacity duration-300 shadow-xl rounded-lg"
+                      style={{ transform: `rotate(${previewRotation}deg)` }}
                     />
-                  </div>
+                  )}
                 </div>
-              </div>
-            ) : (
-              <div className="flex-1 overflow-auto bg-gray-100 flex flex-col relative p-2 sm:p-4 min-h-[300px]">
-                {isProcessingPreview && !smartPreviewUrl ? (
-                  <div className="m-auto flex flex-col items-center gap-3">
-                    <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent"></div>
-                    <p className="font-semibold text-gray-600 text-sm">{t?.('upload.processing') || 'Smart Processing...'}</p>
-                  </div>
-                ) : smartPreviewUrl ? (
-                  <img src={smartPreviewUrl} alt={previewFile.fileName} className="max-w-full max-h-full object-contain m-auto bg-white transition-opacity duration-300"
-                    onError={() => setSmartPreviewUrl(previewFile.previewUrl)} />
-                ) : (
-                  <img src={previewFile.previewUrl} alt={previewFile.fileName} className="max-w-full max-h-full object-contain m-auto bg-white transition-opacity duration-300" />
-                )}
-              </div>
-            )}
+              )}
+            </div>
+
           </div>
         </div>,
         document.body

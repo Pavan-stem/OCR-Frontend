@@ -1,6 +1,6 @@
 import { API_BASE } from './utils/apiConfig';
 import React, { useEffect, useState } from 'react';
-import { X, FileText, Eye, Filter, AlertCircle, CheckCircle, Clock } from 'lucide-react';
+import { X, FileText, Eye, Filter, AlertCircle, CheckCircle, Clock, Download, AlertTriangle } from 'lucide-react';
 import { useLanguage } from './contexts/LanguageContext';
 import { formatDate, formatDateTime } from './utils/dateUtils';
 
@@ -461,20 +461,69 @@ export default function DocumentHistory({ onClose }) {
                     selectedDocument.metadata?.originalFilename}
                 </p>
               </div>
-              <button
-                onClick={() => setSelectedDocument(null)}
-                className="p-2 hover:bg-white/10 rounded"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <a
+                  href={selectedDocument.url}
+                  download={selectedDocument.filename || 'document'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 hover:bg-white/10 rounded-full transition-colors flex items-center gap-1.5 text-xs font-semibold px-3"
+                  title="Download Document"
+                >
+                  <Download size={16} />
+                  <span className="hidden sm:inline">Download</span>
+                </a>
+                <button
+                  onClick={() => {
+                    setSelectedDocument(null);
+                    setImageError(false);
+                  }}
+                  className="p-2 hover:bg-white/10 rounded"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 overflow-auto bg-slate-50 p-4">
-              <img
-                src={selectedDocument.url}
-                alt="Document"
-                className="max-w-full mx-auto border rounded shadow"
-              />
+              {imageError ? (
+                <div className="flex flex-col items-center justify-center p-12 text-center bg-white rounded-xl shadow-sm border border-slate-200 h-full">
+                  <div className="w-20 h-20 bg-red-50 text-red-500 rounded-full flex items-center justify-center mb-6">
+                    <AlertTriangle size={40} />
+                  </div>
+                  <h3 className="text-xl font-bold text-slate-800 mb-2">Failed to load document</h3>
+                  <p className="text-slate-500 mb-8 max-w-xs">The document couldn't be displayed in the viewer. You can try downloading it directly instead.</p>
+                  <a
+                    href={selectedDocument.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-6 py-3 bg-blue-600 text-white rounded-lg font-bold shadow-lg hover:bg-blue-700 transition-all flex items-center gap-2 active:scale-95"
+                  >
+                    <Download size={18} />
+                    Download Now
+                  </a>
+                </div>
+              ) : (
+                <>
+                  {(selectedDocument.url?.toLowerCase().includes('.pdf') || 
+                    selectedDocument.filename?.toLowerCase().endsWith('.pdf')) ? (
+                    <iframe
+                      src={`${selectedDocument.url}#toolbar=0`}
+                      className="w-full h-full min-h-[500px] border-0 rounded shadow"
+                      title="Document Viewer"
+                      onError={() => setImageError(true)}
+                    />
+                  ) : (
+                    <img
+                      src={selectedDocument.url}
+                      alt="Document"
+                      className="max-w-full mx-auto border rounded shadow"
+                      onLoad={() => setImageError(false)}
+                      onError={() => setImageError(true)}
+                    />
+                  )}
+                </>
+              )}
             </div>
           </div>
         </div>

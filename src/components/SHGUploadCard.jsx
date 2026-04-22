@@ -79,33 +79,35 @@ const SHGUploadCard = ({
     const p2Rejected = p2Status === 'rejected';
 
     // ── Completion Logic ───────────────────────────────────────────────
-    const isPartialUpload = (p1AcceptedOnServer || p2AcceptedOnServer) && (p1Rejected || p2Rejected);
+    const isReuploadCase = p1Rejected || p2Rejected;
+    const isPartialUpload = (p1AcceptedOnServer || p2AcceptedOnServer) && isReuploadCase;
     const isFullyAccepted = isPermanentlyUploaded && !p1Rejected && !p2Rejected;
 
-    const canSubmitFull = !isPartialUpload && (
-        // Allow if BOTH are validated, OR if at least one is validated and we're not strictly blocking
+    const canSubmitFull = !isReuploadCase && (
         (page1Validated || p1AcceptedOnServer) && (page2Validated || p2AcceptedOnServer)
     );
 
-    // If not strictly blocking, we can allow submission if at least one local page is validated
-    const canSubmitAny = (filesData.page1 && page1Validated) || (filesData.page2 && page2Validated);
-
-    const canSubmitPartial = isPartialUpload && (
+    const canSubmitPartial = isReuploadCase && (
         (p1Rejected && page1Validated && filesData.page1) ||
-        (p2Rejected && page2Validated && filesData.page2)
+        (p2Rejected && page2Validated && filesData.page2) ||
+        // If both were rejected, allow submitting if at least one is ready
+        (p1Rejected && p2Rejected && (
+            (filesData.page1 && page1Validated) || (filesData.page2 && page2Validated)
+        ))
     );
 
-    // We'll use canSubmitAny for the button state if the user doesn't want hard blocking
-    const canSubmit = isPartialUpload ? canSubmitPartial : canSubmitAny;
+    const canSubmit = isReuploadCase ? canSubmitPartial : canSubmitFull;
 
     // ── Completion States ───────────────────────────────────────────────
+    // ── Completion States ───────────────────────────────────────────────
     const hasFiles = !!filesData.page1 || !!filesData.page2;
+    const bothFilesStaged = !!(filesData.page1 && filesData.page2);
     const hasAnyAccepted = p1AcceptedOnServer || p2AcceptedOnServer;
-    const isReadyToSubmit = (canSubmitFull || canSubmitPartial);
+    const isReadyToSubmit = canSubmit;
 
     const isPending = !hasFiles && !hasAnyAccepted && !p1Rejected && !p2Rejected;
     const isFullyRejected = (p1Rejected && p2Rejected) && !hasFiles;
-    const isHalfPending = !isReadyToSubmit && !isFullyAccepted && !isPartialUpload && !isFullyRejected && (hasFiles || hasAnyAccepted);
+    const isHalfPending = !isReadyToSubmit && !isFullyAccepted && !isReuploadCase && !isFullyRejected && (hasFiles || hasAnyAccepted);
 
     // ── Detailed Alert Logic ───────────────────────────────────────────
     const getStatusMessage = () => {
@@ -154,15 +156,15 @@ const SHGUploadCard = ({
                         : 'bg-gradient-to-r from-slate-100 to-slate-200 text-slate-700 border-b border-slate-300';
 
     const cardBorderClass = isFullyAccepted
-        ? 'border-blue-400 bg-white/80 backdrop-blur-md shadow-xl shadow-blue-500/10'
+        ? 'border-blue-400 bg-white shadow-xl shadow-blue-500/10'
         : isReadyToSubmit
-            ? 'border-emerald-400 bg-white/80 backdrop-blur-md shadow-xl shadow-emerald-500/10'
-            : isPartialUpload
-                ? 'border-amber-400 bg-white/80 backdrop-blur-md shadow-lg shadow-amber-500/10'
+            ? 'border-emerald-400 bg-white shadow-xl shadow-emerald-500/10'
+            : isReuploadCase
+                ? 'border-amber-400 bg-white shadow-lg shadow-amber-500/10'
                 : isFullyRejected
-                    ? 'border-rose-400 bg-white/80 backdrop-blur-md shadow-lg shadow-rose-500/10'
+                    ? 'border-rose-400 bg-white shadow-lg shadow-rose-500/10'
                     : isHalfPending
-                        ? 'border-indigo-400 bg-white/80 backdrop-blur-md shadow-lg shadow-indigo-500/10'
+                        ? 'border-indigo-400 bg-white shadow-lg shadow-indigo-500/10'
                         : 'border-slate-200 hover:border-indigo-400 bg-white shadow-md hover:shadow-xl';
 
     const idBadgeClass = isPending
@@ -190,7 +192,7 @@ const SHGUploadCard = ({
             });
 
             return (
-                <div className="p-3 rounded-xl border-2 border-blue-300 bg-blue-50/40 flex flex-col h-full shadow-sm">
+                <div className="p-2 rounded-xl border-2 border-blue-300 bg-white flex flex-col h-full shadow-sm">
                     <div className="flex flex-col gap-2 mb-3">
                         <div className="flex flex-wrap gap-2">
                             <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-100 text-blue-700 flex items-center gap-1 border border-blue-200">
@@ -200,7 +202,7 @@ const SHGUploadCard = ({
                         <span className="font-bold text-sm text-blue-800 leading-tight">{pageTitle}</span>
                     </div>
 
-                    <div className="flex flex-col gap-2 mt-auto pt-2 border-t border-blue-200/50">
+                    <div className="flex flex-col gap-1.5 mt-auto pt-1.5 border-t border-blue-200/50">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2 text-blue-700/70 bg-blue-100/30 px-2 py-1 rounded-md">
                                 <Lock size={12} strokeWidth={2.5} />
@@ -228,7 +230,7 @@ const SHGUploadCard = ({
 
         // ── REJECTED server page → show re-upload slot ────────────────────
         const rejectionLabel = isRejectedOnServer && !fileData ? (
-            <div className="mb-3 bg-white rounded-lg p-2 border border-rose-100 shadow-sm relative overflow-hidden">
+            <div className="mb-2 bg-white rounded-lg p-1.5 border border-rose-100 shadow-sm relative overflow-hidden">
                 <div className="absolute top-0 left-0 w-1 h-full bg-rose-500" />
                 <div className="flex items-center gap-2 mb-1">
                     <div className="bg-rose-50 p-1 rounded-md">
@@ -246,11 +248,11 @@ const SHGUploadCard = ({
 
         // ── Normal (pending) or re-upload slot ────────────────────────────
         return (
-            <div className={`p-3 rounded-xl border-2 transition-all duration-300 flex flex-col h-full ${fileData
-                ? fileData.validated ? 'border-green-400 bg-green-50/40 shadow-sm shadow-green-100' : 'border-amber-400 bg-amber-50/40 shadow-sm shadow-amber-100'
-                : isRejectedOnServer ? 'border-rose-200 bg-rose-50/40' : 'border-dashed border-gray-200 bg-gray-50/50 hover:bg-gray-100/50'
+            <div className={`p-2 rounded-xl border-2 transition-all duration-300 flex flex-col h-full ${fileData
+                ? fileData.validated ? 'border-green-400 bg-white shadow-sm shadow-green-100' : 'border-amber-400 bg-white shadow-sm shadow-amber-100'
+                : isRejectedOnServer ? 'border-rose-200 bg-white' : 'border-dashed border-gray-200 bg-white hover:bg-gray-50/50'
                 }`}>
-                <div className="flex flex-col gap-2 mb-3">
+                <div className="flex flex-col gap-1.5 mb-2">
                     <div className="flex flex-wrap gap-2">
                         {isRejectedOnServer && !fileData && (
                             <span className="text-[9px] font-black px-2 py-0.5 rounded-md bg-rose-100 text-rose-700 uppercase tracking-tighter flex items-center gap-1 border border-rose-200">
@@ -398,7 +400,7 @@ const SHGUploadCard = ({
 
 
             {/* CARD HEADER */}
-            <div className={`p-4 sm:p-5 ${headerAccent} transition-all duration-500 relative overflow-hidden`}>
+            <div className={`p-3 sm:p-4 ${headerAccent} transition-all duration-500 relative overflow-hidden`}>
                 <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent pointer-events-none" />
                 <div className="flex items-start justify-between gap-4 relative z-10">
                     <div className="min-w-0 flex-1">
@@ -414,7 +416,7 @@ const SHGUploadCard = ({
                 </div>
             </div>
 
-            <div className="p-3 sm:p-4">
+            <div className="p-2 sm:p-3">
 
                 {/* ── FULLY ACCEPTED: show carousel of accepted pages ───────── */}
                 {isFullyAccepted ? (
@@ -486,7 +488,7 @@ const SHGUploadCard = ({
                     <div className="space-y-4">
                         {/* Partial upload info banner */}
                         {isPartialUpload && (
-                            <div className="bg-amber-50 rounded-lg p-2.5 border-l-4 border-amber-500 flex items-start gap-2">
+                            <div className="bg-white rounded-lg p-2 border-l-4 border-amber-500 flex items-start gap-2 mb-2 shadow-sm">
                                 <AlertTriangle size={14} className="text-amber-600 flex-shrink-0 mt-0.5" />
                                 <div>
                                     <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wide mb-0.5">
@@ -501,8 +503,8 @@ const SHGUploadCard = ({
                         )}
 
                         {/* Full rejection banner (both pages rejected, no partial) */}
-                        {rejectionInfo && !isPartialUpload && !hasFiles && (
-                            <div className="mb-3 bg-red-50 rounded-lg p-2.5 border-l-4 border-red-500 flex items-start gap-2">
+                        {rejectionInfo && !isReuploadCase && !hasFiles && (
+                            <div className="mb-3 bg-white rounded-lg p-2.5 border-l-4 border-red-500 flex items-start gap-2 shadow-sm">
                                 <AlertTriangle size={14} className="text-red-600 flex-shrink-0 mt-0.5" />
                                 <div>
                                     <p className="text-[10px] font-bold text-red-700 uppercase tracking-wide mb-0.5">Rejected</p>
@@ -512,7 +514,7 @@ const SHGUploadCard = ({
                         )}
 
                         {/* DUAL PAGE SLOTS */}
-                        <div className="flex flex-col sm:flex-row gap-4">
+                        <div className="flex flex-col sm:flex-row gap-3">
                             <div className="flex-1">
                                 {renderDocumentSlot('page1', t?.('upload.page1Full') || 'Page 1 · Members Register')}
                             </div>
@@ -522,8 +524,8 @@ const SHGUploadCard = ({
                         </div>
 
                         {/* SUBMISSION BUTTON */}
-                        {(hasFiles || isReadyToSubmit || canSubmitPartial) && (
-                            <div className="pt-4 border-t border-gray-100 mt-4">
+                        {hasFiles && (
+                            <div className="pt-3 border-t border-gray-100 mt-2">
                                 <button
                                     onClick={() => onUploadSingleShg(shg.shgId)}
                                     disabled={!canSubmit || isUploading || isPermanentlyUploaded}
