@@ -1030,7 +1030,7 @@ const UsersTab = ({ filterProps }) => {
 
             // 1. Refresh basic tree state in background
             await fetchUsers({ isBackground: true });
-            
+
             // 2. Surgical stats sync (refresh numbers)
             // This ensures Case 1 (APM/CC) and Case 2 (VO) stats update immediately
             await syncVisibleStats();
@@ -2913,10 +2913,10 @@ const UsersTab = ({ filterProps }) => {
                                   <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest italic">N/A</span>
                                 ) : (
                                   <div className="flex flex-col gap-2">
-                                    <div className="flex justify-center items-center gap-6">
+                                    <div className="flex justify-center items-center gap-4">
                                       <span className="text-base font-black text-emerald-600 leading-none" title="Success">{perf.conversion.success}</span>
                                       <span className="text-base font-black text-red-600 leading-none" title="Failed">{perf.conversion.failed}</span>
-                                      <span className="text-base font-black text-orange-500 leading-none" title="In Queue">{perf.conversion.pending + perf.conversion.processing}</span>
+                                      <span className="text-base font-black text-orange-500 leading-none" title="In Queue">{(perf.conversion.pending || 0) + (perf.conversion.processing || 0)}</span>
                                     </div>
                                   </div>
                                 )}
@@ -2929,8 +2929,8 @@ const UsersTab = ({ filterProps }) => {
                                       onClick={() => handleToggleUploadAccess(u)}
                                       disabled={updatingAccessId === u._id}
                                       className={`p-1.5 rounded-lg transition-all shadow-sm ${u.uploadAccessMode === 'restricted'
-                                          ? 'bg-orange-600 text-white shadow-orange-200'
-                                          : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-100'
+                                        ? 'bg-orange-600 text-white shadow-orange-200'
+                                        : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100 border border-emerald-100'
                                         }`}
                                       title={u.uploadAccessMode === 'restricted' ? "Upload Access: LOCKED (Click to release)" : "Upload Access: OPEN (Click to lock to current month)"}
                                     >
@@ -3233,10 +3233,10 @@ const UsersTab = ({ filterProps }) => {
                                       <div className="flex justify-between items-center mb-1 px-1">
                                         <span className="text-[7px] font-black text-gray-400 uppercase">Conversion</span>
                                       </div>
-                                      <div className="flex justify-center gap-6 py-1">
+                                      <div className="flex justify-center gap-4 py-1">
                                         <div className="text-sm font-black text-emerald-600">{perf.conversion.success}</div>
                                         <div className="text-sm font-black text-red-600">{perf.conversion.failed}</div>
-                                        <div className="text-sm font-black text-orange-500">{perf.conversion.pending + perf.conversion.processing}</div>
+                                        <div className="text-sm font-black text-orange-500">{(perf.conversion.pending || 0) + (perf.conversion.processing || 0)}</div>
                                       </div>
                                     </div>
                                   </div>
@@ -4026,22 +4026,22 @@ const UsersTab = ({ filterProps }) => {
                       {/* Action Selection */}
                       <div>
                         <label className="block text-sm font-black text-gray-700 mb-3">Select Action</label>
-                          <button
-                            onClick={() => {
-                              setStatus('validated');
-                              setRejectionReason('');
-                            }}
-                            className={`p-4 rounded-2xl border-2 transition-all font-black text-sm w-full ${status === 'validated'
-                              ? 'bg-emerald-50 border-emerald-500 text-emerald-700'
-                              : 'bg-gray-50 border-gray-200 text-gray-700 hover:border-gray-300'
-                              }`}
-                          >
-                            <div className="flex items-center justify-center gap-2">
-                              <CheckCircle className="w-5 h-5" />
-                              Approve & Queue
-                            </div>
-                            <p className="text-[11px] font-bold text-gray-600 mt-1 opacity-75">Send to conversion</p>
-                          </button>
+                        <button
+                          onClick={() => {
+                            setStatus('validated');
+                            setRejectionReason('');
+                          }}
+                          className={`p-4 rounded-2xl border-2 transition-all font-black text-sm w-full ${status === 'validated'
+                            ? 'bg-emerald-50 border-emerald-500 text-emerald-700'
+                            : 'bg-gray-50 border-gray-200 text-gray-700 hover:border-gray-300'
+                            }`}
+                        >
+                          <div className="flex items-center justify-center gap-2">
+                            <CheckCircle className="w-5 h-5" />
+                            Approve & Queue
+                          </div>
+                          <p className="text-[11px] font-bold text-gray-600 mt-1 opacity-75">Send to conversion</p>
+                        </button>
                       </div>
 
                       {/* Status-Specific UI */}
@@ -4089,14 +4089,14 @@ const UsersTab = ({ filterProps }) => {
                           : 'bg-red-600 hover:bg-red-700'
                           }`}
                       >
-                          {uploading ? (
-                            <>
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                              Processing...
-                            </>
-                          ) : (
-                            'Approve & Queue'
-                          )}
+                        {uploading ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Processing...
+                          </>
+                        ) : (
+                          'Approve & Queue'
+                        )}
                       </button>
                     </div>
                   </div>
