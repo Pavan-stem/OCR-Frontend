@@ -1,7 +1,7 @@
 // SHGUploadSection.jsx
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { Upload, CheckCircle, X, FileText, Search, AlertCircle, FilePenLine, Filter, RotateCw, RotateCcw, Camera, AlertTriangle, Activity, ScanLine, Lock, Unlock, ChevronDown } from 'lucide-react';
+import { Upload, CheckCircle, X, FileText, Search, AlertCircle, FilePenLine, Filter, RotateCw, RotateCcw, Smartphone, Layout, AlertTriangle, RefreshCw, ChevronRight, Clock, Camera, Activity, ScanLine, Lock, Unlock, ChevronDown } from 'lucide-react';
 import { API_BASE } from './utils/apiConfig';
 import { analyzeImage } from './utils/imageQualityCheck';
 import SmartCamera from './smartcamera';
@@ -291,23 +291,31 @@ const SHGUploadSection = ({
       groups[shgId].pages[pageNum] = item;
     });
 
-    // Determine alert status: Only SHGs with BOTH pages and at least one unsaved page get an alert
+    // 2nd Pass: Determine explicit status states
     Object.values(groups).forEach(group => {
-      if (group.pages[1] && group.pages[2]) {
-        const p1 = group.pages[1];
-        const p2 = group.pages[2];
-        
-        // Robust Sync Detection
+      const p1 = group.pages[1];
+      const p2 = group.pages[2];
+
+      if (!p1 || !p2) {
+        // Pending: Missing a page
+        group.conversionStatus = 'pending';
+        group.isSynced = true; // DO NOT count in notification badge
+      } else {
         const isP1Synced = (p1.isSynced ?? p1.is_synced ?? p1.synced) === true || 
                            p1.status === 'synced' || p1.status === 'synced_to_db';
         const isP2Synced = (p2.isSynced ?? p2.is_synced ?? p2.synced) === true || 
                            p2.status === 'synced' || p2.status === 'synced_to_db';
-                           
-        if (!isP1Synced || !isP2Synced) {
-          group.isSynced = false; // Trigger "Unsaved" alert and count in badge
+
+        if (isP1Synced && isP2Synced) {
+          // Success: Both present and synced
+          group.conversionStatus = 'success';
+          group.isSynced = true; // DO NOT count in notification badge
+        } else {
+          // Alert: Both present but at least one unsaved
+          group.conversionStatus = 'alert';
+          group.isSynced = false; // COUNT in notification badge
         }
       }
-      // If incomplete (only 1 page), group.isSynced remains true -> "just show SHG but no alert"
     });
 
     return Object.values(groups).filter(group => group.pages[1] || group.pages[2]);
@@ -2010,9 +2018,14 @@ const SHGUploadSection = ({
                   .map((group, idx) => (
                     <div key={idx} className="p-4 sm:p-5 hover:bg-white transition-all duration-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 last:border-b-0">
                       <div className="flex items-start gap-3 sm:gap-4 flex-1 min-w-0">
-                        <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0 transition-transform duration-300 ${group.isSynced ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-rose-50 text-rose-600 border border-rose-100'}`}>
-                          {group.isSynced ? <CheckCircle size={20} className="sm:hidden" /> : <AlertTriangle size={20} className="sm:hidden" />}
-                          {group.isSynced ? <CheckCircle size={24} className="hidden sm:block" /> : <AlertTriangle size={24} className="hidden sm:block" />}
+                        <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0 transition-transform duration-300 ${
+                          group.conversionStatus === 'success' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 
+                          group.conversionStatus === 'pending' ? 'bg-amber-50 text-amber-600 border border-amber-100' :
+                          'bg-rose-50 text-rose-600 border border-rose-100'
+                        }`}>
+                          {group.conversionStatus === 'success' && <CheckCircle size={24} />}
+                          {group.conversionStatus === 'pending' && <Clock size={24} />}
+                          {group.conversionStatus === 'alert' && <AlertTriangle size={24} />}
                         </div>
                         <div className="min-w-0 flex-1">
                           <h4 className="text-sm sm:text-base font-bold text-slate-900 leading-tight tracking-tight break-words sm:truncate">{group.shgName}</h4>
@@ -2020,29 +2033,41 @@ const SHGUploadSection = ({
                             <span className="text-[9px] sm:text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg uppercase tracking-wide border border-slate-200/50">{group.shgID}</span>
                             <div className="flex gap-1.5 items-center">
                               <div className="flex gap-1">
-                                {Object.keys(group.pages).map(p => {
+                                {[1, 2].map(p => {
                                   const item = group.pages[p];
-                                  const isSynced = !!(item?.isSynced || item?.is_synced || item?.status === 'synced' || item?.status === 'synced_to_db');
-                                  return (
-                                    <span key={p} className={`text-[8px] sm:text-[9px] font-black ${isSynced ? 'bg-emerald-50 text-emerald-600 border border-emerald-500/20' : 'bg-amber-50 text-amber-600 border border-amber-500/20'} px-1.5 py-0.5 rounded transition-all`}>P{p}</span>
-                                  );
+                                  if (item) {
+                                    const isSynced = !!(item?.isSynced || item?.is_synced || item?.status === 'synced' || item?.status === 'synced_to_db');
+                                    return (
+                                      <span key={p} className={`text-[8px] sm:text-[9px] font-black ${isSynced ? 'bg-emerald-50 text-emerald-600 border border-emerald-500/20' : 'bg-amber-50 text-amber-600 border border-amber-500/20'} px-1.5 py-0.5 rounded transition-all`}>P{p}</span>
+                                    );
+                                  } else {
+                                    return (
+                                      <span key={p} className="text-[8px] sm:text-[9px] font-bold bg-rose-50 text-rose-600 px-1.5 py-0.5 rounded border border-rose-100/50 uppercase tracking-tighter">
+                                        P{p} {t?.('upload.missing') || 'MISSING'}
+                                      </span>
+                                    );
+                                  }
                                 })}
-                                {!group.pages[1] && <span className="text-[8px] sm:text-[9px] font-bold bg-rose-50 text-rose-600 px-1.5 py-0.5 rounded border border-rose-100/50">P1 MISSING</span>}
-                                {!group.pages[2] && <span className="text-[8px] sm:text-[9px] font-bold bg-rose-50 text-rose-600 px-1.5 py-0.5 rounded border border-rose-100/50">P2 MISSING</span>}
                               </div>
-                              <span className={`text-[8px] sm:text-[9px] font-bold uppercase tracking-tight px-1.5 py-0.5 rounded flex items-center gap-1 ${group.pages[1] && group.pages[2] ? 'text-emerald-600 bg-emerald-50/50 border border-emerald-100' : 'text-amber-600 bg-amber-50/50 border border-amber-100'}`}>
-                                <div className={`w-1 h-1 rounded-full ${group.pages[1] && group.pages[2] ? 'bg-emerald-500' : 'bg-amber-500'}`}></div>
-                                {group.pages[1] && group.pages[2] ? (t?.('upload.bothPagesReady') || 'Both Ready') : (t?.('upload.incompleteSHG') || 'Incomplete')}
+                              <span className={`text-[8px] sm:text-[9px] font-bold uppercase tracking-tight px-1.5 py-0.5 rounded flex items-center gap-1 ${group.conversionStatus === 'success' ? 'text-emerald-600 bg-emerald-50/50 border border-emerald-100' : group.conversionStatus === 'pending' ? 'text-amber-600 bg-amber-50/50 border border-amber-100' : 'text-rose-600 bg-rose-50/50 border border-rose-100'}`}>
+                                <div className={`w-1 h-1 rounded-full ${group.conversionStatus === 'success' ? 'bg-emerald-500' : group.conversionStatus === 'pending' ? 'bg-amber-500' : 'bg-rose-500'}`}></div>
+                                {group.conversionStatus === 'success' ? (t?.('upload.bothPagesReady') || 'Both Ready') : group.conversionStatus === 'pending' ? (t?.('upload.incompleteSHG') || 'Incomplete') : (t?.('upload.unsaved') || 'Unsaved')}
                               </span>
                             </div>
                           </div>
                           <div className="mt-2.5 flex items-center gap-2">
-                            <div className={`px-2.5 py-1 rounded-lg text-[9px] sm:text-[10px] font-bold uppercase tracking-wider border flex items-center gap-1.5 ${group.isSynced
-                              ? 'bg-emerald-600 text-white border-emerald-500'
-                              : 'bg-rose-600 text-white border-rose-500'
-                              }`}>
-                              {group.isSynced ? <CheckCircle size={10} /> : <AlertTriangle size={10} />}
-                              {group.isSynced ? t?.('upload.saved') || 'Saved' : t?.('upload.unsaved') || 'Unsaved'}
+                            <div className={`px-2.5 py-1 rounded-lg text-[9px] sm:text-[10px] font-bold uppercase tracking-wider border flex items-center gap-1.5 ${
+                              group.conversionStatus === 'success' ? 'bg-emerald-600 text-white border-emerald-500' :
+                              group.conversionStatus === 'pending' ? 'bg-amber-600 text-white border-amber-500' :
+                              'bg-rose-600 text-white border-rose-500'
+                            }`}>
+                              {group.conversionStatus === 'success' && <CheckCircle size={10} />}
+                              {group.conversionStatus === 'pending' && <Clock size={10} />}
+                              {group.conversionStatus === 'alert' && <AlertTriangle size={10} />}
+                              
+                              {group.conversionStatus === 'success' ? (t?.('upload.saved') || 'Saved') : 
+                               group.conversionStatus === 'pending' ? (t?.('upload.pending') || 'Pending') : 
+                               (t?.('upload.unsaved') || 'Unsaved')}
                             </div>
                           </div>
                         </div>

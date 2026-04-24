@@ -70,7 +70,7 @@ const SHG_COLUMN_HEADERS = [
 ];
 
 const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
-  const [activePageTab, setActivePageTab] = useState(1);
+  const [activePageTab, setActivePageTab] = useState(shgGroup.pages[1] ? 1 : 2);
   const [loading, setLoading] = useState(true);
   const [page1Data, setPage1Data] = useState(null);
   const [page2Data, setPage2Data] = useState(null);
@@ -88,17 +88,27 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
         const p1UploadId = shgGroup.pages[1]?.uploadId;
         const p2UploadId = shgGroup.pages[2]?.uploadId;
 
-        const [res1, res2] = await Promise.all([
-          fetch(`${API_BASE}/api/conversion/detail/${p1UploadId}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-          }),
-          fetch(`${API_BASE}/api/conversion/detail/${p2UploadId}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-          })
-        ]);
+        // Fetch pages independently to handle single-page cases
+        let data1 = { success: false };
+        let data2 = { success: false };
 
-        const data1 = await res1.json();
-        const data2 = await res2.json();
+        if (p1UploadId) {
+          try {
+            const res1 = await fetch(`${API_BASE}/api/conversion/detail/${p1UploadId}`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            data1 = await res1.json();
+          } catch (e1) { console.error('P1 fetch error:', e1); }
+        }
+
+        if (p2UploadId) {
+          try {
+            const res2 = await fetch(`${API_BASE}/api/conversion/detail/${p2UploadId}`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            data2 = await res2.json();
+          } catch (e2) { console.error('P2 fetch error:', e2); }
+        }
 
         if (data1.success) {
           // Normalize MBK IDs in initial data (OCR might detect > 2 digits)
@@ -112,6 +122,7 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
           }
           setPage1Data(processedP1);
         }
+
         if (data2.success) {
           // Inject related_page1_totals into page2Data for the column view
           setPage2Data({
@@ -120,8 +131,8 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
           });
         }
 
-        if (!data1.success || !data2.success) {
-          setError(t?.('upload.errorLoading') || 'Failed to fetch some page data');
+        if (!data1.success && !data2.success) {
+          setError(t?.('upload.errorLoading') || 'Failed to fetch conversion data');
         }
       } catch (err) {
         console.error('Error fetching conversion edit data:', err);
@@ -350,10 +361,12 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
               <h2 className="text-sm sm:text-lg font-black text-white leading-tight truncate px-2">{shgGroup.shgName}</h2>
               <span className="text-[8px] sm:text-[10px] font-black tracking-wider sm:tracking-widest text-indigo-200 uppercase block mt-0.5">{shgIdForPage1}</span>
               <div className="flex flex-col items-center gap-1">
-                <div className="flex items-center justify-center gap-1.5 bg-emerald-500/20 py-1 px-3 rounded-full border border-emerald-500/30 w-fit mx-auto backdrop-blur-sm">
-                  <CheckCircle size={10} className="text-emerald-400" />
-                  <span className="text-[8px] font-black text-emerald-200 uppercase tracking-tighter">
-                    {t?.('conversion.bothPagesVerified') || 'Both Pages Verified & Ready'}
+                <div className={`flex items-center justify-center gap-1.5 py-1 px-3 rounded-full border w-fit mx-auto backdrop-blur-sm ${page1Data && page2Data ? 'bg-emerald-500/20 border-emerald-500/30' : 'bg-amber-500/20 border-amber-500/30'}`}>
+                  {page1Data && page2Data ? <CheckCircle size={10} className="text-emerald-400" /> : <AlertCircle size={10} className="text-amber-400" />}
+                  <span className={`text-[8px] font-black uppercase tracking-tighter ${page1Data && page2Data ? 'text-emerald-200' : 'text-amber-200'}`}>
+                    {page1Data && page2Data 
+                      ? (t?.('conversion.bothPagesVerified') || 'Both Pages Verified & Ready')
+                      : (t?.('conversion.partialDataReady') || 'Partial Data Verified & Ready')}
                   </span>
                 </div>
                 <div className="flex flex-col gap-1">
@@ -407,27 +420,35 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
             </button>
           </div>
 
-          {/* Compact Page Tabs */}
-          <div className="flex bg-black/10 p-1.5 rounded-2xl gap-2 border border-white/10">
-            <button
-              onClick={() => setActivePageTab(1)}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-black uppercase tracking-widest text-[9px] sm:text-[10px] transition-all ${activePageTab === 1
-                ? 'bg-white text-indigo-600 shadow-md scale-[1.02]'
-                : 'text-white/60 hover:text-white hover:bg-white/5'
-                }`}
-            >
-              <Layout size={14} /> {t?.('conversion.page1Tab') || 'Page 1 (Members)'}
-            </button>
-            <button
-              onClick={() => setActivePageTab(2)}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-black uppercase tracking-widest text-[9px] sm:text-[10px] transition-all ${activePageTab === 2
-                ? 'bg-white text-emerald-600 shadow-md scale-[1.02]'
-                : 'text-white/60 hover:text-white hover:bg-white/5'
-                }`}
-            >
-              <Smartphone size={14} /> {t?.('conversion.page2Tab') || 'Page 2 (Financials)'}
-            </button>
-          </div>
+          {/* Compact Page Tabs - Only show if both pages exist, otherwise show status */}
+          {shgGroup.pages[1] && shgGroup.pages[2] ? (
+            <div className="flex bg-black/10 p-1.5 rounded-2xl gap-2 border border-white/10">
+              <button
+                onClick={() => setActivePageTab(1)}
+                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-black uppercase tracking-widest text-[9px] sm:text-[10px] transition-all ${activePageTab === 1
+                  ? 'bg-white text-indigo-600 shadow-md scale-[1.02]'
+                  : 'text-white/60 hover:text-white hover:bg-white/5'
+                  }`}
+              >
+                <Layout size={14} /> {t?.('conversion.page1Tab') || 'Page 1 (Members)'}
+              </button>
+              <button
+                onClick={() => setActivePageTab(2)}
+                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-black uppercase tracking-widest text-[9px] sm:text-[10px] transition-all ${activePageTab === 2
+                  ? 'bg-white text-emerald-600 shadow-md scale-[1.02]'
+                  : 'text-white/60 hover:text-white hover:bg-white/5'
+                  }`}
+              >
+                <Smartphone size={14} /> {t?.('conversion.page2Tab') || 'Page 2 (Financials)'}
+              </button>
+            </div>
+          ) : (
+            <div className="bg-black/10 p-3 rounded-2xl border border-white/10 text-center">
+               <p className="text-white/60 text-[10px] font-black uppercase tracking-widest">
+                 {shgGroup.pages[1] ? (t?.('conversion.viewingPage1') || 'Viewing Page 1 (Members)') : (t?.('conversion.viewingPage2') || 'Viewing Page 2 (Financials)')}
+               </p>
+            </div>
+          )}
         </div>
 
         {/* Content Area */}

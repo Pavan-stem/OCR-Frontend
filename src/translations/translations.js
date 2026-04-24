@@ -188,6 +188,7 @@ export const translations = {
             unsaved: "Unsaved",
             bothPagesReady: "Both Pages Ready for Upload",
             incompleteSHG: "Incomplete (P1 or P2 missing)",
+            missing: "Missing",
         },
 
         // Conversion Edit View
@@ -212,6 +213,9 @@ export const translations = {
             loading: 'Loading SHG details...',
             mirrored: 'Mirrored',
             bothPagesVerified: 'Both Pages Verified & Ready',
+            partialDataReady: "Partial Data Verified & Ready",
+            viewingPage1: "Viewing Page 1 (Members)",
+            viewingPage2: "Viewing Page 2 (Financials)",
             financialHeader: "Financial Data Correction",
             financialSubheader: "Edit all financial entries below",
             duplicateMBKIdError: 'Duplicate MBK IDs detected! Please ensure all Member MBK IDs are unique before saving.',
@@ -509,6 +513,7 @@ export const translations = {
             unsaved: "సేవ్ చేయబడలేదు",
             bothPagesReady: "రెండు పేజీలు అప్‌లోడ్ చేయడానికి సిద్ధంగా ఉన్నాయి",
             incompleteSHG: "అసంపూర్తిగా ఉంది (P1 లేదా P2 లేదు)",
+            missing: "లేదు",
         },
 
         // Conversion Edit View - Telugu
@@ -533,6 +538,9 @@ export const translations = {
             loading: 'SHG వివరాలు లోడ్ అవుతున్నాయి...',
             mirrored: 'మిర్రర్డ్',
             bothPagesVerified: 'రెండు పేజీలు ధృవీకరించబడ్డాయి & సిద్ధంగా ఉన్నాయి',
+            partialDataReady: "పాక్షిక డేటా ధృవీకరించబడింది & సిద్ధంగా ఉంది",
+            viewingPage1: "పేజీ 1 (సభ్యులు) వీక్షిస్తున్నారు",
+            viewingPage2: "పేజీ 2 (ఆర్థిక వివరాలు) వీక్షిస్తున్నారు",
             duplicateMBKIdError: 'డూప్లికేట్ MBK ID-లు కనుగొనబడ్డాయి! దయచేసి సేవ్ చేయడానికి ముందు సభ్యులందరికీ వేర్వేరు MBK ID-లు ఉన్నాయని నిర్ధారించుకోండి.',
         },
 
