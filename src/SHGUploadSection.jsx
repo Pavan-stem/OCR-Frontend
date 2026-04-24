@@ -271,7 +271,9 @@ const SHGUploadSection = ({
   // Group conversions by SHG ID for the edit list
   const getGroupedConversions = () => {
     const groups = {};
-    const items = [...(conversions.success || []), ...(conversions.failed || [])];
+    // Only show successfully converted SHGs (exclude failed OCR attempts)
+    const items = conversions.success || [];
+    
     items.forEach(item => {
       const shgId = padSHGId(item.shgID || item.shgId);
       if (!shgId) return;
@@ -280,30 +282,34 @@ const SHGUploadSection = ({
           shgID: shgId,
           shgName: item.shgName,
           pages: {},
-          isSynced: true,
-          hasFailed: false
+          isSynced: true // Default to true (no alert)
         };
       }
 
-      // Robust Page Detection: Check multiple possible locations for the page number
+      // Robust Page Detection
       const pageNum = item.page || item.page_num || item.table_data?.page || 1;
       groups[shgId].pages[pageNum] = item;
-
-      // Robust Sync Detection: Check for multiple field names and status values
-      const syncedField = item.isSynced ?? item.is_synced ?? item.synced;
-      const isActuallySynced = syncedField === true || item.status === 'synced' || item.status === 'synced_to_db';
-
-      // Mark as unsaved if ANY page in the group (completed or success) is not explicitly synced
-      if ((item.status === 'completed' || item.status === 'success' || !item.status) && !isActuallySynced) {
-        groups[shgId].isSynced = false;
-      }
-
-      if (item.status === 'failed') {
-        groups[shgId].hasFailed = true;
-      }
     });
 
-    // Filter: Show SHGs that have at least one page converted/present
+    // Determine alert status: Only SHGs with BOTH pages and at least one unsaved page get an alert
+    Object.values(groups).forEach(group => {
+      if (group.pages[1] && group.pages[2]) {
+        const p1 = group.pages[1];
+        const p2 = group.pages[2];
+        
+        // Robust Sync Detection
+        const isP1Synced = (p1.isSynced ?? p1.is_synced ?? p1.synced) === true || 
+                           p1.status === 'synced' || p1.status === 'synced_to_db';
+        const isP2Synced = (p2.isSynced ?? p2.is_synced ?? p2.synced) === true || 
+                           p2.status === 'synced' || p2.status === 'synced_to_db';
+                           
+        if (!isP1Synced || !isP2Synced) {
+          group.isSynced = false; // Trigger "Unsaved" alert and count in badge
+        }
+      }
+      // If incomplete (only 1 page), group.isSynced remains true -> "just show SHG but no alert"
+    });
+
     return Object.values(groups).filter(group => group.pages[1] || group.pages[2]);
   };
 
