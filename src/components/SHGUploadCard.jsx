@@ -512,7 +512,8 @@ const SHGUploadCard = ({
             )}
 
             {/* DUAL PAGE SLOTS */}
-            <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex flex-col lg:flex-row gap-4">
+
               <div className="flex-1">
                 {renderDocumentSlot('page1', t?.('upload.page1Full') || 'Page 1 · Members Register')}
               </div>
@@ -521,13 +522,13 @@ const SHGUploadCard = ({
               </div>
             </div>
 
-            {/* SUBMISSION BUTTON */}
-            {(hasFiles || isReadyToSubmit || canSubmitPartial) && (
+            {/* SUBMISSION BUTTON - Hidden if already permanently uploaded */}
+            {(hasFiles || isReadyToSubmit || canSubmitPartial) && !isPermanentlyUploaded && (
               <div className="pt-4 border-t border-gray-100 mt-4">
                 <button
                   onClick={() => onUploadSingleShg(shg.shgId)}
-                  disabled={!canSubmit || isUploading || isPermanentlyUploaded}
-                  className={`w-full py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-3 transition-all shadow-md group ${canSubmit && !isUploading && !isPermanentlyUploaded
+                  disabled={!canSubmit || isUploading}
+                  className={`w-full py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-3 transition-all shadow-md group ${canSubmit && !isUploading
                     ? 'bg-blue-600 hover:bg-blue-700 text-white transform active:scale-95'
                     : 'bg-gray-200 text-gray-500 cursor-not-allowed'
                     }`}
@@ -553,6 +554,7 @@ const SHGUploadCard = ({
                 )}
               </div>
             )}
+
           </div>
         )}
       </div>
