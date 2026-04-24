@@ -1894,7 +1894,6 @@ const RowStats = ({ stats }) => (
         <div className="flex gap-1.5 font-black text-[10px]">
           <span className="text-purple-600 bg-purple-50 px-2 py-0.5 rounded-lg">{stats?.conversion?.converted || 0}</span>
           <span className="text-rose-500 bg-red-50 px-2 py-0.5 rounded-lg">{stats?.conversion?.failed || 0}</span>
-          <span className="text-orange-500 bg-orange-50 px-2 py-0.5 rounded-lg">{(stats?.conversion?.pending || 0) + (stats?.conversion?.processing || 0)}</span>
         </div>
       </div>
     </td>
@@ -2046,7 +2045,7 @@ const DetailedTable = ({ data, loading, handleDetailedDownload, filters, refresh
             <tr className="bg-indigo-900 text-white">
               <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-left">User (Hierarchy)</th>
               <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-center">Uploads (U/P/T)</th>
-              <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-center">Conversion (S/F/Q)</th>
+              <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-center">Conversion (S/F)</th>
               <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-center">Action</th>
             </tr>
           </thead>
