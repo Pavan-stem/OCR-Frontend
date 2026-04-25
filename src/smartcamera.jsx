@@ -646,7 +646,10 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
         canvas.height = (bestFrameRef.current) ? bestFrameRef.current.height : video.videoHeight;
 
         const ctx = canvas.getContext("2d");
+        // Pre-denoising: Subtly blur the frame to soften sensor grain/dots before CV processing
+        ctx.filter = 'blur(0.6px) contrast(1.1) brightness(1.02)';
         ctx.drawImage(sourceFrame, 0, 0);
+        ctx.filter = 'none'; // Reset for future operations
 
         try {
             let resultCanvas = canvas;
@@ -1100,6 +1103,10 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
                             autoPlay
                             muted
                             className="absolute inset-0 w-full h-full object-cover"
+                            style={{ 
+                                filter: "contrast(1.15) brightness(1.08) saturate(1.1)",
+                                background: "#000"
+                            }}
                         />
                         {shutterFlash && (
                             <div className="absolute inset-0 bg-white z-[60] animate-pulse" />

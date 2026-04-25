@@ -177,14 +177,36 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
       const uploadId = shgGroup.pages[activePageTab].uploadId;
       const pageData = activePageTab === 1 ? page1Data : page2Data;
 
+      // DEEP CLONE and SANITIZE numeric values (remove commas) before sending to backend
+      const sanitizedTableData = JSON.parse(JSON.stringify(pageData.table_data));
+      if (sanitizedTableData.data_rows) {
+        sanitizedTableData.data_rows.forEach(row => {
+          if (row.cells) {
+            row.cells.forEach(cell => {
+              if (cell.text && typeof cell.text === 'string' && cell.text.includes(',')) {
+                const cleaned = cell.text.replace(/,/g, '');
+                if (!isNaN(cleaned.replace(/-/g, '')) || cleaned === '' || cleaned === '-') {
+                  cell.text = cleaned;
+                }
+              }
+            });
+          }
+        });
+      }
+
       // Ensure Page 1 "అప్పు రకం" (Loan Type - index 11) total is NOT saved
-      if (activePageTab === 1 && pageData.table_data?.totals_row?.cells) {
-        pageData.table_data.totals_row.cells.forEach(cell => {
+      if (activePageTab === 1 && sanitizedTableData.totals_row?.cells) {
+        sanitizedTableData.totals_row.cells.forEach(cell => {
           if (cell.col_index === 9) { // col_index 9 maps to frontend index 11
             cell.text = '';
           }
         });
       }
+
+      console.log(`--- SAVING PAGE ${activePageTab} ---`);
+      console.log('Upload ID:', uploadId);
+      console.log('SHG ID to Save:', pageData.shgID);
+      console.log('Table Data Payload:', sanitizedTableData);
 
       // STEP 1: Save corrections
       const res = await fetch(`${API_BASE}/api/conversion/detail/${uploadId}`, {
@@ -194,7 +216,7 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          table_data: pageData.table_data,
+          table_data: sanitizedTableData,
           shgID: pageData.shgID
         })
       });

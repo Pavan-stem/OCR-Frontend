@@ -949,7 +949,11 @@ export async function validateGalleryImage(file) {
     const canvas = document.createElement("canvas");
     canvas.width = Math.round(img.width * scale);
     canvas.height = Math.round(img.height * scale);
-    canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+    const ctx = canvas.getContext("2d");
+    // Pre-denoising: Subtly blur the frame to soften sensor grain/dots before CV processing
+    ctx.filter = 'blur(0.6px) contrast(1.1) brightness(1.02)';
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    ctx.filter = 'none'; // Reset
 
     let src = cv.imread(canvas);
 

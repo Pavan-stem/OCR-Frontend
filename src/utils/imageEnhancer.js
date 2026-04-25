@@ -110,327 +110,328 @@ const BLEND_ALPHA = 0.7;   // increased for clearer ink
 const INK_DARKEN = 0.7;     // lowered for bolder ink
 
 export const enhanceImage = async (
-    canvas,
-    onProgress = () => { },
-    source = 'camera'
+  canvas,
+  onProgress = () => { },
+  source = 'camera'
 ) => {
-    if (!cvReady()) {
-        console.warn('[Enhance] OpenCV not ready — returning original.');
-        return canvas;
+  if (!cvReady()) {
+    console.warn('[Enhance] OpenCV not ready — returning original.');
+    return canvas;
+  }
+
+  const tick = () => new Promise(r => setTimeout(r, 0));
+  const safe = m => { try { if (m && !m.isDeleted()) m.delete(); } catch { } };
+
+  let src = null;
+  let gray = null;
+  let small = null;
+  let dilated = null;
+  let bg = null;
+  let divided = null;
+  let result = null;
+  let blurred = null;
+  let mask = null;
+  let opened = null;
+  let labels = null;
+  let stats = null;
+  let centroids = null;
+  let blurForSharp = null; // NEW — used in Step 10
+
+  try {
+    onProgress('Reading image…');
+    await tick();
+    src = cv.imread(canvas);
+
+    /* ── STEP 1 : GRAYSCALE ─────────────────────────────── */
+    onProgress('Converting to grayscale…');
+    await tick();
+    gray = new cv.Mat();
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+
+    const H = gray.rows;
+    const W = gray.cols;
+    const minDim = Math.min(H, W);
+
+    /* ── DYNAMIC PARAMETERS ───────────────────────────────
+     * Scale kernels and thresholds based on resolution.
+     */
+    const dynAdaptiveSize = Math.max(3, Math.floor(minDim / 100) * 2 + 1);
+    // Conservative blob filtering: removes sensor noise "dots" while keeping text
+    const dynMinBlobArea = Math.max(5, Math.round((W * H) / 250000));
+    const dynSharpenAmount = 1.6; // High crispness without artifacts
+    const dynSharpenBlur = Math.max(3, Math.floor(minDim / 400) * 2 + 1);
+    const SHARPEN_THRESHOLD = 4; // Ignore subtle grain/texture
+
+    /* ── STEP 2 : BACKGROUND MODEL ──────────────────────────
+     * Downscale → dilate → upscale.
+     * Produces smooth illumination map with no ink detail.
+     */
+    onProgress('Building background model…');
+    await tick();
+
+    const scale = Math.min(1.0, 300 / minDim);
+    const sW = Math.max(1, Math.round(W * scale));
+    const sH = Math.max(1, Math.round(H * scale));
+
+    small = new cv.Mat();
+    cv.resize(gray, small, new cv.Size(sW, sH), 0, 0, cv.INTER_AREA);
+
+    // Scaled dilation kernel: larger for higher resolution/shadows
+    const dilateSize = Math.max(21, Math.round(30 * scale * (minDim / 1000)));
+    const kSize = Math.max(5, Math.min(41, dilateSize % 2 === 0 ? dilateSize + 1 : dilateSize));
+
+    const k = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(kSize, kSize));
+    dilated = new cv.Mat();
+    cv.dilate(small, dilated, k);
+    k.delete();
+
+    bg = new cv.Mat();
+    cv.resize(dilated, bg, new cv.Size(W, H), 0, 0, cv.INTER_LINEAR);
+
+    /* ── STEP 3 : DIVIDE ────────────────────────────────────
+     * output = (gray / background) × 255
+     * Flattens illumination. Paper → near-white. Ink → relatively darker.
+     */
+    onProgress('Whitening paper…');
+    await tick();
+    divided = new cv.Mat();
+    cv.divide(gray, bg, divided, 255, -1);
+
+    /* ── STEP 4 : WHITE POINT STRETCHING ──────────────────
+     * Aggressively punch through "oily stains" and shadows.
+     * Maps [0, WHITE_POINT] to [0, 255], effectively clipping
+     * everything above WHITE_POINT to pure white.
+     */
+    onProgress('Stretching highlights…');
+    await tick();
+    result = new cv.Mat();
+    const WHITE_POINT = 230; // Anything above 230 becomes pure white
+
+    // Manual stretch: output = input * (255 / WHITE_POINT)
+    divided.convertTo(result, cv.CV_8U, 255 / WHITE_POINT, 0);
+
+    /* Pre-clean divided image for Step 9 blend */
+    cv.normalize(divided, divided, 0, 255, cv.NORM_MINMAX, cv.CV_8U);
+    const divData = divided.data;
+    for (let i = 0; i < divData.length; i++) {
+      if (divData[i] > 210) {
+        // Smoothly push near-white background to pure white
+        divData[i] = Math.min(255, divData[i] + (255 - divData[i]) * 0.8);
+      }
     }
 
-    const tick = () => new Promise(r => setTimeout(r, 0));
-    const safe = m => { try { if (m && !m.isDeleted()) m.delete(); } catch { } };
+    /* ── STEP 5 : NOISE REMOVAL ──────────────────────────────────
+     * Median blur on original gray before adaptive threshold.
+     * Specifically targets "salt and pepper" noise (dots) while
+     * preserving sharp text edges much better than Gaussian blur.
+     */
+    onProgress('Removing sensor noise…');
+    await tick();
+    blurred = new cv.Mat();
+    cv.medianBlur(gray, blurred, 3);
 
-    let src = null;
-    let gray = null;
-    let small = null;
-    let dilated = null;
-    let bg = null;
-    let divided = null;
-    let result = null;
-    let blurred = null;
-    let mask = null;
-    let opened = null;
-    let labels = null;
-    let stats = null;
-    let centroids = null;
-    let blurForSharp = null; // NEW — used in Step 10
+    /* ── STEP 6 : ADAPTIVE THRESHOLD → RAW INK MASK ─────────
+     * Detects ink pixels locally. Output: 255 = ink, 0 = paper.
+     * The mask now guides WHERE blending happens, not WHAT value is written.
+     */
+    onProgress('Detecting ink and lines…');
+    await tick();
+    mask = new cv.Mat();
+    cv.adaptiveThreshold(
+      blurred,
+      mask,
+      255,
+      cv.ADAPTIVE_THRESH_GAUSSIAN_C,
+      cv.THRESH_BINARY_INV,
+      dynAdaptiveSize,
+      ADAPTIVE_C
+    );
 
-    try {
-        onProgress('Reading image…');
-        await tick();
-        src = cv.imread(canvas);
+    /* ── STEP 7 : MORPHOLOGICAL OPENING ─────────────────────
+     * OPEN_KSIZE=1 → 1×1 kernel → no-op. Zero stroke erosion.
+     */
+    onProgress('Cleaning mask…');
+    await tick();
+    const openKernel = cv.getStructuringElement(
+      cv.MORPH_RECT,
+      new cv.Size(OPEN_KSIZE, OPEN_KSIZE)
+    );
+    opened = new cv.Mat();
+    cv.morphologyEx(mask, opened, cv.MORPH_OPEN, openKernel);
+    openKernel.delete();
 
-        /* ── STEP 1 : GRAYSCALE ─────────────────────────────── */
-        onProgress('Converting to grayscale…');
-        await tick();
-        gray = new cv.Mat();
-        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+    /* ── STEP 8 : CONNECTED COMPONENT FILTERING ─────────────
+     * Delete blobs with area < MIN_BLOB_AREA=4.
+     * Removes only genuine 1–2px specks. All real ink marks survive.
+     */
+    onProgress('Filtering noise blobs…');
+    await tick();
 
-        const H = gray.rows;
-        const W = gray.cols;
-        const minDim = Math.min(H, W);
+    labels = new cv.Mat();
+    stats = new cv.Mat();
+    centroids = new cv.Mat();
 
-        /* ── DYNAMIC PARAMETERS ───────────────────────────────
-         * Scale kernels and thresholds based on resolution.
-         */
-        const dynAdaptiveSize = Math.max(3, Math.floor(minDim / 80) * 2 + 1);
-        // More aggressive blob filtering (divisor 200k vs 300k)
-        const dynMinBlobArea = Math.max(5, Math.round((W * H) / 200000));
-        const dynSharpenAmount = 1.2;
-        const dynSharpenBlur = Math.max(3, Math.floor(minDim / 400) * 2 + 1);
-        const SHARPEN_THRESHOLD = 4; // Ignore subtle grain/texture
+    const numLabels = cv.connectedComponentsWithStats(
+      opened, labels, stats, centroids, 8, cv.CV_32S
+    );
 
-        /* ── STEP 2 : BACKGROUND MODEL ──────────────────────────
-         * Downscale → dilate → upscale.
-         * Produces smooth illumination map with no ink detail.
-         */
-        onProgress('Building background model…');
-        await tick();
-
-        const scale = Math.min(1.0, 300 / minDim);
-        const sW = Math.max(1, Math.round(W * scale));
-        const sH = Math.max(1, Math.round(H * scale));
-
-        small = new cv.Mat();
-        cv.resize(gray, small, new cv.Size(sW, sH), 0, 0, cv.INTER_AREA);
-
-        // Scaled dilation kernel: larger for higher resolution/shadows
-        const dilateSize = Math.max(21, Math.round(30 * scale * (minDim / 1000)));
-        const kSize = Math.max(5, Math.min(41, dilateSize % 2 === 0 ? dilateSize + 1 : dilateSize));
-
-        const k = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(kSize, kSize));
-        dilated = new cv.Mat();
-        cv.dilate(small, dilated, k);
-        k.delete();
-
-        bg = new cv.Mat();
-        cv.resize(dilated, bg, new cv.Size(W, H), 0, 0, cv.INTER_LINEAR);
-
-        /* ── STEP 3 : DIVIDE ────────────────────────────────────
-         * output = (gray / background) × 255
-         * Flattens illumination. Paper → near-white. Ink → relatively darker.
-         */
-        onProgress('Whitening paper…');
-        await tick();
-        divided = new cv.Mat();
-        cv.divide(gray, bg, divided, 255, -1);
-
-        /* ── STEP 4 : WHITE POINT STRETCHING ──────────────────
-         * Aggressively punch through "oily stains" and shadows.
-         * Maps [0, WHITE_POINT] to [0, 255], effectively clipping
-         * everything above WHITE_POINT to pure white.
-         */
-        onProgress('Stretching highlights…');
-        await tick();
-        result = new cv.Mat();
-        const WHITE_POINT = 230; // Anything above 230 becomes pure white
-        
-        // Manual stretch: output = input * (255 / WHITE_POINT)
-        divided.convertTo(result, cv.CV_8U, 255 / WHITE_POINT, 0);
-
-        /* Pre-clean divided image for Step 9 blend */
-        cv.normalize(divided, divided, 0, 255, cv.NORM_MINMAX, cv.CV_8U);
-        const divData = divided.data;
-        for (let i = 0; i < divData.length; i++) {
-            if (divData[i] > 210) {
-                // Smoothly push near-white background to pure white
-                divData[i] = Math.min(255, divData[i] + (255 - divData[i]) * 0.8);
-            }
-        }
-
-        /* ── STEP 5 : PRE-BLUR ───────────────────────────────────
-         * Gaussian blur on original gray before adaptive threshold.
-         * Kills JPEG grain / camera noise before threshold sees it.
-         */
-        onProgress('Smoothing for noise removal…');
-        await tick();
-        blurred = new cv.Mat();
-        cv.GaussianBlur(gray, blurred, new cv.Size(BLUR_KSIZE, BLUR_KSIZE), 0);
-
-        /* ── STEP 6 : ADAPTIVE THRESHOLD → RAW INK MASK ─────────
-         * Detects ink pixels locally. Output: 255 = ink, 0 = paper.
-         * The mask now guides WHERE blending happens, not WHAT value is written.
-         */
-        onProgress('Detecting ink and lines…');
-        await tick();
-        mask = new cv.Mat();
-        cv.adaptiveThreshold(
-            blurred,
-            mask,
-            255,
-            cv.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv.THRESH_BINARY_INV,
-            dynAdaptiveSize,
-            ADAPTIVE_C
-        );
-
-        /* ── STEP 7 : MORPHOLOGICAL OPENING ─────────────────────
-         * OPEN_KSIZE=1 → 1×1 kernel → no-op. Zero stroke erosion.
-         */
-        onProgress('Cleaning mask…');
-        await tick();
-        const openKernel = cv.getStructuringElement(
-            cv.MORPH_RECT,
-            new cv.Size(OPEN_KSIZE, OPEN_KSIZE)
-        );
-        opened = new cv.Mat();
-        cv.morphologyEx(mask, opened, cv.MORPH_OPEN, openKernel);
-        openKernel.delete();
-
-        /* ── STEP 8 : CONNECTED COMPONENT FILTERING ─────────────
-         * Delete blobs with area < MIN_BLOB_AREA=4.
-         * Removes only genuine 1–2px specks. All real ink marks survive.
-         */
-        onProgress('Filtering noise blobs…');
-        await tick();
-
-        labels = new cv.Mat();
-        stats = new cv.Mat();
-        centroids = new cv.Mat();
-
-        const numLabels = cv.connectedComponentsWithStats(
-            opened, labels, stats, centroids, 8, cv.CV_32S
-        );
-
-        const keepLabel = new Uint8Array(numLabels);
-        keepLabel[0] = 0;
-        for (let lbl = 1; lbl < numLabels; lbl++) {
-            const area = stats.intAt(lbl, cv.CC_STAT_AREA);
-            keepLabel[lbl] = area >= dynMinBlobArea ? 1 : 0;
-        }
-
-        const labelData = labels.data32S;
-        const openedData = opened.data;
-        const totalPx = labelData.length;
-        for (let i = 0; i < totalPx; i++) {
-            if (!keepLabel[labelData[i]]) {
-                openedData[i] = 0;
-            }
-        }
-
-        /* ── STEP 9 : SOFT BLEND ────────────────────────────────
-         *
-         * OLD (v13): result[i] = BURN_STRENGTH  (flat 60 for all ink)
-         *   Problem: faint ink and bold ink both got the same flat value.
-         *            ink pixels missed by the mask were left as pure white.
-         *
-         * NEW: blend divided image tones into the white canvas.
-         *
-         * For ink-detected pixels (mask = 255):
-         *   tone     = divided[i] × INK_DARKEN          ← real pixel value, darkened
-         *   result[i] = tone × BLEND_ALPHA + result[i] × (1 − BLEND_ALPHA)
-         *
-         *   Effect: the actual luminance of each ink pixel is preserved.
-         *   A faint digit at divided=180 stays lighter than bold text at divided=60.
-         *   Nothing is erased — pixels are only shifted darker, never to white.
-         *
-         * For paper pixels (mask = 0):
-         *   result[i] unchanged (stays white canvas value ≈ 255)
-         *
-         * WHY this prevents erasure:
-         *   Even if the mask MISSES a faint ink pixel (classifies it as paper),
-         *   the pixel still holds its value from the white canvas (Step 4) which
-         *   already contains the divided image — it just won't get the extra
-         *   INK_DARKEN boost. It remains visible as a slightly lighter stroke
-         *   rather than disappearing entirely.
-         *
-         * TUNING:
-         *   Lighter result → lower BLEND_ALPHA or raise INK_DARKEN toward 1.0
-         *   Darker result  → raise BLEND_ALPHA or lower INK_DARKEN toward 0.5
-         */
-        onProgress('Blending ink tones…');
-        await tick();
-
-        const resultData = result.data;
-        const dividedData = divided.data;
-        const finalMask = opened.data;
-        const len = resultData.length;
-
-        for (let i = 0; i < len; i++) {
-            if (finalMask[i] === 255) {
-                // Ink pixel: blend darkened divided tone onto canvas
-                const tone = dividedData[i] * INK_DARKEN;
-                resultData[i] = Math.round(
-                    tone * BLEND_ALPHA + resultData[i] * (1 - BLEND_ALPHA)
-                );
-            }
-            // Paper pixel: leave result[i] as-is (white canvas)
-        }
-
-        /* ── STEP 10 : UNSHARP MASK ─────────────────────────────
-         *
-         * WHY: The Gaussian pre-blur (Step 5) and soft blend (Step 9) can
-         *   leave strokes slightly soft, especially visible when zooming in.
-         *   Unsharp masking restores edge crispness without re-introducing noise.
-         *
-         * HOW: Unsharp mask formula:
-         *   blurredResult  = GaussianBlur(result, SHARPEN_BLUR_KSIZE)
-         *   sharpened[i]   = result[i] + SHARPEN_AMOUNT × (result[i] − blurredResult[i])
-         *   final[i]       = clamp(sharpened[i], 0, 255)
-         *
-         *   (result − blurredResult) is the "edge detail" signal.
-         *   Multiplying by SHARPEN_AMOUNT and adding it back emphasises those edges.
-         *
-         * PAPER SAFETY: Paper pixels are near-white (≈255). Their blurred
-         *   neighbours are also ≈255. The edge signal is ≈0, so paper stays white.
-         *   Sharpening only visibly affects pixels near ink/paper transitions.
-         *
-         * TUNING:
-         *   More crispness at zoom  → raise SHARPEN_AMOUNT (e.g. 1.5 – 2.0)
-         *   Halo / ringing artefact → lower SHARPEN_AMOUNT or raise SHARPEN_BLUR_KSIZE
-         *   Very fine/thin strokes  → keep SHARPEN_BLUR_KSIZE at 3 (tighter kernel)
-         */
-        if (dynSharpenAmount > 0) {
-            onProgress('Sharpening edges…');
-            await tick();
-
-            blurForSharp = new cv.Mat();
-            cv.GaussianBlur(
-                result,
-                blurForSharp,
-                new cv.Size(dynSharpenBlur, dynSharpenBlur),
-                0
-            );
-
-            const blurData = blurForSharp.data;
-            for (let i = 0; i < len; i++) {
-                // edge detail = original − blurred
-                const detail = resultData[i] - blurData[i];
-                
-                // Noise deadzone: only sharpen if detail exceeds threshold
-                if (Math.abs(detail) > SHARPEN_THRESHOLD) {
-                    // add scaled detail back
-                    const sharpened = resultData[i] + dynSharpenAmount * detail;
-                    // clamp to valid byte range
-                    resultData[i] = Math.min(255, Math.max(0, Math.round(sharpened)));
-                }
-            }
-        }
-
-        const out = document.createElement('canvas');
-        cv.imshow(out, result);
-
-        console.log(
-            `[Enhance] v14-robust ✓ Dynamic scaling + aggressive whitening | ` +
-            `adaptiveSize=${dynAdaptiveSize} minBlob=${dynMinBlobArea} ` +
-            `alpha=${BLEND_ALPHA} darken=${INK_DARKEN} ` +
-            `sharpen=${dynSharpenAmount} sharpBlur=${dynSharpenBlur} | src:${source}`
-        );
-        return out;
-
-    } catch (err) {
-        console.error('[Enhance] Pipeline crashed:', err);
-        return canvas;
-    } finally {
-        [src, gray, small, dilated, bg, divided, result,
-            blurred, mask, opened, labels, stats, centroids,
-            blurForSharp   // NEW — must be freed
-        ].forEach(safe);
+    const keepLabel = new Uint8Array(numLabels);
+    keepLabel[0] = 0;
+    for (let lbl = 1; lbl < numLabels; lbl++) {
+      const area = stats.intAt(lbl, cv.CC_STAT_AREA);
+      keepLabel[lbl] = area >= dynMinBlobArea ? 1 : 0;
     }
+
+    const labelData = labels.data32S;
+    const openedData = opened.data;
+    const totalPx = labelData.length;
+    for (let i = 0; i < totalPx; i++) {
+      if (!keepLabel[labelData[i]]) {
+        openedData[i] = 0;
+      }
+    }
+
+    /* ── STEP 9 : SOFT BLEND ────────────────────────────────
+     *
+     * OLD (v13): result[i] = BURN_STRENGTH  (flat 60 for all ink)
+     *   Problem: faint ink and bold ink both got the same flat value.
+     *            ink pixels missed by the mask were left as pure white.
+     *
+     * NEW: blend divided image tones into the white canvas.
+     *
+     * For ink-detected pixels (mask = 255):
+     *   tone     = divided[i] × INK_DARKEN          ← real pixel value, darkened
+     *   result[i] = tone × BLEND_ALPHA + result[i] × (1 − BLEND_ALPHA)
+     *
+     *   Effect: the actual luminance of each ink pixel is preserved.
+     *   A faint digit at divided=180 stays lighter than bold text at divided=60.
+     *   Nothing is erased — pixels are only shifted darker, never to white.
+     *
+     * For paper pixels (mask = 0):
+     *   result[i] unchanged (stays white canvas value ≈ 255)
+     *
+     * WHY this prevents erasure:
+     *   Even if the mask MISSES a faint ink pixel (classifies it as paper),
+     *   the pixel still holds its value from the white canvas (Step 4) which
+     *   already contains the divided image — it just won't get the extra
+     *   INK_DARKEN boost. It remains visible as a slightly lighter stroke
+     *   rather than disappearing entirely.
+     *
+     * TUNING:
+     *   Lighter result → lower BLEND_ALPHA or raise INK_DARKEN toward 1.0
+     *   Darker result  → raise BLEND_ALPHA or lower INK_DARKEN toward 0.5
+     */
+    onProgress('Blending ink tones…');
+    await tick();
+
+    const resultData = result.data;
+    const dividedData = divided.data;
+    const finalMask = opened.data;
+    const len = resultData.length;
+
+    for (let i = 0; i < len; i++) {
+      if (finalMask[i] === 255) {
+        // Ink pixel: blend darkened divided tone onto canvas
+        const tone = dividedData[i] * INK_DARKEN;
+        resultData[i] = Math.round(
+          tone * BLEND_ALPHA + resultData[i] * (1 - BLEND_ALPHA)
+        );
+      }
+      // Paper pixel: leave result[i] as-is (white canvas)
+    }
+
+    /* ── STEP 10 : UNSHARP MASK ─────────────────────────────
+     *
+     * WHY: The Gaussian pre-blur (Step 5) and soft blend (Step 9) can
+     *   leave strokes slightly soft, especially visible when zooming in.
+     *   Unsharp masking restores edge crispness without re-introducing noise.
+     *
+     * HOW: Unsharp mask formula:
+     *   blurredResult  = GaussianBlur(result, SHARPEN_BLUR_KSIZE)
+     *   sharpened[i]   = result[i] + SHARPEN_AMOUNT × (result[i] − blurredResult[i])
+     *   final[i]       = clamp(sharpened[i], 0, 255)
+     *
+     *   (result − blurredResult) is the "edge detail" signal.
+     *   Multiplying by SHARPEN_AMOUNT and adding it back emphasises those edges.
+     *
+     * PAPER SAFETY: Paper pixels are near-white (≈255). Their blurred
+     *   neighbours are also ≈255. The edge signal is ≈0, so paper stays white.
+     *   Sharpening only visibly affects pixels near ink/paper transitions.
+     *
+     * TUNING:
+     *   More crispness at zoom  → raise SHARPEN_AMOUNT (e.g. 1.5 – 2.0)
+     *   Halo / ringing artefact → lower SHARPEN_AMOUNT or raise SHARPEN_BLUR_KSIZE
+     *   Very fine/thin strokes  → keep SHARPEN_BLUR_KSIZE at 3 (tighter kernel)
+     */
+    if (dynSharpenAmount > 0) {
+      onProgress('Sharpening edges…');
+      await tick();
+
+      blurForSharp = new cv.Mat();
+      cv.GaussianBlur(
+        result,
+        blurForSharp,
+        new cv.Size(dynSharpenBlur, dynSharpenBlur),
+        0
+      );
+
+      const blurData = blurForSharp.data;
+      for (let i = 0; i < len; i++) {
+        // edge detail = original − blurred
+        const detail = resultData[i] - blurData[i];
+
+        // Noise deadzone: only sharpen if detail exceeds threshold
+        if (Math.abs(detail) > SHARPEN_THRESHOLD) {
+          // add scaled detail back
+          const sharpened = resultData[i] + dynSharpenAmount * detail;
+          // clamp to valid byte range
+          resultData[i] = Math.min(255, Math.max(0, Math.round(sharpened)));
+        }
+      }
+    }
+
+    const out = document.createElement('canvas');
+    cv.imshow(out, result);
+
+    console.log(
+      `[Enhance] v14-robust ✓ Dynamic scaling + aggressive whitening | ` +
+      `adaptiveSize=${dynAdaptiveSize} minBlob=${dynMinBlobArea} ` +
+      `alpha=${BLEND_ALPHA} darken=${INK_DARKEN} ` +
+      `sharpen=${dynSharpenAmount} sharpBlur=${dynSharpenBlur} | src:${source}`
+    );
+    return out;
+
+  } catch (err) {
+    console.error('[Enhance] Pipeline crashed:', err);
+    return canvas;
+  } finally {
+    [src, gray, small, dilated, bg, divided, result,
+      blurred, mask, opened, labels, stats, centroids,
+      blurForSharp   // NEW — must be freed
+    ].forEach(safe);
+  }
 };
 
 /* ── canvas → File ──────────────────────────────────────────────── */
 export const canvasToFile = (canvas, name = 'enhanced.jpg') =>
-    new Promise(r =>
-        canvas.toBlob(
-            b => r(new File([b], name, { type: 'image/jpeg' })),
-            'image/jpeg',
-            0.95
-        )
-    );
+  new Promise(r =>
+    canvas.toBlob(
+      b => r(new File([b], name, { type: 'image/jpeg' })),
+      'image/jpeg',
+      0.95
+    )
+  );
 
 /* ── enhance + export ───────────────────────────────────────────── */
 export const enhanceAndExport = async (
-    canvas,
-    filename = 'scanned.jpg',
-    onProgress = () => { },
-    source = 'camera'
+  canvas,
+  filename = 'scanned.jpg',
+  onProgress = () => { },
+  source = 'camera'
 ) => {
-    const enhanced = await enhanceImage(canvas, onProgress, source);
-    const file = await canvasToFile(enhanced, filename);
-    return { canvas: enhanced, file };
+  const enhanced = await enhanceImage(canvas, onProgress, source);
+  const file = await canvasToFile(enhanced, filename);
+  return { canvas: enhanced, file };
 };
 
 export default { enhanceImage, canvasToFile, enhanceAndExport };
