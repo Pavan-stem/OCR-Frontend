@@ -160,7 +160,7 @@ export const enhanceImage = async (
     const dynMinBlobArea = Math.max(5, Math.round((W * H) / 250000));
     const dynSharpenAmount = 1.6; // High crispness without artifacts
     const dynSharpenBlur = Math.max(3, Math.floor(minDim / 400) * 2 + 1);
-    const SHARPEN_THRESHOLD = 4; // Ignore subtle grain/texture
+    const SHARPEN_THRESHOLD = 2; // Capture even fine detail
 
     /* ── STEP 2 : BACKGROUND MODEL ──────────────────────────
      * Downscale → dilate → upscale.
