@@ -156,8 +156,8 @@ export const enhanceImage = async (
          * Scale kernels and thresholds based on resolution.
          */
         const dynAdaptiveSize = Math.max(3, Math.floor(minDim / 100) * 2 + 1);
-        // Extremely conservative blob filtering
-        const dynMinBlobArea = Math.max(3, Math.round((W * H) / 400000));
+        // Conservative blob filtering: removes sensor noise "dots" while keeping text
+        const dynMinBlobArea = Math.max(5, Math.round((W * H) / 250000));
         const dynSharpenAmount = 1.6; // High crispness without artifacts
         const dynSharpenBlur = Math.max(3, Math.floor(minDim / 400) * 2 + 1);
         const SHARPEN_THRESHOLD = 2; // Capture even fine detail
@@ -220,14 +220,15 @@ export const enhanceImage = async (
             }
         }
 
-        /* ── STEP 5 : PRE-BLUR ───────────────────────────────────
-         * Gaussian blur on original gray before adaptive threshold.
-         * Kills JPEG grain / camera noise before threshold sees it.
+        /* ── STEP 5 : NOISE REMOVAL ──────────────────────────────────
+         * Median blur on original gray before adaptive threshold.
+         * Specifically targets "salt and pepper" noise (dots) while
+         * preserving sharp text edges much better than Gaussian blur.
          */
-        onProgress('Smoothing for noise removal…');
+        onProgress('Removing sensor noise…');
         await tick();
         blurred = new cv.Mat();
-        cv.GaussianBlur(gray, blurred, new cv.Size(BLUR_KSIZE, BLUR_KSIZE), 0);
+        cv.medianBlur(gray, blurred, 3);
 
         /* ── STEP 6 : ADAPTIVE THRESHOLD → RAW INK MASK ─────────
          * Detects ink pixels locally. Output: 255 = ink, 0 = paper.
