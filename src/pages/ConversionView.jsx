@@ -502,28 +502,32 @@ const ConversionView = ({ userId, userName, filterProps, onClose }) => {
                                                             {/* Page Switched Tabs */}
                                                             <div className="flex items-center gap-1 bg-gray-100/80 p-0.5 rounded-lg border border-gray-200 shadow-inner">
                                                                 {[1, 2].map(pNum => {
-                                                                    const exists = !!group.pages[pNum];
+                                                                    const pageItem = group.pages[pNum];
+                                                                    const exists = !!pageItem;
                                                                     const isActive = Number(currentSelectedPage) === pNum;
+                                                                    const isSynced = exists && pageItem.isSynced;
 
                                                                     return (
-                                                                        <button
-                                                                            key={pNum}
-                                                                            disabled={!exists}
-                                                                            onClick={() => setSelectedPages(prev => ({ ...prev, [group.shgID]: pNum }))}
-                                                                            className={`text-[9px] font-black px-2 py-1 rounded-md uppercase tracking-wider transition-all disabled:opacity-30 ${isActive
-                                                                                    ? 'bg-indigo-600 text-white shadow-sm'
-                                                                                    : exists ? 'text-gray-500 hover:text-indigo-600' : 'text-gray-400'
-                                                                                }`}
-                                                                        >
-                                                                            P{pNum}{exists && isActive && '✓'}
-                                                                        </button>
+                                                                        <div key={pNum} className="relative flex flex-col items-center justify-center">
+                                                                            <button
+                                                                                disabled={!exists}
+                                                                                onClick={() => setSelectedPages(prev => ({ ...prev, [group.shgID]: pNum }))}
+                                                                                className={`text-[9px] font-black px-2 py-1 rounded-md uppercase tracking-wider transition-all disabled:opacity-30 ${isActive
+                                                                                        ? 'bg-indigo-600 text-white shadow-sm'
+                                                                                        : exists ? 'text-gray-500 hover:text-indigo-600' : 'text-gray-400'
+                                                                                    }`}
+                                                                            >
+                                                                                P{pNum}{exists && isActive && '✓'}
+                                                                            </button>
+                                                                            {isSynced && (
+                                                                                <div className="absolute top-full mt-1.5 flex items-center justify-center">
+                                                                                    <BookCheck className="w-3.5 h-3.5 text-emerald-500 drop-shadow-sm" title={`Page ${pNum} Sent to DB`} />
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
                                                                     );
                                                                 })}
                                                             </div>
-
-                                                            {item.isSynced && (
-                                                                <BookCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" title="Sent to DB" />
-                                                            )}
                                                         </div>
 
                                                         <p className="text-[10px] text-gray-400 font-medium mt-1">
