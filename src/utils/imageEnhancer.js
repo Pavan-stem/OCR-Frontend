@@ -100,7 +100,7 @@ const cvReady = () => !!(window.cv && window.cv.Mat);
  *   Recommended: 3 for text, 5 for fine lines or noisy sources.
  *
  * ─────────────────────────────────────────────────────────────────────────── */
-const ADAPTIVE_C = 4; // Back to standard sensitivity
+const ADAPTIVE_C = 5; // Reduced from 8 to 5 to catch faint table lines (default was 4)
 const BLUR_KSIZE = 3;
 const OPEN_KSIZE = 1; // RESET TO 1 TO PREVENT ERASURE OF THIN LINES
 
@@ -156,7 +156,7 @@ export const enhanceImage = async (
          * Scale kernels and thresholds based on resolution.
          */
         const dynAdaptiveSize = Math.max(3, Math.floor(minDim / 100) * 2 + 1);
-        // Conservative blob filtering: removes sensor noise "dots" while keeping text
+        // Conservative blob filtering: small enough to preserve text/dots on i's, but removes tiny 1px sensor noise
         const dynMinBlobArea = Math.max(5, Math.round((W * H) / 250000));
         const dynSharpenAmount = 1.6; // High crispness without artifacts
         const dynSharpenBlur = Math.max(3, Math.floor(minDim / 400) * 2 + 1);
@@ -215,8 +215,8 @@ export const enhanceImage = async (
         const divData = divided.data;
         for (let i = 0; i < divData.length; i++) {
             if (divData[i] > 220) {
-                // Only push very light pixels to pure white
-                divData[i] = Math.min(255, divData[i] + (255 - divData[i]) * 0.7);
+                // Only push very light pixels to pure white (prevents erasing faint lines that are ~180-200)
+                divData[i] = Math.min(255, divData[i] + (255 - divData[i]) * 0.8);
             }
         }
 
@@ -331,8 +331,19 @@ export const enhanceImage = async (
 
         for (let i = 0; i < len; i++) {
             if (finalMask[i] === 255) {
-                // Ink pixel: blend darkened divided tone onto canvas
-                const tone = dividedData[i] * INK_DARKEN;
+                const baseVal = dividedData[i];
+                
+                // Only apply strong darkening to actual dark ink.
+                // Prevents faint false-positive background dots from turning into dark grey spots.
+                let effectiveDarken = INK_DARKEN;
+                // Fade out darkening for very light pixels (which are likely background noise)
+                // We keep lines by only fading out > 180 instead of > 150
+                if (baseVal > 180) {
+                    const factor = Math.min(1.0, (baseVal - 180) / 40);
+                    effectiveDarken = INK_DARKEN + (1.0 - INK_DARKEN) * factor;
+                }
+                
+                const tone = baseVal * effectiveDarken;
                 resultData[i] = Math.round(
                     tone * BLEND_ALPHA + resultData[i] * (1 - BLEND_ALPHA)
                 );
