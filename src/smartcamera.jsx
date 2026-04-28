@@ -1103,7 +1103,7 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
                             autoPlay
                             muted
                             className="absolute inset-0 w-full h-full object-cover"
-                            style={{ 
+                            style={{
                                 filter: "contrast(1.15) brightness(1.08) saturate(1.1)",
                                 background: "#000"
                             }}
@@ -1231,7 +1231,7 @@ const SmartCamera = ({ open, onClose, onCapture, isUploading, shgId, shgName, pa
                             }}
                             className="px-8 py-3 bg-red-600 hover:bg-red-500 rounded-full text-white font-bold text-sm transition-all shadow-xl active:scale-95"
                         >
-                            {galleryRejection?.stayInReview ? (t?.('common.close') || 'Close') : (t?.('common.retry') || 'Try Again')}
+                            {galleryRejection?.stayInReview ? (t?.('common.close') || 'Close') : (t?.('retry') || 'Try Again')}
                         </button>
                     </div>
                 )}
