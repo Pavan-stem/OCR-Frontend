@@ -7,7 +7,7 @@ import { analyzeImage } from './utils/imageQualityCheck';
 import SmartCamera from './smartcamera';
 import SHGUploadCard from './components/SHGUploadCard';
 import { processDocumentAndValidate, stitchImages } from './utils/documentProcessor';
-import SHGConversionEditView from './pages/SHGConversionEditView';
+// SHGConversionEditView removed from here and moved to App.jsx for full-page view
 
 const padSHGId = (id) => {
   if (!id) return id;
@@ -24,7 +24,10 @@ const SHGUploadSection = ({
   user,
   onUploadComplete,
   t,
-  setMaintenance
+  setMaintenance,
+  editingSHG,
+  setEditingSHG,
+  refreshTrigger
 }) => {
   const [shgData, setShgData] = useState([]);
   const [filteredShgData, setFilteredShgData] = useState([]);
@@ -66,15 +69,134 @@ const SHGUploadSection = ({
   // Determine if current period is after the 2-page requirement threshold (Feb 2026)
   const isAfterFeb2026 = (parseInt(selectedYear) > 2026) || (parseInt(selectedYear) === 2026 && parseInt(selectedMonth) > 2);
   const [currentlyViewingId, setCurrentlyViewingId] = useState(null);
-  const [activeTab, setActiveTab] = useState('upload'); // 'upload' or 'conversion'
+  const [activeTab, setActiveTab] = useState(() => {
+    return localStorage.getItem('shg_active_tab') || 'upload';
+  }); // 'upload' or 'conversion'
   const [conversions, setConversions] = useState({ success: [], failed: [] });
   const [conversionSummary, setConversionSummary] = useState({ totalUnsaved: 0 });
   const [isConversionsLoading, setIsConversionsLoading] = useState(false);
-  const [editingSHG, setEditingSHG] = useState(null);
+  // editingSHG moved to props (managed by App.jsx)
 
   // VO Upload Access Restriction States
   const [restriction, setRestriction] = useState(null); // { mode: 'restricted', month: '02', year: '2025' }
   const [isRestrictionLoading, setIsRestrictionLoading] = useState(true);
+  
+  const fetchPermanentlyUploadedFiles = useCallback(async () => {
+    if (!selectedMonth || !selectedYear) return;
+    try {
+      const token = localStorage.getItem('token');
+      const voIdParam = user?.voID ? `&voID=${user.voID}` : '';
+      const url = `${API_BASE}/api/uploads?month=${selectedMonth}&year=${selectedYear}${voIdParam}`;
+      const resp = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        const files = Array.isArray(data.files) ? data.files : Array.isArray(data) ? data : [];
+        setPermanentlyUploadedFiles(files);
+      }
+    } catch (e) {
+      console.error('Failed to fetch permanent uploads', e);
+    }
+  }, [selectedMonth, selectedYear, user?.voID]);
+
+  const fetchConversions = useCallback(async () => {
+    if (!user?._id || !selectedMonth || !selectedYear) return;
+    setIsConversionsLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const params = new URLSearchParams({
+        month: selectedMonth,
+        year: selectedYear,
+        limit: 1000 // Get all for current scope
+      }).toString();
+
+      const res = await fetch(`${API_BASE}/api/conversion/results/${user._id}?${params}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setConversions(data.results);
+        if (data.summary) setConversionSummary(data.summary);
+      }
+    } catch (err) {
+      console.error('Error fetching conversions:', err);
+    } finally {
+      setIsConversionsLoading(false);
+    }
+  }, [user?._id, selectedMonth, selectedYear]);
+
+  const fetchConversionStatus = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const params = new URLSearchParams({
+        month: selectedMonth,
+        year: selectedYear,
+        refresh: 'true'
+      }).toString();
+
+      if (!user?._id) return;
+      const res = await fetch(`${API_BASE}/api/conversion/status/${user._id}?${params}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setConversionSummary(prev => ({ ...prev, ...data.summary }));
+      }
+    } catch (err) {
+      console.error('Error fetching status:', err);
+    }
+  }, [user?._id, selectedMonth, selectedYear]);
+
+  const fetchUploadProgress = useCallback(async () => {
+    if (!selectedMonth || !selectedYear) return;
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        window.location.href = '#/login';
+        return;
+      }
+
+      const response = await fetch(
+        `${API_BASE}/api/upload-progress?month=${selectedMonth}&year=${selectedYear}`,
+        {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      if (response.status === 401) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '#/login';
+        return;
+      }
+
+      if (response.ok) {
+        const progress = await response.json();
+        setServerProgress(progress);
+
+        if (progress.uploadedShgIds && progress.uploadedShgIds.length > 0) {
+          const newStatus = {};
+          progress.uploadedShgIds.forEach(shgId => {
+            newStatus[shgId] = {
+              uploaded: true,
+              uploadDate: progress.lastUpdatedAt,
+              fileName: 'Server Synced'
+            };
+          });
+          setUploadStatus(newStatus);
+        } else {
+          setUploadStatus({});
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching upload progress:', err);
+    }
+  }, [selectedMonth, selectedYear]);
 
   // Detect if device is mobile/tablet
   useEffect(() => {
@@ -177,6 +299,20 @@ const SHGUploadSection = ({
     generateSmartPreview();
   }, [previewFile, previewRotation]);
 
+
+  // Persist Active Tab
+  useEffect(() => {
+    localStorage.setItem('shg_active_tab', activeTab);
+  }, [activeTab]);
+
+  // Refresh Trigger (used when saving in Edit view to update the list in background)
+  useEffect(() => {
+    if (refreshTrigger > 0) {
+      fetchConversions();
+      fetchUploadProgress();
+    }
+  }, [refreshTrigger, fetchConversions]);
+
   useEffect(() => {
     const initializeData = async () => {
       if (!user?.voID) return;
@@ -189,24 +325,6 @@ const SHGUploadSection = ({
     initializeData();
   }, [user?.voID, selectedMonth, selectedYear]);
 
-  const fetchPermanentlyUploadedFiles = async () => {
-    if (!selectedMonth || !selectedYear) return;
-    try {
-      const token = localStorage.getItem('token');
-      const voIdParam = user?.voID ? `&voID=${user.voID}` : '';
-      const url = `${API_BASE}/api/uploads?month=${selectedMonth}&year=${selectedYear}${voIdParam}`;
-      const resp = await fetch(url, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {}
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        const files = Array.isArray(data.files) ? data.files : Array.isArray(data) ? data : [];
-        setPermanentlyUploadedFiles(files);
-      }
-    } catch (e) {
-      console.error('Failed to fetch permanent uploads', e);
-    }
-  };
 
   useEffect(() => {
     if (selectedMonth && selectedYear) {
@@ -215,53 +333,7 @@ const SHGUploadSection = ({
     }
   }, [selectedMonth, selectedYear, user?.voID, serverProgress?.uploadedShgIds]);
 
-  const fetchConversions = useCallback(async () => {
-    if (!user?._id || !selectedMonth || !selectedYear) return;
-    setIsConversionsLoading(true);
-    try {
-      const token = localStorage.getItem('token');
-      const params = new URLSearchParams({
-        month: selectedMonth,
-        year: selectedYear,
-        limit: 1000 // Get all for current scope
-      }).toString();
 
-      const res = await fetch(`${API_BASE}/api/conversion/results/${user._id}?${params}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (data.success) {
-        setConversions(data.results);
-        if (data.summary) setConversionSummary(data.summary);
-      }
-    } catch (err) {
-      console.error('Error fetching conversions:', err);
-    } finally {
-      setIsConversionsLoading(false);
-    }
-  }, [user?._id, selectedMonth, selectedYear]);
-
-  const fetchConversionStatus = useCallback(async () => {
-    try {
-      const token = localStorage.getItem('token');
-      const params = new URLSearchParams({
-        month: selectedMonth,
-        year: selectedYear,
-        refresh: 'true'
-      }).toString();
-
-      if (!user?._id) return;
-      const res = await fetch(`${API_BASE}/api/conversion/status/${user._id}?${params}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (data.success) {
-        setConversionSummary(prev => ({ ...prev, ...data.summary }));
-      }
-    } catch (err) {
-      console.error('Error fetching status:', err);
-    }
-  }, [user?._id, selectedMonth, selectedYear]);
 
   // Periodic status check for the notification badge
   useEffect(() => {
@@ -563,55 +635,6 @@ const SHGUploadSection = ({
     setAllFilesValidated(allValidated);
   }, [uploadedFiles, permanentlyUploadedFiles]);
 
-  const fetchUploadProgress = async () => {
-    if (!selectedMonth || !selectedYear) return;
-    try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        window.location.href = '#/login';
-        return;
-      }
-
-      const response = await fetch(
-        `${API_BASE}/api/upload-progress?month=${selectedMonth}&year=${selectedYear}`,
-        {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-
-      if (response.status === 401) {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        window.location.href = '#/login';
-        return;
-      }
-
-      if (response.ok) {
-        const progress = await response.json();
-        setServerProgress(progress);
-
-        if (progress.uploadedShgIds && progress.uploadedShgIds.length > 0) {
-          const newStatus = {};
-          progress.uploadedShgIds.forEach(shgId => {
-            newStatus[shgId] = {
-              uploaded: true,
-              uploadDate: progress.lastUpdatedAt,
-              fileName: 'Server Synced'
-            };
-          });
-          setUploadStatus(newStatus);
-        } else {
-          setUploadStatus({});
-        }
-      }
-    } catch (err) {
-      console.error('Error fetching upload progress:', err);
-    }
-  };
 
   const initializeProgress = async () => {
     if (!selectedMonth || !selectedYear) return;
@@ -1733,23 +1756,6 @@ const SHGUploadSection = ({
           })()}
         </div>
       </div>
-
-      {/* Edit View Overlay - Using Portal to ensure full coverage over the app UI */}
-      {editingSHG && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-black/40 backdrop-blur-md overflow-y-auto p-4 sm:p-8 animate-in fade-in duration-300">
-          <SHGConversionEditView
-            shgGroup={editingSHG}
-            onBack={() => setEditingSHG(null)}
-            t={t}
-            onSaveSuccess={(stayOpen) => {
-              if (!stayOpen) setEditingSHG(null);
-              fetchConversions();
-              fetchUploadProgress();
-            }}
-          />
-        </div>,
-        document.body
-      )}
 
       {/* Tab Switcher */}
       <div className="bg-white rounded-2xl border-2 border-gray-200 shadow-md p-1.5 flex gap-1.5 relative overflow-visible">

@@ -70,7 +70,11 @@ const SHG_COLUMN_HEADERS = [
 ];
 
 const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
-  const [activePageTab, setActivePageTab] = useState(shgGroup.pages[1] ? 1 : 2);
+  const [activePageTab, setActivePageTab] = useState(() => {
+    const saved = localStorage.getItem('shg_active_page_tab');
+    if (saved) return parseInt(saved);
+    return shgGroup.pages[1] ? 1 : 2;
+  });
   const [loading, setLoading] = useState(true);
   const [page1Data, setPage1Data] = useState(null);
   const [page2Data, setPage2Data] = useState(null);
@@ -144,6 +148,11 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
 
     fetchAllData();
   }, [shgGroup, t]);
+
+  // Persist Page Tab
+  useEffect(() => {
+    localStorage.setItem('shg_active_page_tab', activePageTab);
+  }, [activePageTab]);
 
   const duplicateMBKIds = useMemo(() => {
     const ids = (page1Data?.table_data?.data_rows || [])
