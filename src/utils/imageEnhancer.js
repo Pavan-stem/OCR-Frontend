@@ -101,7 +101,6 @@ const cvReady = () => !!(window.cv && window.cv.Mat);
  *
  * ─────────────────────────────────────────────────────────────────────────── */
 const ADAPTIVE_C = 5; // Reduced from 8 to 5 to catch faint table lines (default was 4)
-const ADAPTIVE_C = 5; // Reduced from 8 to 5 to catch faint table lines (default was 4)
 const BLUR_KSIZE = 3;
 const OPEN_KSIZE = 1; // RESET TO 1 TO PREVENT ERASURE OF THIN LINES
 
