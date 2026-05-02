@@ -7,7 +7,7 @@ import { analyzeImage } from './utils/imageQualityCheck';
 import SmartCamera from './smartcamera';
 import SHGUploadCard from './components/SHGUploadCard';
 import { processDocumentAndValidate, stitchImages } from './utils/documentProcessor';
-import SHGConversionEditView from './pages/SHGConversionEditView';
+// SHGConversionEditView removed from here and moved to App.jsx for full-page view
 
 const padSHGId = (id) => {
   if (!id) return id;
@@ -24,7 +24,10 @@ const SHGUploadSection = ({
   user,
   onUploadComplete,
   t,
-  setMaintenance
+  setMaintenance,
+  editingSHG,
+  setEditingSHG,
+  refreshTrigger
 }) => {
   const [shgData, setShgData] = useState([]);
   const [filteredShgData, setFilteredShgData] = useState([]);
@@ -66,15 +69,134 @@ const SHGUploadSection = ({
   // Determine if current period is after the 2-page requirement threshold (Feb 2026)
   const isAfterFeb2026 = (parseInt(selectedYear) > 2026) || (parseInt(selectedYear) === 2026 && parseInt(selectedMonth) > 2);
   const [currentlyViewingId, setCurrentlyViewingId] = useState(null);
-  const [activeTab, setActiveTab] = useState('upload'); // 'upload' or 'conversion'
+  const [activeTab, setActiveTab] = useState(() => {
+    return localStorage.getItem('shg_active_tab') || 'upload';
+  }); // 'upload' or 'conversion'
   const [conversions, setConversions] = useState({ success: [], failed: [] });
   const [conversionSummary, setConversionSummary] = useState({ totalUnsaved: 0 });
   const [isConversionsLoading, setIsConversionsLoading] = useState(false);
-  const [editingSHG, setEditingSHG] = useState(null);
+  // editingSHG moved to props (managed by App.jsx)
 
   // VO Upload Access Restriction States
   const [restriction, setRestriction] = useState(null); // { mode: 'restricted', month: '02', year: '2025' }
   const [isRestrictionLoading, setIsRestrictionLoading] = useState(true);
+
+  const fetchPermanentlyUploadedFiles = useCallback(async () => {
+    if (!selectedMonth || !selectedYear) return;
+    try {
+      const token = localStorage.getItem('token');
+      const voIdParam = user?.voID ? `&voID=${user.voID}` : '';
+      const url = `${API_BASE}/api/uploads?month=${selectedMonth}&year=${selectedYear}${voIdParam}`;
+      const resp = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        const files = Array.isArray(data.files) ? data.files : Array.isArray(data) ? data : [];
+        setPermanentlyUploadedFiles(files);
+      }
+    } catch (e) {
+      console.error('Failed to fetch permanent uploads', e);
+    }
+  }, [selectedMonth, selectedYear, user?.voID]);
+
+  const fetchConversions = useCallback(async () => {
+    if (!user?._id || !selectedMonth || !selectedYear) return;
+    setIsConversionsLoading(true);
+    try {
+      const token = localStorage.getItem('token');
+      const params = new URLSearchParams({
+        month: selectedMonth,
+        year: selectedYear,
+        limit: 1000 // Get all for current scope
+      }).toString();
+
+      const res = await fetch(`${API_BASE}/api/conversion/results/${user._id}?${params}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setConversions(data.results);
+        if (data.summary) setConversionSummary(data.summary);
+      }
+    } catch (err) {
+      console.error('Error fetching conversions:', err);
+    } finally {
+      setIsConversionsLoading(false);
+    }
+  }, [user?._id, selectedMonth, selectedYear]);
+
+  const fetchConversionStatus = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const params = new URLSearchParams({
+        month: selectedMonth,
+        year: selectedYear,
+        refresh: 'true'
+      }).toString();
+
+      if (!user?._id) return;
+      const res = await fetch(`${API_BASE}/api/conversion/status/${user._id}?${params}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setConversionSummary(prev => ({ ...prev, ...data.summary }));
+      }
+    } catch (err) {
+      console.error('Error fetching status:', err);
+    }
+  }, [user?._id, selectedMonth, selectedYear]);
+
+  const fetchUploadProgress = useCallback(async () => {
+    if (!selectedMonth || !selectedYear) return;
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        window.location.href = '#/login';
+        return;
+      }
+
+      const response = await fetch(
+        `${API_BASE}/api/upload-progress?month=${selectedMonth}&year=${selectedYear}`,
+        {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      if (response.status === 401) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '#/login';
+        return;
+      }
+
+      if (response.ok) {
+        const progress = await response.json();
+        setServerProgress(progress);
+
+        if (progress.uploadedShgIds && progress.uploadedShgIds.length > 0) {
+          const newStatus = {};
+          progress.uploadedShgIds.forEach(shgId => {
+            newStatus[shgId] = {
+              uploaded: true,
+              uploadDate: progress.lastUpdatedAt,
+              fileName: 'Server Synced'
+            };
+          });
+          setUploadStatus(newStatus);
+        } else {
+          setUploadStatus({});
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching upload progress:', err);
+    }
+  }, [selectedMonth, selectedYear]);
 
   // Detect if device is mobile/tablet
   useEffect(() => {
@@ -177,6 +299,20 @@ const SHGUploadSection = ({
     generateSmartPreview();
   }, [previewFile, previewRotation]);
 
+
+  // Persist Active Tab
+  useEffect(() => {
+    localStorage.setItem('shg_active_tab', activeTab);
+  }, [activeTab]);
+
+  // Refresh Trigger (used when saving in Edit view to update the list in background)
+  useEffect(() => {
+    if (refreshTrigger > 0) {
+      fetchConversions();
+      fetchUploadProgress();
+    }
+  }, [refreshTrigger, fetchConversions]);
+
   useEffect(() => {
     const initializeData = async () => {
       if (!user?.voID) return;
@@ -189,24 +325,6 @@ const SHGUploadSection = ({
     initializeData();
   }, [user?.voID, selectedMonth, selectedYear]);
 
-  const fetchPermanentlyUploadedFiles = async () => {
-    if (!selectedMonth || !selectedYear) return;
-    try {
-      const token = localStorage.getItem('token');
-      const voIdParam = user?.voID ? `&voID=${user.voID}` : '';
-      const url = `${API_BASE}/api/uploads?month=${selectedMonth}&year=${selectedYear}${voIdParam}`;
-      const resp = await fetch(url, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {}
-      });
-      if (resp.ok) {
-        const data = await resp.json();
-        const files = Array.isArray(data.files) ? data.files : Array.isArray(data) ? data : [];
-        setPermanentlyUploadedFiles(files);
-      }
-    } catch (e) {
-      console.error('Failed to fetch permanent uploads', e);
-    }
-  };
 
   useEffect(() => {
     if (selectedMonth && selectedYear) {
@@ -215,53 +333,7 @@ const SHGUploadSection = ({
     }
   }, [selectedMonth, selectedYear, user?.voID, serverProgress?.uploadedShgIds]);
 
-  const fetchConversions = useCallback(async () => {
-    if (!user?._id || !selectedMonth || !selectedYear) return;
-    setIsConversionsLoading(true);
-    try {
-      const token = localStorage.getItem('token');
-      const params = new URLSearchParams({
-        month: selectedMonth,
-        year: selectedYear,
-        limit: 1000 // Get all for current scope
-      }).toString();
 
-      const res = await fetch(`${API_BASE}/api/conversion/results/${user._id}?${params}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (data.success) {
-        setConversions(data.results);
-        if (data.summary) setConversionSummary(data.summary);
-      }
-    } catch (err) {
-      console.error('Error fetching conversions:', err);
-    } finally {
-      setIsConversionsLoading(false);
-    }
-  }, [user?._id, selectedMonth, selectedYear]);
-
-  const fetchConversionStatus = useCallback(async () => {
-    try {
-      const token = localStorage.getItem('token');
-      const params = new URLSearchParams({
-        month: selectedMonth,
-        year: selectedYear,
-        refresh: 'true'
-      }).toString();
-
-      if (!user?._id) return;
-      const res = await fetch(`${API_BASE}/api/conversion/status/${user._id}?${params}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (data.success) {
-        setConversionSummary(prev => ({ ...prev, ...data.summary }));
-      }
-    } catch (err) {
-      console.error('Error fetching status:', err);
-    }
-  }, [user?._id, selectedMonth, selectedYear]);
 
   // Periodic status check for the notification badge
   useEffect(() => {
@@ -269,60 +341,6 @@ const SHGUploadSection = ({
     const interval = setInterval(fetchConversionStatus, 15000);
     return () => clearInterval(interval);
   }, [fetchConversionStatus]);
-
-  // Helper to check if an SHG is truly completed for the current period
-  const isSHGTrulyUploaded = useCallback((shgId) => {
-    const paddedTargetId = padSHGId(shgId);
-    if (!paddedTargetId) return false;
-
-    // 1. Get all server-side pages for this SHG and selected period
-    const serverPages = permanentlyUploadedFiles.filter(u => {
-      const uId = padSHGId(u.shgID || u.shgId || u.metadata?.shgID || u.metadata?.shgId);
-      if (uId !== paddedTargetId) return false;
-
-      const uM = String(u.month || u.metadata?.month || '').padStart(2, '0');
-      const uY = String(u.year || u.metadata?.year || '');
-      const timestamp = u.uploadTimestamp || u.metadata?.uploadTimestamp;
-      let dateMatch = uM === selectedMonth && uY === selectedYear;
-
-      if (!dateMatch && timestamp) {
-        const d = new Date(timestamp);
-        dateMatch = String(d.getMonth() + 1).padStart(2, '0') === selectedMonth && String(d.getFullYear()) === selectedYear;
-      }
-      return dateMatch;
-    });
-
-    // 2. Check for rejections (either in server files or explicit failed list)
-    const hasRejectedPage = serverPages.some(u => (u.status || '').toLowerCase() === 'rejected');
-    const hasActiveRejection = failedUploads.some(f => padSHGId(f.shgID) === paddedTargetId);
-    if (hasRejectedPage || hasActiveRejection) return false;
-
-    // 3. Check for completeness based on date threshold
-    if (isAfterFeb2026) {
-      // Require both pages 1 and 2 to be present and not rejected
-      const pageNums = serverPages
-        .filter(u => (u.status || '').toLowerCase() !== 'rejected')
-        .map(u => parseInt(u.page || u.metadata?.page || 0));
-      const hasBothPages = pageNums.includes(1) && pageNums.includes(2);
-      
-      // Fallback: if not on server yet, check local session state
-      if (!hasBothPages) {
-        const isMarkedInSession = uploadStatus[shgId]?.uploaded === true || uploadStatus[paddedTargetId]?.uploaded === true;
-        if (!isMarkedInSession) return false;
-      }
-    } else {
-      // Before Feb 2026, any single page is sufficient
-      const hasAnyPage = serverPages.length > 0;
-      if (!hasAnyPage) {
-        const isMarkedInSession = uploadStatus[shgId]?.uploaded === true || uploadStatus[paddedTargetId]?.uploaded === true;
-        if (!isMarkedInSession) return false;
-      }
-    }
-
-    return true;
-  }, [serverProgress, uploadStatus, failedUploads, permanentlyUploadedFiles, selectedMonth, selectedYear, isAfterFeb2026]);
-
-
 
   // Group conversions by SHG ID for the edit list
   const getGroupedConversions = () => {
@@ -387,13 +405,33 @@ const SHGUploadSection = ({
     setCurrentlyViewingId(`${shgId}-${pageNum}`);
 
     const findUpload = (fileList) => {
-      if (!fileList || !Array.isArray(fileList)) return null;
-      
-      const paddedTargetId = padSHGId(shgId);
-      const matches = fileList.filter(u => {
-        const uShgId = padSHGId(u.shgID || u.shgId || u.metadata?.shgID || u.metadata?.shgId);
-        const uPage = parseInt(u.page || u.metadata?.page || 1);
-        return uShgId === paddedTargetId && uPage === pageNum;
+      const shgMatches = fileList.filter(u => {
+        const uId = (u.shgID || u.shgId || u.metadata?.shgID || u.metadata?.shgId || '').toString().toLowerCase();
+        return uId === targetId || uId.includes(targetId) || targetId.includes(uId);
+      });
+      if (shgMatches.length === 0) return null;
+
+      const matches = shgMatches.filter(u => {
+        // Page match (strict)
+        if (page !== null) {
+          const uPage = u.page || u.metadata?.page || 1;
+          if (parseInt(uPage) !== parseInt(page)) return false;
+        }
+
+        // Date match (consistent with renderSHGCard)
+        const uM = String(u.month || u.metadata?.month || '').padStart(2, '0');
+        const uY = String(u.year || u.metadata?.year || '');
+        const timestamp = u.uploadTimestamp || u.metadata?.uploadTimestamp;
+
+        let dateMatch = uM === selectedMonth && uY === selectedYear;
+        if (!dateMatch && timestamp) {
+          const uploadDate = new Date(timestamp);
+          if (!isNaN(uploadDate.getTime())) {
+            dateMatch = String(uploadDate.getMonth() + 1).padStart(2, '0') === selectedMonth &&
+              String(uploadDate.getFullYear()) === selectedYear;
+          }
+        }
+        return dateMatch;
       });
 
       return matches.length > 0 ? (matches.find(m => m.s3Key) || matches[0]) : null;
@@ -579,55 +617,6 @@ const SHGUploadSection = ({
     setAllFilesValidated(allValidated);
   }, [uploadedFiles, permanentlyUploadedFiles]);
 
-  const fetchUploadProgress = async () => {
-    if (!selectedMonth || !selectedYear) return;
-    try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        window.location.href = '#/login';
-        return;
-      }
-
-      const response = await fetch(
-        `${API_BASE}/api/upload-progress?month=${selectedMonth}&year=${selectedYear}`,
-        {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-
-      if (response.status === 401) {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        window.location.href = '#/login';
-        return;
-      }
-
-      if (response.ok) {
-        const progress = await response.json();
-        setServerProgress(progress);
-
-        if (progress.uploadedShgIds && progress.uploadedShgIds.length > 0) {
-          const newStatus = {};
-          progress.uploadedShgIds.forEach(shgId => {
-            newStatus[shgId] = {
-              uploaded: true,
-              uploadDate: progress.lastUpdatedAt,
-              fileName: 'Server Synced'
-            };
-          });
-          setUploadStatus(newStatus);
-        } else {
-          setUploadStatus({});
-        }
-      }
-    } catch (err) {
-      console.error('Error fetching upload progress:', err);
-    }
-  };
 
   const initializeProgress = async () => {
     if (!selectedMonth || !selectedYear) return;
@@ -1727,23 +1716,6 @@ const SHGUploadSection = ({
         </div>
       </div>
 
-      {/* Edit View Overlay - Using Portal to ensure full coverage over the app UI */}
-      {editingSHG && createPortal(
-        <div className="fixed inset-0 z-[9999] bg-black/40 backdrop-blur-md overflow-y-auto p-4 sm:p-8 animate-in fade-in duration-300">
-          <SHGConversionEditView
-            shgGroup={editingSHG}
-            onBack={() => setEditingSHG(null)}
-            t={t}
-            onSaveSuccess={(stayOpen) => {
-              if (!stayOpen) setEditingSHG(null);
-              fetchConversions();
-              fetchUploadProgress();
-            }}
-          />
-        </div>,
-        document.body
-      )}
-
       {/* Tab Switcher */}
       <div className="bg-white rounded-2xl border-2 border-gray-200 shadow-md p-1.5 flex gap-1.5 relative overflow-visible">
         <button
@@ -2022,8 +1994,8 @@ const SHGUploadSection = ({
                     <div key={idx} className="p-4 sm:p-5 hover:bg-white transition-all duration-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 last:border-b-0">
                       <div className="flex items-start gap-3 sm:gap-4 flex-1 min-w-0">
                         <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0 transition-transform duration-300 ${group.conversionStatus === 'success' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
-                            group.conversionStatus === 'pending' ? 'bg-amber-50 text-amber-600 border border-amber-100' :
-                              'bg-rose-50 text-rose-600 border border-rose-100'
+                          group.conversionStatus === 'pending' ? 'bg-amber-50 text-amber-600 border border-amber-100' :
+                            'bg-rose-50 text-rose-600 border border-rose-100'
                           }`}>
                           {group.conversionStatus === 'success' && <CheckCircle size={24} />}
                           {group.conversionStatus === 'pending' && <Clock size={24} />}
@@ -2059,8 +2031,8 @@ const SHGUploadSection = ({
                           </div>
                           <div className="mt-2.5 flex items-center gap-2">
                             <div className={`px-2.5 py-1 rounded-lg text-[9px] sm:text-[10px] font-bold uppercase tracking-wider border flex items-center gap-1.5 ${group.conversionStatus === 'success' ? 'bg-emerald-600 text-white border-emerald-500' :
-                                group.conversionStatus === 'pending' ? 'bg-amber-600 text-white border-amber-500' :
-                                  'bg-rose-600 text-white border-rose-500'
+                              group.conversionStatus === 'pending' ? 'bg-amber-600 text-white border-amber-500' :
+                                'bg-rose-600 text-white border-rose-500'
                               }`}>
                               {group.conversionStatus === 'success' && <CheckCircle size={10} />}
                               {group.conversionStatus === 'pending' && <Clock size={10} />}
@@ -2091,159 +2063,57 @@ const SHGUploadSection = ({
 
       {/* Preview Modal */}
       {previewFile && createPortal(
-        <div className={`fixed inset-0 flex items-center justify-center z-[9999] p-2 sm:p-4 animate-in fade-in duration-300 ${previewFile.fromServer ? 'bg-slate-900/95 backdrop-blur-md' : 'bg-black/90 backdrop-blur-sm'}`}>
-          <div className="w-full max-w-5xl h-auto max-h-[95vh] flex flex-col bg-white rounded-2xl shadow-2xl overflow-hidden relative border border-white/20">
-            
-            {/* HEADER */}
-            <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-indigo-800 text-white px-4 py-3 sm:px-6 sm:py-4 flex justify-between items-center flex-shrink-0 z-20 shadow-lg">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 mb-0.5">
-                  <div className="bg-white/20 px-2 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase">
-                    {previewFile.fromServer ? 'Server Document' : 'Staged Document'}
-                  </div>
-                  <h3 className="font-bold text-base sm:text-lg truncate tracking-tight uppercase">
-                    {previewFile.shgName || 'Document'}
-                  </h3>
-                </div>
-                <p className="text-[10px] sm:text-xs text-blue-100 opacity-90 truncate max-w-[200px] sm:max-w-md italic font-medium">
-                  {previewFile.fileName}
-                </p>
+        <div className={`fixed inset-0 flex items-center justify-center z-[9999] p-2 sm:p-4 animate-in fade-in duration-300 ${previewFile.fromServer ? 'bg-slate-900/90 backdrop-blur-sm' : 'bg-black/80 backdrop-blur-sm'}`}>
+          <div className={`bg-white rounded-xl sm:rounded-2xl w-full flex flex-col shadow-2xl overflow-hidden ${previewFile.fromServer ? 'max-w-4xl max-h-[90vh]' : 'max-w-5xl max-h-[95vh] sm:max-h-[90vh]'}`}>
+            <div className={`flex items-center justify-between p-3 sm:p-4 ${previewFile.fromServer ? 'bg-gradient-to-r from-blue-700 to-blue-800 text-white px-6' : 'border-b bg-white'}`}>
+              <div className="flex-1 min-w-0 mr-2">
+                <h3 className="font-bold text-sm sm:text-lg truncate">
+                  {previewFile.fromServer ? (
+                    <>{previewFile.shgName} <span className="text-blue-100/80 font-normal ml-1">({previewFile.shgId})</span></>
+                  ) : previewFile.fileName}
+                </h3>
+                {previewFile.fromServer && (
+                  <p className="text-xs text-blue-100 truncate mt-0.5 opacity-80">{previewFile.fileName}</p>
+                )}
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    setPreviewFile(null);
-                    setImageError(false);
-                    setIsPreviewLoading(false);
-                    setPreviewRotation(0);
-                  }}
-                  className="p-2 hover:bg-white/20 rounded-full transition-all active:scale-90"
-                  title="Close Viewer"
-                >
-                  <X className="w-6 h-6" />
+              <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
+                {!previewFile.fromServer && (
+                  <>
+                    <button onClick={() => rotatePreviewImage('left')} className="p-1.5 sm:p-2 bg-gray-200 hover:bg-gray-300 rounded-lg" title="Rotate Left">
+                      <RotateCcw size={18} className="sm:hidden" /><RotateCcw size={20} className="hidden sm:block" />
+                    </button>
+                    <button onClick={() => rotatePreviewImage('right')} className="p-1.5 sm:p-2 bg-gray-200 hover:bg-gray-300 rounded-lg" title="Rotate Right">
+                      <RotateCw size={18} className="sm:hidden" /><RotateCw size={20} className="hidden sm:block" />
+                    </button>
+                  </>
+                )}
+                <button onClick={closePreview} className={`p-1.5 sm:p-2 rounded-lg transition-colors ${previewFile.fromServer ? 'hover:bg-white/10 text-white' : 'bg-red-500 hover:bg-red-600 text-white'}`} title={t?.('common.close') || 'Close'}>
+                  <X size={18} className="sm:hidden" /><X size={20} className="hidden sm:block" />
                 </button>
               </div>
             </div>
 
-            {/* VIEWER CONTENT */}
-            <div className="flex-1 overflow-auto bg-slate-100 group/viewer relative min-h-[400px] sm:min-h-[600px] flex flex-col">
-              
-              {/* SIDE SWITCHING BUTTONS (Server only) */}
-              {previewFile.fromServer && (
-                <>
-                  <button
-                    onClick={() => handleViewPermanentlyUploadedFile(previewFile.shgId, 1)}
-                    className={`absolute left-4 top-1/2 -translate-y-1/2 z-30 w-14 h-14 bg-white/95 hover:bg-white text-indigo-600 rounded-full shadow-2xl flex items-center justify-center transition-all active:scale-90 border-2 hover:border-indigo-500 group/btn ${previewFile.page === 1 ? 'border-indigo-500 ring-4 ring-indigo-500/20' : 'border-indigo-100'}`}
-                    title="View Page 1"
-                  >
-                    <ChevronLeft size={32} />
-                  </button>
-                  <button
-                    onClick={() => handleViewPermanentlyUploadedFile(previewFile.shgId, 2)}
-                    className={`absolute right-4 top-1/2 -translate-y-1/2 z-30 w-14 h-14 bg-white/95 hover:bg-white text-indigo-600 rounded-full shadow-2xl flex items-center justify-center transition-all active:scale-90 border-2 hover:border-indigo-500 group/btn ${previewFile.page === 2 ? 'border-indigo-500 ring-4 ring-indigo-500/20' : 'border-indigo-100'}`}
-                    title="View Page 2"
-                  >
-                    <ChevronRight size={32} />
-                  </button>
-
-                </>
-              )}
-
-              {/* PAGE INDICATOR BADGE */}
-              {previewFile.fromServer && (
-                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20">
-                  <div className="bg-indigo-600 text-white px-6 py-1.5 rounded-full shadow-xl flex items-center gap-2 border-2 border-white/30 backdrop-blur-md">
-                    <FileText size={14} className="opacity-80" />
-                    <span className="text-sm font-black tracking-widest uppercase">Page {previewFile.page}</span>
+            {previewFile.fromServer ? (
+              <div className="flex-1 overflow-auto bg-slate-50 p-4">
+                <img src={previewFile.previewUrl} alt="Document" className="max-w-full mx-auto border rounded shadow" />
+              </div>
+            ) : (
+              <div className="flex-1 overflow-auto bg-gray-100 flex flex-col relative p-2 sm:p-4 min-h-[300px]">
+                {isProcessingPreview && !smartPreviewUrl ? (
+                  <div className="m-auto flex flex-col items-center gap-3">
+                    <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent"></div>
+                    <p className="font-semibold text-gray-600 text-sm">{t?.('upload.processing') || 'Smart Processing...'}</p>
                   </div>
-                </div>
-              )}
-
-              {/* MAIN CONTENT AREA */}
-              <div className="flex-1 flex flex-col items-center justify-center relative p-4 sm:p-8">
-                
-                {/* LOADING SPINNER */}
-                {(isPreviewLoading && !imageError) && (
-                  <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-slate-100/80 backdrop-blur-sm animate-in fade-in duration-300">
-                    <div className="w-16 h-16 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4 shadow-inner"></div>
-                    <p className="text-indigo-900 font-bold animate-pulse text-lg">Fetching Secure Document...</p>
-                  </div>
-                )}
-
-                {imageError ? (
-                  <div className="flex flex-col items-center justify-center p-12 text-center bg-white rounded-2xl shadow-xl border border-slate-200 max-w-md mx-auto animate-in zoom-in-95 duration-300">
-                    <div className="w-24 h-24 bg-red-50 text-red-500 rounded-full flex items-center justify-center mb-6 ring-8 ring-red-50">
-                      <AlertTriangle size={48} />
-                    </div>
-                    <h3 className="text-2xl font-bold text-slate-800 mb-2">Failed to load document</h3>
-                    <p className="text-slate-500">The document could not be displayed. This could be due to a connection error or an unsupported file format.</p>
-                    <button 
-                      onClick={() => {
-                        setImageError(false);
-                        handleViewPermanentlyUploadedFile(previewFile.shgId, previewFile.page);
-                      }}
-                      className="mt-6 px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700 transition-colors shadow-lg"
-                    >
-                      Try Again
-                    </button>
-                  </div>
+                ) : smartPreviewUrl ? (
+                  <img src={smartPreviewUrl} alt={previewFile.fileName} className="max-w-full max-h-full object-contain m-auto bg-white transition-opacity duration-300"
+                    onError={() => setSmartPreviewUrl(previewFile.previewUrl)} />
                 ) : (
-                  <div className={`relative w-full h-full flex items-center justify-center transition-all duration-700 ${isPreviewLoading ? 'opacity-0 scale-95 blur-sm' : 'opacity-100 scale-100 blur-0'}`}>
-                    {previewFile.fromServer ? (
-                      (previewFile.previewUrl?.toLowerCase().split('?')[0].endsWith('.pdf') ||
-                        previewFile.fileName?.toLowerCase().endsWith('.pdf') ||
-                        previewFile.fileName?.toLowerCase().endsWith('.tif') ||
-                        previewFile.fileName?.toLowerCase().endsWith('.tiff')) ? (
-                        <iframe
-                          src={`${previewFile.previewUrl}${previewFile.previewUrl.includes('?') ? '&' : '?'}toolbar=0&navpanes=0&scrollbar=0`}
-                          className="w-full h-full min-h-[500px] sm:min-h-[700px] rounded-xl shadow-2xl bg-white border-0"
-                          title="Document Viewer"
-                          onLoad={() => setIsPreviewLoading(false)}
-                          onError={() => {
-                            setImageError(true);
-                            setIsPreviewLoading(false);
-                          }}
-                        />
-                      ) : (
-                        <img
-                          src={previewFile.previewUrl}
-                          alt={`Document Page ${previewFile.page}`}
-                          className={`max-w-full h-auto mx-auto border-4 border-white rounded-xl shadow-2xl transition-all duration-500 ${currentlyViewingId ? 'opacity-50 scale-95' : 'animate-in fade-in zoom-in-95'}`}
-                          style={{ transform: `rotate(${previewRotation}deg)` }}
-                          onLoad={() => {
-                            setImageError(false);
-                            setIsPreviewLoading(false);
-                          }}
-                          onError={() => {
-                            setImageError(true);
-                            setIsPreviewLoading(false);
-                          }}
-                          key={`${previewFile.shgId}-${previewFile.page}-${previewFile.fromServer}`}
-                        />
-                      )
-                    ) : (
-                      <img
-                        src={previewFile.previewUrl}
-                        alt="Staged Document"
-                        className="max-w-full h-auto mx-auto border-4 border-white rounded-xl shadow-2xl transition-all duration-500"
-                        style={{ transform: `rotate(${previewRotation}deg)` }}
-                        onLoad={() => {
-                          setImageError(false);
-                          setIsPreviewLoading(false);
-                        }}
-                        onError={() => {
-                          setImageError(true);
-                          setIsPreviewLoading(false);
-                        }}
-                      />
-                    )}
-                  </div>
+                  <img src={previewFile.previewUrl} alt={previewFile.fileName} className="max-w-full max-h-full object-contain m-auto bg-white transition-opacity duration-300" />
                 )}
-            </div>
+              </div>
+            )}
           </div>
-        </div>
-      </div>,
-
+        </div>,
         document.body
       )}
 

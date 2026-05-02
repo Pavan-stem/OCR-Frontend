@@ -70,7 +70,11 @@ const SHG_COLUMN_HEADERS = [
 ];
 
 const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
-  const [activePageTab, setActivePageTab] = useState(shgGroup.pages[1] ? 1 : 2);
+  const [activePageTab, setActivePageTab] = useState(() => {
+    const saved = localStorage.getItem('shg_active_page_tab');
+    if (saved) return parseInt(saved);
+    return shgGroup.pages[1] ? 1 : 2;
+  });
   const [loading, setLoading] = useState(true);
   const [page1Data, setPage1Data] = useState(null);
   const [page2Data, setPage2Data] = useState(null);
@@ -144,6 +148,11 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
 
     fetchAllData();
   }, [shgGroup, t]);
+
+  // Persist Page Tab
+  useEffect(() => {
+    localStorage.setItem('shg_active_page_tab', activePageTab);
+  }, [activePageTab]);
 
   const duplicateMBKIds = useMemo(() => {
     const ids = (page1Data?.table_data?.data_rows || [])
@@ -671,6 +680,8 @@ const MemberCard = ({ row, rIdx, shgId, onCellChange, onCellBlur, isDuplicate, t
 };
 
 const Page2GroupedView = ({ tableData, onEdit, relatedPage1Totals, t }) => {
+  const [visibleFieldIds, setVisibleFieldIds] = useState([]);
+
   const idMap = useMemo(() => {
     const map = {};
     (tableData?.data_rows || []).forEach(row => {
@@ -679,6 +690,27 @@ const Page2GroupedView = ({ tableData, onEdit, relatedPage1Totals, t }) => {
       });
     });
     return map;
+  }, [tableData]);
+
+  // Initialize visible fields from OCR data
+  useEffect(() => {
+    if (tableData?.data_rows) {
+      const initialIds = [];
+      tableData.data_rows.forEach(row => {
+        (row.cells || []).forEach(cell => {
+          if (cell.debug_id != null && cell.text && cell.text.toString().trim() !== '') {
+            initialIds.push(cell.debug_id);
+          }
+        });
+      });
+      if (initialIds.length > 0) {
+        setVisibleFieldIds(prev => {
+          // Only initialize if we haven't already
+          if (prev.length > 0) return prev;
+          return initialIds;
+        });
+      }
+    }
   }, [tableData]);
 
   const readOnlyIds = relatedPage1Totals ? [89, 93, 97, 101, 105, 109] : [];
@@ -765,11 +797,11 @@ const Page2GroupedView = ({ tableData, onEdit, relatedPage1Totals, t }) => {
 
       <div className="flex-1 overflow-y-auto pb-10 sm:max-h-[75vh]">
         {COLUMN_SECTIONS.map((section, sIdx) => {
-          const sectionDetectedFieldsCount = section.categories.reduce((acc, cat) => {
-            return acc + cat.fields.filter(f => idMap[f.id] && idMap[f.id].toString().trim() !== '').length;
+          const sectionVisibleFieldsCount = section.categories.reduce((acc, cat) => {
+            return acc + cat.fields.filter(f => visibleFieldIds.includes(f.id)).length;
           }, 0);
 
-          if (sectionDetectedFieldsCount === 0) return null;
+          if (sectionVisibleFieldsCount === 0) return null;
 
           return (
             <div key={sIdx} className="mb-6">
@@ -783,8 +815,8 @@ const Page2GroupedView = ({ tableData, onEdit, relatedPage1Totals, t }) => {
 
               <div className="p-4 space-y-6">
                 {section.categories.map((cat, cIdx) => {
-                  const detectedFields = cat.fields.filter(f => idMap[f.id] && idMap[f.id].toString().trim() !== '');
-                  if (detectedFields.length === 0) return null;
+                  const fieldsToShow = cat.fields.filter(f => visibleFieldIds.includes(f.id));
+                  if (fieldsToShow.length === 0) return null;
 
                   return (
                     <div key={cIdx} className="space-y-3">
@@ -795,7 +827,7 @@ const Page2GroupedView = ({ tableData, onEdit, relatedPage1Totals, t }) => {
 
                       {/* Fields in List */}
                       <div className="space-y-2 px-1">
-                        {detectedFields.map((field) => {
+                        {fieldsToShow.map((field) => {
                           const isReadOnly = readOnlyIds.includes(field.id);
                           return (
                             <div key={field.id} className={`flex items-center gap-3 p-4 transition-all rounded-2xl bg-white border border-gray-100 shadow-sm ${isReadOnly ? 'opacity-80' : 'hover:border-indigo-200 hover:shadow-md'}`}>
@@ -817,6 +849,18 @@ const Page2GroupedView = ({ tableData, onEdit, relatedPage1Totals, t }) => {
                                   placeholder="0.00"
                                 />
                               </div>
+                              {!isReadOnly && (
+                                <button
+                                  onClick={() => {
+                                    onEdit(field.id, '');
+                                    setVisibleFieldIds(prev => prev.filter(id => id !== field.id));
+                                  }}
+                                  className="p-2 text-red-400 hover:text-red-600 transition-colors flex-shrink-0"
+                                  title="Delete Field"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              )}
                             </div>
                           );
                         })}

@@ -17,7 +17,8 @@ import {
     Loader2,
     Filter,
     X,
-    BookCheck
+    BookCheck,
+    Edit3
 } from 'lucide-react';
 import { API_BASE } from '../utils/apiConfig';
 import { formatDate } from '../utils/dateUtils';
@@ -118,7 +119,7 @@ const ConversionView = ({ userId, userName, filterProps, onClose }) => {
             fetchStatus();
         }, 12000); // Further increased polling interval
         return () => clearInterval(interval);
-    }, [fetchStatus]);
+    }, [fetchStatus, selectedSHG]);
 
     // Reset pagination when search or folder changes
     useEffect(() => {
@@ -495,9 +496,19 @@ const ConversionView = ({ userId, userName, filterProps, onClose }) => {
 
                                                         {/* Details and Page Selectors */}
                                                         <div className="flex flex-wrap items-center gap-3 mt-1.5">
-                                                            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest leading-none">
-                                                                {group.shgID}
-                                                            </span>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest leading-none">
+                                                                    {group.shgID}
+                                                                </span>
+                                                                {Object.values(group.pages).some(p => p.isSynced) && (
+                                                                    <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-tighter ${Object.values(group.pages).some(p => p.isEdited)
+                                                                            ? 'bg-amber-100 text-amber-700 border border-amber-200'
+                                                                            : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                                                                        }`}>
+                                                                        {Object.values(group.pages).some(p => p.isEdited) ? 'Edited' : 'Direct'}
+                                                                    </span>
+                                                                )}
+                                                            </div>
 
                                                             {/* Page Switched Tabs */}
                                                             <div className="flex items-center gap-1 bg-gray-100/80 p-0.5 rounded-lg border border-gray-200 shadow-inner">
@@ -513,15 +524,22 @@ const ConversionView = ({ userId, userName, filterProps, onClose }) => {
                                                                                 disabled={!exists}
                                                                                 onClick={() => setSelectedPages(prev => ({ ...prev, [group.shgID]: pNum }))}
                                                                                 className={`text-[9px] font-black px-2 py-1 rounded-md uppercase tracking-wider transition-all disabled:opacity-30 ${isActive
-                                                                                        ? 'bg-indigo-600 text-white shadow-sm'
-                                                                                        : exists ? 'text-gray-500 hover:text-indigo-600' : 'text-gray-400'
+                                                                                    ? 'bg-indigo-600 text-white shadow-sm'
+                                                                                    : exists ? 'text-gray-500 hover:text-indigo-600' : 'text-gray-400'
                                                                                     }`}
                                                                             >
                                                                                 P{pNum}{exists && isActive && '✓'}
                                                                             </button>
                                                                             {isSynced && (
-                                                                                <div className="absolute top-full mt-1.5 flex items-center justify-center">
-                                                                                    <BookCheck className="w-3.5 h-3.5 text-emerald-500 drop-shadow-sm" title={`Page ${pNum} Sent to DB`} />
+                                                                                <div className="absolute top-full mt-1.5 flex items-center justify-center gap-1">
+                                                                                    {pageItem?.isEdited ? (
+                                                                                        <div className="flex items-center gap-0.5 bg-amber-50 px-1 rounded-md border border-amber-200" title={`Page ${pNum} Edited & Saved`}>
+                                                                                            <Edit3 className="w-2.5 h-2.5 text-amber-600" />
+                                                                                            <BookCheck className="w-3 h-3 text-emerald-500" />
+                                                                                        </div>
+                                                                                    ) : (
+                                                                                        <BookCheck className="w-3.5 h-3.5 text-emerald-500 drop-shadow-sm" title={`Page ${pNum} Directly Saved`} />
+                                                                                    )}
                                                                                 </div>
                                                                             )}
                                                                         </div>

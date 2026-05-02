@@ -191,7 +191,8 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
                     ...data, 
                     table_data: updatedTableData, 
                     shgID: shgIDToSave, // Update primary record ID if changed
-                    isSynced: true 
+                    isSynced: true,
+                    isEdited: true
                 };
                 setData(newData);
                 setOriginalData(JSON.parse(JSON.stringify(newData)));

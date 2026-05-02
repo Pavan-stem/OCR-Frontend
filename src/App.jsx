@@ -6,9 +6,7 @@ import LanguageToggle from './components/LanguageToggle';
 import { useLanguage } from './contexts/LanguageContext';
 // Add this import at the top of your App.jsx
 import SHGUploadSection from './SHGUploadSection';
-// import ConvertedResults from './ConvertedResults';
-// import DataAnalytics from './DataAnalytics';
-// import FinancialAnalytics from './FinancialAnalytics';
+import SHGConversionEditView from './pages/SHGConversionEditView';
 import { API_BASE } from './utils/apiConfig';
 
 const STORAGE_KEY_RESULTS = 'ocr_results_v1';
@@ -318,6 +316,15 @@ export default function EnhancedTableOCRSystem() {
   const [selectedVillage, setSelectedVillage] = useState("");
   const [selectedMonth, setSelectedMonth] = useState("");
   const [selectedYear, setSelectedYear] = useState("");
+  const [editingSHG, setEditingSHG] = useState(() => {
+    try {
+      const saved = localStorage.getItem('shg_editing_shg');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      return null;
+    }
+  });
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [showCameraModal, setShowCameraModal] = useState(false);
   const [cameraError, setCameraError] = useState('');
   const [user, setUser] = useState(null);
@@ -373,8 +380,13 @@ export default function EnhancedTableOCRSystem() {
   // Helper: refresh user state from localStorage and sync location selectors
   const refreshUserFromStorage = () => {
     const now = new Date();
-    setSelectedMonth(String(now.getMonth() + 1).padStart(2, '0'));
-    setSelectedYear(String(now.getFullYear()));
+    
+    // Try to load from localStorage first
+    const savedMonth = localStorage.getItem('shg_selected_month');
+    const savedYear = localStorage.getItem('shg_selected_year');
+    
+    setSelectedMonth(savedMonth || String(now.getMonth() + 1).padStart(2, '0'));
+    setSelectedYear(savedYear || String(now.getFullYear()));
 
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
@@ -397,6 +409,21 @@ export default function EnhancedTableOCRSystem() {
   useEffect(() => {
     refreshUserFromStorage();
   }, []);
+
+  // Save selected period to localStorage
+  useEffect(() => {
+    if (selectedMonth) localStorage.setItem('shg_selected_month', selectedMonth);
+    if (selectedYear) localStorage.setItem('shg_selected_year', selectedYear);
+  }, [selectedMonth, selectedYear]);
+
+  // Persist Editing SHG
+  useEffect(() => {
+    if (editingSHG) {
+      localStorage.setItem('shg_editing_shg', JSON.stringify(editingSHG));
+    } else {
+      localStorage.removeItem('shg_editing_shg');
+    }
+  }, [editingSHG]);
 
   // Maintenance Check Polling
   useEffect(() => {
@@ -1601,7 +1628,7 @@ export default function EnhancedTableOCRSystem() {
       )}
 
       <div className="h-full overflow-y-auto">
-        <div className="max-w-7xl mx-auto p-4 lg:p-6">
+        <div className={`max-w-7xl mx-auto p-4 lg:p-6 ${editingSHG ? 'hidden' : 'block'}`}>
           {/* Header */}
           <div className="flex flex-col md:flex-row items-center justify-center gap-6 mb-8">
             <img
@@ -1798,6 +1825,9 @@ export default function EnhancedTableOCRSystem() {
                 onYearChange={setSelectedYear}
                 user={user}
                 setMaintenance={setMaintenance}
+                editingSHG={editingSHG}
+                setEditingSHG={setEditingSHG}
+                refreshTrigger={refreshTrigger}
                 onUploadComplete={async (data) => {
                   console.log('SHG Upload complete:', data);
                   // ✅ FIX: Trigger backend stats sync after uploads complete
@@ -1834,6 +1864,21 @@ export default function EnhancedTableOCRSystem() {
             </>
           )}
         </div>
+
+        {/* Dedicated Page View for SHG Conversion Edit */}
+        {editingSHG && (
+          <div className="max-w-7xl mx-auto p-0 sm:p-4 lg:p-6 animate-in fade-in zoom-in-95 duration-500">
+            <SHGConversionEditView
+              shgGroup={editingSHG}
+              onBack={() => setEditingSHG(null)}
+              t={t}
+              onSaveSuccess={(stayOpen) => {
+                if (!stayOpen) setEditingSHG(null);
+                setRefreshTrigger(prev => prev + 1);
+              }}
+            />
+          </div>
+        )}
       </div>
       {/* Logout Confirmation Modal */}
       {showLogoutModal && (

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { FileText, LogOut, BarChart, Users, CheckCircle, Clock, Filter } from 'lucide-react';
+import { FileText, LogOut, BarChart, Users, CheckCircle, Clock, Filter, RefreshCw } from 'lucide-react';
 import { API_BASE } from '../utils/apiConfig';
 import { formatDate } from '../utils/dateUtils';
 
@@ -159,6 +159,43 @@ const DashboardTab = ({ filterProps }) => {
   const [uploadTrends, setUploadTrends] = useState([]);
   const [showFullMonth, setShowFullMonth] = useState(false);
   const [districtStats, setDistrictStats] = useState([]);
+
+  // Manual refresh handler
+  const handleRefresh = async () => {
+    setStats(prev => ({ ...prev, loading: true, isRefreshing: true }));
+    try {
+      const token = localStorage.getItem('token');
+      let uploadsUrl = `${API_BASE}/api/uploads/stats?force=true`;
+      const params = new URLSearchParams();
+      if (selectedDistrict !== 'all') params.append('district', selectedDistrict);
+      if (selectedMandal !== 'all') params.append('mandal', selectedMandal);
+      if (selectedVillage !== 'all') params.append('village', selectedVillage);
+      params.append('month', filterMonth);
+      params.append('year', filterYear);
+      if (params.toString()) uploadsUrl += `&${params.toString()}`;
+
+      const response = await fetch(uploadsUrl, { 
+        headers: { 'Authorization': `Bearer ${token}` } 
+      });
+      const data = await response.json();
+      
+      setStats(prev => ({
+        ...prev,
+        totalSHGs: data.totalSHGs || 0,
+        filesUploaded: data.uploaded || 0,
+        filesPending: data.pending || 0,
+        validated: data.validated || 0,
+        loading: false,
+        isRefreshing: false
+      }));
+      
+      setUploadTrends(data.dailyTrends || []);
+      setDistrictStats(data.districtBreakdown || []);
+    } catch (error) {
+      console.error('Manual refresh failed:', error);
+      setStats(prev => ({ ...prev, loading: false, isRefreshing: false }));
+    }
+  };
 
   // Load dashboard statistics
   useEffect(() => {
@@ -356,7 +393,7 @@ const DashboardTab = ({ filterProps }) => {
 
         {/* Filters */}
         <div className="bg-white/95 backdrop-blur-xl rounded-2xl sm:rounded-3xl shadow-2xl border border-white/30 overflow-hidden">
-          <div className="bg-indigo-50/50 px-5 sm:px-8 py-4 sm:py-6 border-b border-gray-100">
+          <div className="bg-indigo-50/50 px-5 sm:px-8 py-4 sm:py-6 border-b border-gray-100 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="bg-indigo-600 p-1.5 sm:p-2 rounded-xl shadow-md">
                 <Filter className="w-4 h-4 sm:w-5 sm:h-5 text-white" />
@@ -366,6 +403,16 @@ const DashboardTab = ({ filterProps }) => {
                 <p className="text-[10px] sm:text-sm text-gray-500 font-medium whitespace-nowrap overflow-hidden text-ellipsis">Filter statistics by time and location</p>
               </div>
             </div>
+            
+            <button
+              onClick={handleRefresh}
+              disabled={stats.loading}
+              className={`flex items-center gap-2 px-4 py-2 bg-white text-indigo-600 rounded-xl hover:bg-indigo-50 transition-all font-black text-xs shadow-sm border border-indigo-100 ${stats.isRefreshing ? 'opacity-70' : ''}`}
+              title="Force refresh statistics"
+            >
+              <RefreshCw className={`w-4 h-4 ${stats.isRefreshing ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">{stats.isRefreshing ? 'Refreshing...' : 'Sync Now'}</span>
+            </button>
           </div>
 
           <div className="p-5 sm:p-8 space-y-6 sm:space-y-8">
