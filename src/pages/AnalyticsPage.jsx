@@ -1461,7 +1461,7 @@ const UploadCompletionPieChart = ({ conversion, month, year }) => {
 
   const data = isAfterFeb2026 ? [
     { name: 'Complete (P1+P2)', value: bothPagesCount, color: '#10b981', label: 'సంఘం వివరాలు మరియు ఫైనాన్సియల్ లెడ్జర్ అప్లోడ్ అయినవి' },
-    { name: 'Page 2 Pending', value: page1OnlyCount, color: '#f59e0b', label: 'ఫైనాన్సియల్ లెడ్జర్ అప్లోడ్ కావాల్సి ఉంది' },
+    { name: 'P1 or P2 Pending Files', value: page1OnlyCount, color: '#f59e0b', label: 'ఫైనాన్సియల్ లెడ్జర్ అప్లోడ్ కావాల్సి ఉంది' },
     { name: 'Page 1 Pending', value: page2OnlyCount, color: '#6366f1', label: 'సంఘం వివరాలు అప్లోడ్ కావాల్సి ఉంది' }
   ] : [
     { name: 'Complete (Page 1)', value: bothPagesCount + page1OnlyCount, color: '#10b981', label: 'సంఘం వివరాలు అప్లోడ్ అయినవి (Feb 2026 నిబంధన)' },

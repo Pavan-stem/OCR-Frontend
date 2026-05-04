@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { FileText, LogOut, BarChart, Users, CheckCircle, Clock, Filter, RefreshCw } from 'lucide-react';
 import { API_BASE } from '../utils/apiConfig';
@@ -161,8 +161,9 @@ const DashboardTab = ({ filterProps }) => {
   const [districtStats, setDistrictStats] = useState([]);
 
   // Manual refresh handler
-  const handleRefresh = async () => {
-    setStats(prev => ({ ...prev, loading: true, isRefreshing: true }));
+  const handleRefresh = useCallback(async (isSilent = false) => {
+    if (!isSilent) setStats(prev => ({ ...prev, loading: true }));
+    setStats(prev => ({ ...prev, isRefreshing: true }));
     try {
       const token = localStorage.getItem('token');
       let uploadsUrl = `${API_BASE}/api/uploads/stats?force=true`;
@@ -174,11 +175,11 @@ const DashboardTab = ({ filterProps }) => {
       params.append('year', filterYear);
       if (params.toString()) uploadsUrl += `&${params.toString()}`;
 
-      const response = await fetch(uploadsUrl, { 
-        headers: { 'Authorization': `Bearer ${token}` } 
+      const response = await fetch(uploadsUrl, {
+        headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
-      
+
       setStats(prev => ({
         ...prev,
         totalSHGs: data.totalSHGs || 0,
@@ -188,14 +189,24 @@ const DashboardTab = ({ filterProps }) => {
         loading: false,
         isRefreshing: false
       }));
-      
+
       setUploadTrends(data.dailyTrends || []);
       setDistrictStats(data.districtBreakdown || []);
     } catch (error) {
       console.error('Manual refresh failed:', error);
       setStats(prev => ({ ...prev, loading: false, isRefreshing: false }));
     }
-  };
+  }, [selectedDistrict, selectedMandal, selectedVillage, filterMonth, filterYear]);
+
+  // Auto-sync statistics every 15 minutes
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      console.log('Auto-syncing dashboard statistics...');
+      handleRefresh(true); // Pass true for silent background sync
+    }, 900000); // 15 minutes (900,000 ms)
+
+    return () => clearInterval(intervalId);
+  }, [handleRefresh]);
 
   // Load dashboard statistics
   useEffect(() => {
@@ -403,16 +414,8 @@ const DashboardTab = ({ filterProps }) => {
                 <p className="text-[10px] sm:text-sm text-gray-500 font-medium whitespace-nowrap overflow-hidden text-ellipsis">Filter statistics by time and location</p>
               </div>
             </div>
-            
-            <button
-              onClick={handleRefresh}
-              disabled={stats.loading}
-              className={`flex items-center gap-2 px-4 py-2 bg-white text-indigo-600 rounded-xl hover:bg-indigo-50 transition-all font-black text-xs shadow-sm border border-indigo-100 ${stats.isRefreshing ? 'opacity-70' : ''}`}
-              title="Force refresh statistics"
-            >
-              <RefreshCw className={`w-4 h-4 ${stats.isRefreshing ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">{stats.isRefreshing ? 'Refreshing...' : 'Sync Now'}</span>
-            </button>
+
+            {/* Sync button removed as per user request - auto-sync handles updates */}
           </div>
 
           <div className="p-5 sm:p-8 space-y-6 sm:space-y-8">
