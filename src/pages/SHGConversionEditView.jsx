@@ -380,7 +380,7 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
   const shgIdForPage1 = padSHGId(page1Data?.shgID);
 
   return (
-    <div className="flex flex-col min-h-screen bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-800 -m-4 sm:-m-8 p-2 sm:p-8 animate-in fade-in duration-500 overflow-x-hidden">
+    <div className="flex flex-col min-h-screen bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-800 p-2 sm:p-8 animate-in fade-in duration-500 overflow-x-hidden">
       <div className="space-y-4 sm:space-y-6 max-w-4xl mx-auto w-full pb-24">
         {/* Header Area */}
         <div className="bg-white/10 backdrop-blur-xl rounded-2xl sm:rounded-[32px] p-4 sm:p-6 shadow-2xl border border-white/20 sticky top-0 z-[100]">
@@ -395,7 +395,7 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
                 <div className={`flex items-center justify-center gap-1.5 py-1 px-3 rounded-full border w-fit mx-auto backdrop-blur-sm ${page1Data && page2Data ? 'bg-emerald-500/20 border-emerald-500/30' : 'bg-amber-500/20 border-amber-500/30'}`}>
                   {page1Data && page2Data ? <CheckCircle size={10} className="text-emerald-400" /> : <AlertCircle size={10} className="text-amber-400" />}
                   <span className={`text-[8px] font-black uppercase tracking-tighter ${page1Data && page2Data ? 'text-emerald-200' : 'text-amber-200'}`}>
-                    {page1Data && page2Data 
+                    {page1Data && page2Data
                       ? (t?.('conversion.bothPagesVerified') || 'Both Pages Verified & Ready')
                       : (t?.('conversion.partialDataReady') || 'Partial Data Verified & Ready')}
                   </span>
@@ -434,8 +434,8 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
               onClick={handleSave}
               disabled={saving || isSyncing}
               className={`p-2 sm:p-3 rounded-xl sm:rounded-2xl shadow-xl transition-all font-black disabled:opacity-50 flex items-center gap-2 ${saveSuccess?.pageNum === activePageTab
-                  ? 'bg-emerald-500 text-white'
-                  : 'bg-white text-indigo-600 hover:bg-indigo-50 border border-indigo-100'
+                ? 'bg-emerald-500 text-white'
+                : 'bg-white text-indigo-600 hover:bg-indigo-50 border border-indigo-100'
                 }`}
             >
               {saving || isSyncing ? (
@@ -475,9 +475,9 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
             </div>
           ) : (
             <div className="bg-black/10 p-3 rounded-2xl border border-white/10 text-center">
-               <p className="text-white/60 text-[10px] font-black uppercase tracking-widest">
-                 {shgGroup.pages[1] ? (t?.('conversion.viewingPage1') || 'Viewing Page 1 (Members)') : (t?.('conversion.viewingPage2') || 'Viewing Page 2 (Financials)')}
-               </p>
+              <p className="text-white/60 text-[10px] font-black uppercase tracking-widest">
+                {shgGroup.pages[1] ? (t?.('conversion.viewingPage1') || 'Viewing Page 1 (Members)') : (t?.('conversion.viewingPage2') || 'Viewing Page 2 (Financials)')}
+              </p>
             </div>
           )}
         </div>
