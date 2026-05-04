@@ -380,11 +380,11 @@ export default function EnhancedTableOCRSystem() {
   // Helper: refresh user state from localStorage and sync location selectors
   const refreshUserFromStorage = () => {
     const now = new Date();
-    
+
     // Try to load from localStorage first
     const savedMonth = localStorage.getItem('shg_selected_month');
     const savedYear = localStorage.getItem('shg_selected_year');
-    
+
     setSelectedMonth(savedMonth || String(now.getMonth() + 1).padStart(2, '0'));
     setSelectedYear(savedYear || String(now.getFullYear()));
 
@@ -1627,7 +1627,7 @@ export default function EnhancedTableOCRSystem() {
         </div>
       )}
 
-      <div className="h-full overflow-y-auto">
+      <div className="h-full overflow-y-auto overflow-x-hidden">
         <div className={`max-w-7xl mx-auto p-4 lg:p-6 ${editingSHG ? 'hidden' : 'block'}`}>
           {/* Header */}
           <div className="flex flex-col md:flex-row items-center justify-center gap-6 mb-8">
@@ -1867,7 +1867,7 @@ export default function EnhancedTableOCRSystem() {
 
         {/* Dedicated Page View for SHG Conversion Edit */}
         {editingSHG && (
-          <div className="max-w-7xl mx-auto p-0 sm:p-4 lg:p-6 animate-in fade-in zoom-in-95 duration-500">
+          <div className="w-full p-0 animate-in fade-in zoom-in-95 duration-500">
             <SHGConversionEditView
               shgGroup={editingSHG}
               onBack={() => setEditingSHG(null)}
