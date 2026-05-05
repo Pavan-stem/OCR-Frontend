@@ -259,6 +259,24 @@ const SHGTableDetail = ({ uploadId, shgName, onBack }) => {
             }
             if (found) break;
         }
+
+        // Keep top-level cells in sync for backward compatibility/backend extraction
+        if (!newData.table_data.cells) newData.table_data.cells = [];
+        let topFound = false;
+        for (const cell of newData.table_data.cells) {
+            if (cell.debug_id === debugId) {
+                cell.text = value;
+                topFound = true;
+                break;
+            }
+        }
+        if (!topFound) {
+            newData.table_data.cells.push({
+                debug_id: debugId,
+                text: value,
+                confidence: 1.0
+            });
+        }
         if (!found) {
             // Cell doesn't exist yet — insert it in first row as a new cell
             if (!newData.table_data.data_rows) newData.table_data.data_rows = [];
