@@ -177,6 +177,31 @@ export default function SHGPage2View({ tableData, isEditing, onCellEdit, related
   const totalsMatch = Math.abs(col1Total - col2Total) < 0.01;
 
   const lastSentTotals = React.useRef({ t119: null, t121: null });
+  const lastSentLinked = React.useRef({});
+
+  // Sync linked Page 1 totals back to parent state if they differ
+  // This ensures that when you click "Save" in the parent, these calculated
+  // values are what actually gets sent to the server.
+  React.useEffect(() => {
+    if (!relatedPage1Totals || !onCellEdit) return;
+
+    const mappings = {
+      '4': 89, '5': 93, '6': 97, '7': 101, '8': 105, '9': 109, '10': 113
+    };
+
+    Object.entries(mappings).forEach(([p1Col, p2Id]) => {
+      const val = relatedPage1Totals[p1Col];
+      if (val !== undefined && val !== null) {
+        const textVal = val > 0 ? String(val) : '';
+        const currentVal = idMap[`cell_${p2Id}`]?.text || '';
+        
+        if (textVal !== currentVal && lastSentLinked.current[p2Id] !== textVal) {
+          lastSentLinked.current[p2Id] = textVal;
+          onCellEdit(p2Id, textVal);
+        }
+      }
+    });
+  }, [relatedPage1Totals, onCellEdit, idMap]);
 
   React.useEffect(() => {
     if (totalsMatch) {

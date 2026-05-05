@@ -169,7 +169,6 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
 
           setPage2Data({ ...p2, relatedPage1Totals: p1Totals });
         }
-
         if (!data1.success && !data2.success) {
           setError(t?.('upload.errorLoading') || 'Failed to fetch conversion data');
         }
@@ -188,6 +187,46 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
   useEffect(() => {
     localStorage.setItem('shg_active_page_tab', activePageTab);
   }, [activePageTab]);
+
+  const calculatedPage1Totals = useMemo(() => {
+    const totals = {};
+    const table = page1Data?.table_data || {};
+    
+    // 1. Try to pull directly from the saved totals_row (Most accurate)
+    const tr = table.totals_row?.cells || [];
+    if (tr.length > 0) {
+      tr.forEach(cell => {
+        const mainColIdx = cell.col_index + 2;
+        const val = cell.text;
+        if (val != null && val !== '') {
+          const cleanStr = String(val).replace(/,/g, '').replace(/[^0-9.-]/g, '');
+          totals[mainColIdx] = parseFloat(cleanStr) || 0;
+        }
+      });
+    }
+
+    // 2. Fallback/Validation: Sum the data_rows if totals_row is missing for some columns
+    const rows = table.data_rows || [];
+    if (rows.length > 0) {
+      for (let colIdx = 2; colIdx <= 10; colIdx++) {
+        // Only calculate if not already populated from totals_row (or always calculate for live updates)
+        const sum = rows.reduce((acc, row) => {
+          const val = row.cells[colIdx]?.text;
+          if (val == null || val === '') return acc;
+          const cleanStr = String(val).replace(/,/g, '').replace(/[^0-9.-]/g, '');
+          const num = parseFloat(cleanStr);
+          return isNaN(num) ? acc : acc + num;
+        }, 0);
+        
+        // If the live sum differs from saved total (due to edits), prioritize live sum
+        if (totals[colIdx] === undefined || sum !== totals[colIdx]) {
+           totals[colIdx] = sum;
+        }
+      }
+    }
+    
+    return totals;
+  }, [page1Data]);
 
   const duplicateMBKIds = useMemo(() => {
     const ids = (page1Data?.table_data?.data_rows || [])
