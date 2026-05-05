@@ -1375,6 +1375,11 @@ const MiniPaymentPie = ({ data, color, level, metricLabel }) => {
       if (/^\d+$/.test(d.name)) return false;
     }
 
+    // Allow numeric names for VO, CC, and SHG levels (often IDs if names aren't found)
+    if (['voID', 'userId', 'clusterID', 'shg_mbk_id'].includes(level)) {
+       return true;
+    }
+
     if (/^\d{10,}$/.test(d.name)) return false;
     return true;
   });
