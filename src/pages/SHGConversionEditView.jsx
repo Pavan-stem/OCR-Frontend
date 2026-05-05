@@ -128,11 +128,46 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
         }
 
         if (data2.success) {
-          // Inject related_page1_totals into page2Data for the column view
-          setPage2Data({
-            ...data2.data,
-            relatedPage1Totals: data2.related_page1_totals
-          });
+          const p2 = JSON.parse(JSON.stringify(data2.data));
+          const p1Totals = data2.related_page1_totals;
+
+          // Linked: Page 1 column index → Page 2 debug_id
+          // These are shown as read-only "linked" fields in SHGPage2View.
+          // CRITICAL FIX: write the linked values INTO data_rows cells NOW,
+          // so that what the user sees is exactly what gets saved.
+          // Previously, the overlay was display-only (idMap override) but
+          // data_rows still held the original OCR value → save mismatch.
+          const LINKED_MAP = { '4': 89, '5': 93, '6': 97, '7': 101, '8': 105, '9': 109, '10': 113 };
+
+          if (p1Totals && p2.table_data) {
+            Object.entries(LINKED_MAP).forEach(([p1Col, debugId]) => {
+              const val = p1Totals[p1Col];
+              if (val === undefined || val === null) return;
+              const textVal = val > 0 ? String(val) : '';
+
+              // Find and update existing cell, or add a new one
+              let found = false;
+              for (const row of p2.table_data.data_rows || []) {
+                for (const cell of row.cells || []) {
+                  if (cell.debug_id === debugId) {
+                    cell.text = textVal;
+                    cell.confidence = 1.0;
+                    cell.isLinked = true;
+                    found = true;
+                    break;
+                  }
+                }
+                if (found) break;
+              }
+              if (!found) {
+                if (!p2.table_data.data_rows) p2.table_data.data_rows = [];
+                if (p2.table_data.data_rows.length === 0) p2.table_data.data_rows.push({ cells: [] });
+                p2.table_data.data_rows[0].cells.push({ debug_id: debugId, text: textVal, confidence: 1.0, isLinked: true });
+              }
+            });
+          }
+
+          setPage2Data({ ...p2, relatedPage1Totals: p1Totals });
         }
 
         if (!data1.success && !data2.success) {
