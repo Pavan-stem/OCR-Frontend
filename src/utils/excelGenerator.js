@@ -20,6 +20,34 @@ const FINANCIAL_COLUMNS = [
     { key: 'totalPenalties', header: 'జరిమానా రకం (Penalties)' },
     { key: 'totalReturned', header: 'సభ్యులకు తిరిగి ఇచ్చిన మొత్తం (Savings Withdrawal)' },
     { key: 'otherSavings', header: 'సభ్యుల ఇతర పొదుపు (విరాళం ఇతరములు) (Other Savings)' },
+    
+    // Page 2 Financial Ledger Columns
+    { key: 'savings', header: 'Savings (₹)' },
+    { key: 'vo_shared_capital', header: 'VO Shared Capital (₹)' },
+    { key: 'vo_savings', header: 'VO Savings (₹)' },
+    { key: 'revolving_fund', header: 'Revolving Fund (₹)' },
+    { key: 'strinidi_savings', header: 'Streenidhi Savings (₹)' },
+    { key: 'aadhar_grants', header: 'Aadhar Grants (₹)' },
+    { key: 'bank_deposit', header: 'Bank Deposit (₹)' },
+    { key: 'returned_shared_capital', header: 'Returned Shared Capital (₹)' },
+    { key: 'entrance_fee', header: 'Entrance Fee (₹)' },
+    { key: 'returned_vo_savings', header: 'Returned VO Savings (₹)' },
+    { key: 'fines_paid', header: 'Fines Paid (₹)' },
+    { key: 'returned_strinidi_savings', header: 'Returned Streenidhi Savings (₹)' },
+    { key: 'honorarium', header: 'Honorarium (₹)' },
+    { key: 'returned_bank_deposit', header: 'Returned Bank Deposit (₹)' },
+    { key: 'other_expenses', header: 'Other Expenses (₹)' },
+    { key: 'stationary', header: 'Stationary (₹)' },
+    { key: 'audit_fees', header: 'Audit Fees (₹)' },
+    { key: 'bank_charges', header: 'Bank Charges (₹)' },
+    { key: 'bank_interest', header: 'Bank Interest (₹)' },
+    { key: 'banck_loan_payment', header: 'Bank Loan Payment (₹)' },
+    { key: 'strinidi_micro_payment', header: 'Streenidhi Micro Payment (₹)' },
+    { key: 'strinidi_teni_payment', header: 'Streenidhi Tenny Payment (₹)' },
+    { key: 'scsp_payment', header: 'SCSP Payment (₹)' },
+    { key: 'tsp_payment', header: 'TSP Payment (₹)' },
+    { key: 'cif_payment', header: 'CIF Payment (₹)' },
+    { key: 'vo_internal_payments', header: 'VO Internal Payments (₹)' }
 ];
 
 const HEADERS = ['S.No', 'ID', 'Name', ...FINANCIAL_COLUMNS.map(c => c.header)];
@@ -27,17 +55,12 @@ const HEADERS = ['S.No', 'ID', 'Name', ...FINANCIAL_COLUMNS.map(c => c.header)];
 
 /**
  * Build a data row array for the spreadsheet.
- * @param {number|string} rowNum  - Row number (1-based)
- * @param {string} id             - Entity ID
- * @param {string} name           - Entity name
- * @param {object} stats          - Financial stats object from breakdown API
  */
-const buildRow = (rowNum, id, name, stats = {}) => [
+const buildRow = (rowNum, id, name, stats = {}, isSynced = false) => [
     rowNum,
     id ?? '',
     name ?? '',
     ...FINANCIAL_COLUMNS.map(col => {
-        // totalCollections is derived: sum of loan-repaid columns
         if (col.key === 'totalCollections') {
             const computed = (
                 (stats.bankLoan || 0) +
@@ -49,7 +72,6 @@ const buildRow = (rowNum, id, name, stats = {}) => [
                 (stats.cif || 0) +
                 (stats.voInternal || 0)
             );
-            // Prefer the pre-computed value if it's non-zero, else use our derivation
             return stats.totalCollections || computed || 0;
         }
         return stats[col.key] ?? 0;
@@ -58,118 +80,80 @@ const buildRow = (rowNum, id, name, stats = {}) => [
 
 
 /**
- * Export detailed unit performance breakdown to Excel.
- *
- * Layout:
- *   Row 1 : Header row
- *   Row 2 : PARENT row  (APM / CC / VO) showing aggregated total of all children
- *   Row 3+ : CHILDREN rows (CCs for APM, VOs for CC, SHGs for VO)
- *
- * @param {Array}  breakdownData  - Data from /api/payments/breakdown
- * @param {string} level          - Grouping level (clusterID, voID, shg_mbk_id, …)
- * @param {Array}  allUnits       - Master list from hierarchy (for APM to look up CC names)
- * @param {Object} parentUnit     - Metadata about the parent unit being downloaded
+ * Export detailed unit performance to Excel.
  */
-export const exportPerformanceExcel = (breakdownData, level, allUnits = [], parentUnit = null) => {
-    const rows = breakdownData || [];
-
-    // ── 1. Compute aggregated totals to use for the parent summary row ──────
-    const parentStats = rows.reduce((acc, item) => {
+export const exportPerformanceExcel = (data, level, children = [], parent = null) => {
+    try {
+        const rows = [];
+        
+        // 1. Root Level Summary
+        const totals = { ...data[0]?.stats || {} }; // Default if empty
+        const allStats = data.map(d => d.stats || {});
+        
+        // Sum up all columns including Page 2
         FINANCIAL_COLUMNS.forEach(col => {
-            if (col.key === 'totalCollections') return; // derived, skip
-            acc[col.key] = (acc[col.key] || 0) + (item.stats?.[col.key] || 0);
+            totals[col.key] = allStats.reduce((acc, curr) => acc + (curr[col.key] || 0), 0);
         });
-        // Re-derive totalCollections
-        acc.totalCollections = (
-            (acc.bankLoan || 0) + (acc.shgInternal || 0) + (acc.streenidhiMicro || 0) +
-            (acc.streenidhiTenni || 0) + (acc.unnatiSCSP || 0) + (acc.unnatiTSP || 0) +
-            (acc.cif || 0) + (acc.voInternal || 0)
-        );
-        return acc;
-    }, {});
 
-    // ── 2. Build sheet data ─────────────────────────────────────────────────
-    const sheetData = [HEADERS];
+        // 1. Individual Unit Rows
+        data.forEach((item, idx) => {
+            rows.push(buildRow(idx + 1, item.id, item.name, item.stats, item.isSynced));
+        });
 
-    // Children rows
-    rows.forEach((item, idx) => {
-        sheetData.push(buildRow(idx + 1, item.id ?? '', item.name ?? '', item.stats ?? {}));
-    });
+        // 2. Root Level Summary (Moved to end)
+        const parentName = parent?.name || (level === 'apm' ? 'APM Scope' : 'Summary');
+        const parentId = parent?.userID || parent?.voID || parent?.clusterID || parent?.id || (level === 'apm' ? 'APM' : 'ALL');
+        rows.push(buildRow('TOTAL', parentId, parentName, totals, true));
 
-    // Parent summary row (overall totals)
-    if (parentUnit) {
-        const pId = parentUnit.userID || parentUnit.clusterID || parentUnit.voID || parentUnit.id || '';
-        sheetData.push([])
-        sheetData.push(buildRow('TOTAL', pId, `[${parentUnit.role}] ${parentUnit.name}`, parentStats));
+        // 3. Create Workbook
+        const worksheet = XLSX.utils.aoa_to_sheet([HEADERS, ...rows]);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Unit Performance");
+
+        // Column widths
+        worksheet['!cols'] = [
+            { wch: 8 },  // S.No
+            { wch: 15 }, // ID
+            { wch: 35 }, // Name
+            ...FINANCIAL_COLUMNS.map(() => ({ wch: 18 }))
+        ];
+
+        // 4. Download
+        const cleanName = (parent?.name || level).replace(/[^a-z0-9]/gi, '_');
+        const filename = `${cleanName}_Performance_${new Date().toISOString().split('T')[0]}.xlsx`;
+        XLSX.writeFile(workbook, filename);
+    } catch (err) {
+        console.error("Excel Export Error:", err);
+        alert("Failed to generate Excel report.");
     }
-
-    // ── 3. Create Worksheet ─────────────────────────────────────────────────
-    const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
-
-    // Style: auto-width for all columns
-    const colWidths = HEADERS.map((h, colIdx) => {
-        let maxLen = h.length;
-        // Telugu characters render wider
-        if (/[\u0c00-\u0c7f]/.test(h)) maxLen = Math.max(maxLen * 1.8, 32);
-        sheetData.forEach(row => {
-            const cell = row[colIdx];
-            if (cell != null) {
-                const text = String(cell);
-                const isTelugu = /[\u0c00-\u0c7f]/.test(text);
-                const cellLen = isTelugu ? text.length * 1.8 : text.length;
-                if (cellLen > maxLen) maxLen = cellLen;
-            }
-        });
-        return { wch: Math.min(maxLen + 4, 60) };
-    });
-    worksheet['!cols'] = colWidths;
-
-    // ── 4. Write file ───────────────────────────────────────────────────────
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Report');
-
-    const roleLabel = parentUnit?.role || level?.toUpperCase() || 'UNIT';
-    const nameLabel = (parentUnit?.name || 'Report').replace(/\s+/g, '_').replace(/[^\w_]/g, '');
-    const fileName = `${roleLabel}_${nameLabel}_Report.xlsx`;
-
-    XLSX.writeFile(workbook, fileName);
 };
-
 
 /**
- * Export multi-month cumulative financial summary to Excel.
- * @param {Array} historyData - Processed data from CumulativeFinanceSummary component
+ * Export cumulative financial summary history to Excel.
  */
-export const exportCumulativeExcel = (historyData) => {
-    const headers = [
-        'Month',
-        'Opening Balance (₹)',
-        'Total Inflow (₹)',
-        'Total Outflow (₹)',
-        'Closing Balance (₹)',
-    ];
+export const exportCumulativeExcel = (history) => {
+    try {
+        const headers = ['Month', 'Year', 'Opening Balance', 'Inflow (+)', 'Outflow (-)', 'Closing Balance'];
+        const rows = history.map(item => [
+            new Date(0, item.month - 1).toLocaleString('default', { month: 'long' }),
+            item.year,
+            item.opening || 0,
+            item.inflow || 0,
+            item.outflow || 0,
+            item.closing || 0
+        ]);
 
-    const rows = historyData.map(item => [
-        getMonthName(item.month) + ' ' + item.year,
-        item.opening ?? 0,
-        item.inflow ?? 0,
-        item.outflow ?? 0,
-        item.closing ?? 0,
-    ]);
+        const worksheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Financial History");
+        
+        worksheet['!cols'] = [
+            { wch: 15 }, { wch: 10 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 20 }
+        ];
 
-    const sheetData = [headers, ...rows];
-    const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
-    worksheet['!cols'] = headers.map(h => ({ wch: h.length + 12 }));
-
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Financial Summary');
-
-    XLSX.writeFile(workbook, `Cumulative_Financial_Report_${new Date().getFullYear()}.xlsx`);
-};
-
-
-const getMonthName = (m) => {
-    const months = ['January', 'February', 'March', 'April', 'May', 'June',
-        'July', 'August', 'September', 'October', 'November', 'December'];
-    return months[(m - 1)] || String(m);
+        XLSX.writeFile(workbook, `Cumulative_Financial_History_${new Date().getFullYear()}.xlsx`);
+    } catch (err) {
+        console.error("Cumulative Excel Error:", err);
+        alert("Failed to export summary.");
+    }
 };
