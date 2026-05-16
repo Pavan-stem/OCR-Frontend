@@ -1093,7 +1093,6 @@ const FinanceAnalytics = ({ data, activeMetric, onMetricChange, isExpanded, setI
             e.stopPropagation();
             setIsExpanded(!isExpanded);
             onMetricChange('totalCollections');
-            document.getElementById('chart-totalCollections')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
           }}
         >
           <div className="min-w-0 flex-1">
@@ -1134,7 +1133,6 @@ const FinanceAnalytics = ({ data, activeMetric, onMetricChange, isExpanded, setI
       <div
         onClick={() => {
           onMetricChange('memberDeposits');
-          document.getElementById('chart-memberDeposits')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }}
         className={`bg-white/90 backdrop-blur-xl px-4 py-6 rounded-[32px] border transition-all duration-300 cursor-pointer shadow-xl hover:shadow-2xl ${activeMetric === 'memberDeposits' ? 'border-emerald-500 ring-2 ring-emerald-500/20' : 'border-white/20'}`}
       >
@@ -1152,7 +1150,6 @@ const FinanceAnalytics = ({ data, activeMetric, onMetricChange, isExpanded, setI
       <div
         onClick={() => {
           onMetricChange('loansSanctioned');
-          document.getElementById('chart-loansSanctioned')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }}
         className={`bg-white/90 backdrop-blur-xl px-4 py-6 rounded-[32px] border transition-all duration-300 cursor-pointer shadow-xl hover:shadow-2xl ${activeMetric === 'loansSanctioned' ? 'border-rose-500 ring-2 ring-rose-500/20' : 'border-white/20'}`}
       >
@@ -1176,7 +1173,6 @@ const FinanceAnalytics = ({ data, activeMetric, onMetricChange, isExpanded, setI
       <div
         onClick={() => {
           onMetricChange('savingsWithdrawal');
-          document.getElementById('chart-savingsWithdrawal')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }}
         className={`bg-white/90 backdrop-blur-xl px-4 py-6 rounded-[32px] border transition-all duration-300 cursor-pointer shadow-xl hover:shadow-2xl ${activeMetric === 'savingsWithdrawal' ? 'border-orange-500 ring-2 ring-orange-500/20' : 'border-white/20'}`}
       >
@@ -1194,7 +1190,6 @@ const FinanceAnalytics = ({ data, activeMetric, onMetricChange, isExpanded, setI
       <div
         onClick={() => {
           onMetricChange('latePenalties');
-          document.getElementById('chart-latePenalties')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }}
         className={`bg-white/90 backdrop-blur-xl px-4 py-6 rounded-[32px] border transition-all duration-300 cursor-pointer shadow-xl hover:shadow-2xl ${activeMetric === 'latePenalties' ? 'border-amber-500 ring-2 ring-amber-500/20' : 'border-white/20'}`}
       >
