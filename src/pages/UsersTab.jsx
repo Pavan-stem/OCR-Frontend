@@ -1846,36 +1846,43 @@ const UsersTab = ({ filterProps }) => {
       if (data.success) {
         // --- Sync SHG Master Data ---
         if (formData.role === 'VO') {
-          // 1. Handle Deletions
-          for (const shgId of deletedShgIds) {
+          // 1. Handle Deletions concurrently
+          await Promise.all(deletedShgIds.map(async (shgId) => {
             try {
               await fetch(`${API_BASE}/api/shg-master/${shgId}`, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
               });
             } catch (err) { console.warn(`Failed to delete SHG ${shgId}:`, err); }
-          }
+          }));
 
           // 2. Handle Updates & New Entries
           const newShgs = [];
+          const updatePromises = [];
           for (const shg of formData.shgList) {
             if (shg._id) {
               // Existing SHG -> Update
-              try {
-                await fetch(`${API_BASE}/api/shg-master/${shg._id}`, {
-                  method: 'PUT',
-                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                  body: JSON.stringify({
-                    'SHG Name': shg['SHG Name'] || shg.shgName,
-                    'endMonth': shg.endMonth,
-                    'endYear': shg.endYear
-                  })
-                });
-              } catch (err) { console.warn(`Failed to update SHG ${shg._id}:`, err); }
+              updatePromises.push((async () => {
+                try {
+                  await fetch(`${API_BASE}/api/shg-master/${shg._id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({
+                      'SHG Name': shg['SHG Name'] || shg.shgName,
+                      'endMonth': shg.endMonth,
+                      'endYear': shg.endYear
+                    })
+                  });
+                } catch (err) { console.warn(`Failed to update SHG ${shg._id}:`, err); }
+              })());
             } else {
               // New SHG -> Queue for batch create
               newShgs.push(shg);
             }
+          }
+          
+          if (updatePromises.length > 0) {
+            await Promise.all(updatePromises);
           }
 
           if (newShgs.length > 0) {
