@@ -137,7 +137,7 @@ const SHGConversionEditView = ({ shgGroup, onBack, onSaveSuccess, t }) => {
           // so that what the user sees is exactly what gets saved.
           // Previously, the overlay was display-only (idMap override) but
           // data_rows still held the original OCR value → save mismatch.
-          const LINKED_MAP = { '4': 89, '5': 93, '6': 97, '7': 101, '8': 105, '9': 109, '10': 113 };
+          const LINKED_MAP = { '2': 17, '4': 89, '5': 93, '6': 97, '7': 101, '8': 105, '9': 109, '10': 113 };
 
           if (p1Totals && p2.table_data) {
             Object.entries(LINKED_MAP).forEach(([p1Col, debugId]) => {
@@ -787,7 +787,7 @@ const Page2GroupedView = ({ tableData, onEdit, relatedPage1Totals, t }) => {
     }
   }, [tableData]);
 
-  const readOnlyIds = relatedPage1Totals ? [89, 93, 97, 101, 105, 109] : [];
+  const readOnlyIds = [17, 89, 93, 97, 101, 105, 109, 113];
 
   const COLUMN_SECTIONS = [
     {

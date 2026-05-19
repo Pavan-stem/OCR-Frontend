@@ -92,6 +92,7 @@ export default function SHGPage2View({ tableData, isEditing, onCellEdit, related
     // Link Page 1 totals if available — overwrites detected data in Page 2
     if (relatedPage1Totals) {
       const mappings = {
+        '2': 17,  // పొదుపులు (SN+VO+Other Saving)
         '4': 89,  // Bank Loan
         '5': 93,  // Streenidhi Micro
         '6': 97,  // Streenidhi Tenni
@@ -122,18 +123,12 @@ export default function SHGPage2View({ tableData, isEditing, onCellEdit, related
 
   const editableIds = useMemo(() => {
     const baseIds = new Set([
-      10, 12, 17, 19, 24, 26, 31, 33, 36, 38, 42, 43, 46, 48, 51, 53,
-      56, 58, 61, 63, 68, 72, 76, 80, 83, 85, 87, 89, 91, 93, 97, 101,
-      105, 109, 113, 115
+      10, 12, 19, 24, 26, 31, 33, 36, 38, 42, 43, 46, 48, 51, 53,
+      56, 58, 61, 63, 68, 72, 76, 80, 83, 85, 87, 91, 115
     ]);
 
-    // If linked data exists, these 6 IDs are NO LONGER editable in Page 2
-    if (relatedPage1Totals) {
-      [89, 93, 97, 101, 105, 109, 113].forEach(id => baseIds.delete(id));
-    }
-
     return baseIds;
-  }, [relatedPage1Totals]);
+  }, []);
 
   const g = (id) => parseValue(idMap[`cell_${id}`]?.text || '');
 
@@ -145,15 +140,18 @@ export default function SHGPage2View({ tableData, isEditing, onCellEdit, related
   // Loan repayment IDs (7 — live in Col 2): 89, 93, 97, 101, 105, 109, 113
   const loanRepaymentTotal = g(89) + g(93) + g(97) + g(101) + g(105) + g(109) + g(113);
 
-  // అమౌంట్ రూ. = L1 + all 7 loan repayments
-  const amountRu = L1 + loanRepaymentTotal;
+  // SHG అంతర్గత అప్పు కట్టిన మొత్తం (Page 1 Column 3 -> mapped to index 3)
+  const shgInternalLoanTotal = relatedPage1Totals?.['3'] ? parseValue(relatedPage1Totals['3']) : 0;
+
+  // అమౌంట్ రూ. = L1 + all 7 loan repayments + shgInternalLoanTotal
+  const amountRu = L1 + loanRepaymentTotal + shgInternalLoanTotal;
 
   // బ్యాంకు నందు జమ చేసిన నగదు (Col 2, computed) =
   //   L1 + రివాల్వింగ్ ఫండ్(31) + ఆధార్ గ్రాంట్స్(36) +
   //   VO వాటాధనం తిరిగి(46) + VO పొదుపు తిరిగి(51) +
   //   శ్రీనిధి పొదుపు తిరిగి(56) + బ్యాంకు డిపాజిట్ తిరిగి(61) +
-  //   బ్యాంకు వడ్డీలు(87) + డిపాజిట్ వడ్డీలు(91)
-  const bankCashReceived = L1 + g(31) + g(36) + g(46) + g(51) + g(56) + g(61) + g(87) + g(91);
+  //   బ్యాంకు వడ్డీలు(87) + డిపాజిట్ వడ్డీలు(91) + shgInternalLoanTotal
+  const bankCashReceived = L1 + g(31) + g(36) + g(46) + g(51) + g(56) + g(61) + g(87) + g(91) + shgInternalLoanTotal;
 
   // బ్యాంకు నుండి తీసిన నగదు (Col 1, computed) =
   //   బ్యాంకు లో చేసిన డిపాజిట్(38) + VO ప్రవేశ రుసుము(48) + VO జరిమానాలు(53) +
@@ -162,11 +160,11 @@ export default function SHGPage2View({ tableData, isEditing, onCellEdit, related
   const bankCashWithdrawn = g(38) + g(48) + g(53) + g(58) + g(63) + g(68) + g(72) + g(76) + g(80);
 
   // Grand totals
-  // Col 1 includes the 7 mirrored loan repayment values displayed in the empty slots
+  // Col 1 includes the 7 mirrored loan repayment values displayed in the empty slots, plus the internal loan
   const col1Total =
     g(10) + g(17) + g(24) + g(31) + g(36) + g(42) + g(46) + g(51) +
     g(56) + g(61) + g(83) + g(87) + g(91) +
-    loanRepaymentTotal +   // mirrored: 89+93+97+101+105+109+113
+    loanRepaymentTotal + shgInternalLoanTotal +
     bankCashWithdrawn;
 
   const col2Total =
@@ -186,7 +184,7 @@ export default function SHGPage2View({ tableData, isEditing, onCellEdit, related
     if (!relatedPage1Totals || !onCellEdit) return;
 
     const mappings = {
-      '4': 89, '5': 93, '6': 97, '7': 101, '8': 105, '9': 109, '10': 113
+      '2': 17, '4': 89, '5': 93, '6': 97, '7': 101, '8': 105, '9': 109, '10': 113
     };
 
     Object.entries(mappings).forEach(([p1Col, p2Id]) => {

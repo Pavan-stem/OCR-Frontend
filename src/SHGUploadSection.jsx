@@ -259,7 +259,7 @@ const SHGUploadSection = ({
 
   const isDeveloper = user?.role?.toLowerCase().includes('developer') || (user?.voID && String(user.voID).length === 4);
   const isAuthorizedVO = user?.role?.toLowerCase() === 'vo' || user?.role?.toLowerCase().includes('developer') || user?.role?.toLowerCase().startsWith('vo-');
-  const isTestMode = window.location.pathname.startsWith('/SMD');
+  const isTestMode = window.location.pathname.startsWith('/test');
   const hasAIFeatures = isTestMode && isDeveloper;
 
   // Smart Preview Logic
