@@ -94,6 +94,7 @@ const Login = () => {
                             className="pl-10 block w-full border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm py-3 border"
                             placeholder="Enter 9-digit CC ID, 6-digit User ID, or others"
                             required
+                            autocomplete="username"
                         />
                     </div>
                 </div>
@@ -111,6 +112,7 @@ const Login = () => {
                             className="pl-10 block w-full border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm py-3 border"
                             placeholder="Password"
                             required
+                            autocomplete="current-password"
                         />
                         {password && (
                             <button
