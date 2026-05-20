@@ -769,10 +769,10 @@ const Page2GroupedView = ({ tableData, onEdit, relatedPage1Totals, t }) => {
   // Initialize visible fields from OCR data
   useEffect(() => {
     if (tableData?.data_rows) {
-      const initialIds = [];
+      const initialIds = [15, 22, 29];
       tableData.data_rows.forEach(row => {
         (row.cells || []).forEach(cell => {
-          if (cell.debug_id != null && cell.text && cell.text.toString().trim() !== '') {
+          if (cell.debug_id != null && cell.debug_id !== 17 && cell.text && cell.text.toString().trim() !== '') {
             initialIds.push(cell.debug_id);
           }
         });
@@ -787,7 +787,7 @@ const Page2GroupedView = ({ tableData, onEdit, relatedPage1Totals, t }) => {
     }
   }, [tableData]);
 
-  const readOnlyIds = [17, 89, 93, 97, 101, 105, 109, 113];
+  const readOnlyIds = [89, 93, 97, 101, 105, 109, 113];
 
   const COLUMN_SECTIONS = [
     {
@@ -795,10 +795,6 @@ const Page2GroupedView = ({ tableData, onEdit, relatedPage1Totals, t }) => {
       color: "from-indigo-600 to-indigo-700",
       icon: <ArrowDownCircle className="text-white/40" size={24} />,
       categories: [
-        {
-          title: "సంఘానికి వచ్చిన పొదుపు మొత్తం",
-          fields: [{ id: 17, label: "పొదుపులు (SN+VO+Other Saving)" }]
-        },
         {
           title: "సంఘానికి వచ్చిన ఫండ్స్",
           fields: [
@@ -848,6 +844,21 @@ const Page2GroupedView = ({ tableData, onEdit, relatedPage1Totals, t }) => {
             { id: 72, label: "స్టేషనరీ" },
             { id: 76, label: "ఆడిట్ ఫీజు" },
             { id: 80, label: "బ్యాంకు చార్జీలు" }
+          ]
+        }
+      ]
+    },
+    {
+      title: "గత నెల బ్యాంక్ నిల్వలు",
+      color: "from-teal-600 to-teal-700",
+      icon: <Smartphone className="text-white/40" size={24} />,
+      categories: [
+        {
+          title: "బ్యాంకు నిల్వల వివరాలు",
+          fields: [
+            { id: 15, label: "చేతి నిల్వ" },
+            { id: 22, label: "పొదుపు ఖాతా" },
+            { id: 29, label: "బ్యాంక్ లోన్ ఖాతా" }
           ]
         }
       ]
