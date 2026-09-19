@@ -82,21 +82,19 @@ const SHGUploadCard = ({
   const isPartialUpload = (p1AcceptedOnServer || p2AcceptedOnServer) && (p1Rejected || p2Rejected);
   const isFullyAccepted = isPermanentlyUploaded && !p1Rejected && !p2Rejected;
 
+  // Both pages must be complete: either validated locally or already accepted on the server
   const canSubmitFull = !isPartialUpload && (
-    // Allow if BOTH are validated, OR if at least one is validated and we're not strictly blocking
     (page1Validated || p1AcceptedOnServer) && (page2Validated || p2AcceptedOnServer)
   );
 
-  // If not strictly blocking, we can allow submission if at least one local page is validated
-  const canSubmitAny = (filesData.page1 && page1Validated) || (filesData.page2 && page2Validated);
-
   const canSubmitPartial = isPartialUpload && (
-    (p1Rejected && page1Validated && filesData.page1) ||
-    (p2Rejected && page2Validated && filesData.page2)
+    (p1Rejected ? (page1Validated && filesData.page1) : true) &&
+    (p2Rejected ? (page2Validated && filesData.page2) : true) &&
+    ((p1Rejected && page1Validated && filesData.page1) || (p2Rejected && page2Validated && filesData.page2))
   );
 
-  // We'll use canSubmitAny for the button state if the user doesn't want hard blocking
-  const canSubmit = isPartialUpload ? canSubmitPartial : canSubmitAny;
+  // Require full completion (both pages) for standard uploads or required partial pages for re-uploads
+  const canSubmit = isPartialUpload ? canSubmitPartial : canSubmitFull;
 
   // ── Completion States ───────────────────────────────────────────────
   const hasFiles = !!filesData.page1 || !!filesData.page2;
@@ -118,24 +116,19 @@ const SHGUploadCard = ({
       return t?.('upload.reuploadValidationNote') || "Validate the re-uploaded page before submitting.";
     }
 
-    if (isAfterFeb2026) {
-      const hasP1 = p1AcceptedOnServer || (filesData.page1 && page1Validated);
-      const hasP2 = p2AcceptedOnServer || (filesData.page2 && page2Validated);
+    const p1Missing = !p1AcceptedOnServer && !filesData.page1;
+    const p2Missing = !p2AcceptedOnServer && !filesData.page2;
+    const p1NotValidated = filesData.page1 && !page1Validated;
+    const p2NotValidated = filesData.page2 && !page2Validated;
 
-      const p1Missing = !p1AcceptedOnServer && !filesData.page1;
-      const p2Missing = !p2AcceptedOnServer && !filesData.page2;
-      const p1NotValidated = filesData.page1 && !page1Validated;
-      const p2NotValidated = filesData.page2 && !page2Validated;
-
-      if (p1Missing && p2Missing) return t?.('upload.page1And2Missing') || "Page 1 & Page 2 are missing.";
-      if (p1Missing && p2NotValidated) return t?.('upload.page1MissingPage2NeedsValidation') || "Page 1 missing, Page 2 needs validation.";
-      if (p2Missing && p1NotValidated) return t?.('upload.page2MissingPage1NeedsValidation') || "Page 2 missing, Page 1 needs validation.";
-      if (p1Missing) return t?.('upload.page1Missing') || "Page 1 is missing.";
-      if (p2Missing) return t?.('upload.page2Missing') || "Page 2 is missing.";
-      if (p1NotValidated && p2NotValidated) return t?.('upload.bothPagesNeedValidation') || "Both pages need validation.";
-      if (p1NotValidated) return t?.('upload.page1NeedsValidation') || "Page 1 needs validation.";
-      if (p2NotValidated) return t?.('upload.page2NeedsValidation') || "Page 2 needs validation.";
-    }
+    if (p1Missing && p2Missing) return t?.('upload.page1And2Missing') || "Page 1 & Page 2 are missing.";
+    if (p1Missing && p2NotValidated) return t?.('upload.page1MissingPage2NeedsValidation') || "Page 1 missing, Page 2 needs validation.";
+    if (p2Missing && p1NotValidated) return t?.('upload.page2MissingPage1NeedsValidation') || "Page 2 missing, Page 1 needs validation.";
+    if (p1Missing) return t?.('upload.page1Missing') || "Page 1 is missing.";
+    if (p2Missing) return t?.('upload.page2Missing') || "Page 2 is missing.";
+    if (p1NotValidated && p2NotValidated) return t?.('upload.bothPagesNeedValidation') || "Both pages need validation.";
+    if (p1NotValidated) return t?.('upload.page1NeedsValidation') || "Page 1 needs validation.";
+    if (p2NotValidated) return t?.('upload.page2NeedsValidation') || "Page 2 needs validation.";
 
     return t?.('upload.dualValidationRequired') || 'Both documents must be validated before uploading.';
   };

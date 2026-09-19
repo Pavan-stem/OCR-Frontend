@@ -1361,42 +1361,44 @@ const SHGUploadSection = ({
     }
 
     // ── Determine which pages need uploading ──────────────────────────────
-    // If a page is accepted on the server and no local file for it → skip it.
-    // If BOTH pages are local → require both validated (standard flow).
+    // Check server status for existing accepted pages
+    const targetId = shgId?.toString().toLowerCase();
+    const serverPages = permanentlyUploadedFiles.filter(u => {
+      const uId = (u.shgID || u.shgId || u.metadata?.shgID || u.metadata?.shgId || '').toString().toLowerCase();
+      return uId === targetId || uId.includes(targetId) || targetId.includes(uId);
+    });
+    const serverPageNums = serverPages
+      .filter(u => !['rejected'].includes((u.status || '').toLowerCase()))
+      .map(u => parseInt(u.page || u.metadata?.page || 0))
+      .filter(Boolean);
+
+    const p1OnServer = serverPageNums.includes(1);
+    const p2OnServer = serverPageNums.includes(2);
+
     const hasP1 = !!shgFileData.page1;
     const hasP2 = !!shgFileData.page2;
 
-    if (!hasP1 && !hasP2) {
-      alert(t?.('upload.dualUploadRequired') || 'Please select at least one page to upload.');
-      return false;
-    }
+    const p1Ready = p1OnServer || (hasP1 && shgFileData.page1.validated);
+    const p2Ready = p2OnServer || (hasP2 && shgFileData.page2.validated);
 
-    // Validate what we have
-    if (hasP1 && !shgFileData.page1.validated) {
-      alert(t?.('upload.validatePage1First') || 'Please validate Page 1 before uploading.');
-      return false;
-    }
-    if (hasP2 && !shgFileData.page2.validated) {
-      alert(t?.('upload.validatePage2First') || 'Please validate Page 2 before uploading.');
-      return false;
-    }
-
-    // After Feb 2026, we strongly encourage both pages if neither is on server yet
-    if (isAfterFeb2026 && (!hasP1 || !hasP2)) {
-      const targetId = shgId?.toString().toLowerCase();
-      const serverPages = permanentlyUploadedFiles.filter(u => {
-        const uId = (u.shgID || u.shgId || u.metadata?.shgID || u.metadata?.shgId || '').toString().toLowerCase();
-        return uId === targetId || uId.includes(targetId) || targetId.includes(uId);
-      }).map(u => parseInt(u.page || u.metadata?.page || 0));
-
-      const missingP1 = !hasP1 && !serverPages.includes(1);
-      const missingP2 = !hasP2 && !serverPages.includes(2);
-
-      if (missingP1 || missingP2) {
-        const confirmMsg = t?.('upload.bothPagesRequiredAfterFeb2026') ||
-          "After February 2026, both Page 1 and Page 2 are required for a complete SHG upload. You can upload one now, but it will stay pending until the second page is added. Proceed?";
-        if (!window.confirm(confirmMsg)) return false;
+    if (!p1Ready || !p2Ready) {
+      if (!hasP1 && !p1OnServer) {
+        alert(t?.('upload.page1Missing') || 'Page 1 is missing. Please select and validate Page 1.');
+        return false;
       }
+      if (!hasP2 && !p2OnServer) {
+        alert(t?.('upload.page2Missing') || 'Page 2 is missing. Please select and validate Page 2.');
+        return false;
+      }
+      if (hasP1 && !shgFileData.page1.validated) {
+        alert(t?.('upload.validatePage1First') || 'Please validate Page 1 before uploading.');
+        return false;
+      }
+      if (hasP2 && !shgFileData.page2.validated) {
+        alert(t?.('upload.validatePage2First') || 'Please validate Page 2 before uploading.');
+        return false;
+      }
+      return false;
     }
 
     if (uploadStatus[shgId]?.uploaded && !hasP1 && !hasP2) {
