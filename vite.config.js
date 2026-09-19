@@ -7,10 +7,9 @@ export default defineConfig(({ command, mode }) => {
   const isSMD = mode === 'smd';
   const isDev = command === 'serve';
 
-  let base = '/';
+  let base = '/Test/';
   if (isGitHubPages) base = '/OCR-Frontend/';
-  else if (isSMD) base = '/SMD/';  // SMD deployment path
-  // Dev mode should use root path for proper public asset serving
+  else if (isDev) base = '/';
 
   return {
     base,

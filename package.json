@@ -13,6 +13,7 @@
     "build": "vite build",
     "build:gh": "vite build --mode github",
     "build:smd": "vite build --mode smd",
+    "build:test": "vite build --mode smd",
     "predeploy": "npm run build:gh",
     "deploy": "gh-pages -d dist",
     "preview": "vite preview"
